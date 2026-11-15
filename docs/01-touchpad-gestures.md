@@ -3,7 +3,7 @@
 ## 目标
 
 - 三指移动：像 macOS 的“三指拖移”一样拖动窗口、文件、选中文本和滑块
-- 四指左右滑动：以跟手动画切换当前显示器上的工作区
+- 四指左右滑动：以整页跟手动画切换当前显示器上的工作区
 - 滑到工作区边缘时回弹，不自动创建新的空工作区
 
 ## 为什么这样分配
@@ -12,7 +12,7 @@
 
 ## 配置
 
-将 [`config/hypr/input-touchpad.lua`](../config/hypr/input-touchpad.lua) 的内容加入 `~/.config/hypr/input.lua`。
+将 [`config/hypr/input-touchpad.lua`](../config/hypr/input-touchpad.lua) 的内容加入 `~/.config/hypr/input.lua`，再将 [`config/hypr/looknfeel-workspaces.lua`](../config/hypr/looknfeel-workspaces.lua) 的内容加入 `~/.config/hypr/looknfeel.lua`。
 
 关键设置：
 
@@ -34,24 +34,47 @@ hl.gesture({ fingers = 4, direction = "horizontal", action = "workspace" })
 
 `drag_3fg = 1` 表示使用三指拖移；值 `2` 会改用四指，与四指工作区手势冲突，因此不要使用。
 
+### 工作区过渡动画
+
+Omarchy 默认关闭 `workspaces` 动画。如果只添加触控板手势，工作区仍会生硬地直接切换。下面的覆盖会启用整页水平滑动，并在松手后使用快起慢收的缓动完成切换或回弹：
+
+```lua
+hl.curve("silkyWorkspaceEaseOut", {
+  type = "bezier",
+  points = { { 0.16, 1.0 }, { 0.30, 1.0 } },
+})
+
+hl.animation({
+  leaf = "workspaces",
+  enabled = true,
+  speed = 4.0,
+  bezier = "silkyWorkspaceEaseOut",
+  style = "slide",
+})
+```
+
+`speed = 4.0` 表示松手后的动画最长约为 400ms；拖动过程中仍由手指实时控制进度。
+
 ## 应用与验证
 
 ```bash
 hyprctl reload
 hyprctl configerrors
 hyprctl getoption input:touchpad:drag_3fg
+hyprctl animations
 ```
 
 预期结果：
 
 - `hyprctl configerrors` 没有输出
 - `drag_3fg` 显示 `int: 1` 和 `set: true`
+- `hyprctl animations` 中的 `workspaces` 显示 `enabled: 1`、`style: slide`
 - 三指放在触控板上移动时可以拖动目标
 - 四指水平滑动时工作区随手指移动，松手后完成切换或回弹
 
 ## 回滚
 
-删除上述 `hl.config` 与 `hl.gesture` 配置块，然后重新执行：
+删除上述 `hl.config`、`hl.gesture`、`hl.curve` 和 `hl.animation` 配置块，然后重新执行：
 
 ```bash
 hyprctl reload
