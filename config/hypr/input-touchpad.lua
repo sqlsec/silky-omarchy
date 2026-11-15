@@ -3,6 +3,9 @@
 hl.config({
   input = {
     touchpad = {
+      -- Content follows the two-finger movement, as on macOS.
+      natural_scroll = true,
+
       -- Three-finger movement acts as a held left mouse button.
       drag_3fg = 1,
     },

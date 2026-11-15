@@ -2,6 +2,7 @@
 
 ## 目标
 
+- 双指滚动：使用 macOS 式自然滚动，内容跟随手指方向移动
 - 三指移动：像 macOS 的“三指拖移”一样拖动窗口、文件、选中文本和滑块
 - 四指左右滑动：以整页跟手动画切换当前显示器上的工作区
 - 滑到工作区边缘时回弹，不自动创建新的空工作区
@@ -20,6 +21,7 @@
 hl.config({
   input = {
     touchpad = {
+      natural_scroll = true,
       drag_3fg = 1,
     },
   },
@@ -32,7 +34,7 @@ hl.config({
 hl.gesture({ fingers = 4, direction = "horizontal", action = "workspace" })
 ```
 
-`drag_3fg = 1` 表示使用三指拖移；值 `2` 会改用四指，与四指工作区手势冲突，因此不要使用。
+`natural_scroll = true` 只改变触控板滚动方向，不影响外接鼠标。双指向上移动时，页面内容也会向上移动。`drag_3fg = 1` 表示使用三指拖移；值 `2` 会改用四指，与四指工作区手势冲突，因此不要使用。
 
 ### 工作区过渡动画
 
@@ -60,6 +62,7 @@ hl.animation({
 ```bash
 hyprctl reload
 hyprctl configerrors
+hyprctl getoption input:touchpad:natural_scroll
 hyprctl getoption input:touchpad:drag_3fg
 hyprctl animations
 ```
@@ -67,6 +70,7 @@ hyprctl animations
 预期结果：
 
 - `hyprctl configerrors` 没有输出
+- `natural_scroll` 显示 `bool: true` 和 `set: true`
 - `drag_3fg` 显示 `int: 1` 和 `set: true`
 - `hyprctl animations` 中的 `workspaces` 显示 `enabled: 1`、`style: slide`
 - 三指放在触控板上移动时可以拖动目标
