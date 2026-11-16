@@ -1,0 +1,16 @@
+{
+  "macbar": {
+    "barStyle": "liquid",
+    "glassOpacity": 0.38,
+    "glassBlur": 24,
+    "glassRealtime": true,
+    "language": "zh-CN"
+  },
+  "macdock": {
+    "dockStyle": "liquid",
+    "glassOpacity": 0.38,
+    "glassBlur": 24,
+    "glassLive": true,
+    "windowCapture": false
+  }
+}

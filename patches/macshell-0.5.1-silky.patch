@@ -1,0 +1,1107 @@
+diff --git a/MacShell/AboutApp.qml b/MacShell/AboutApp.qml
+index e614fcb..de9b7b2 100644
+--- a/MacShell/AboutApp.qml
++++ b/MacShell/AboutApp.qml
+@@ -64,16 +64,18 @@ Scope {
+         stdout: StdioCollector { onStreamFinished: root.parse(text) }
+     }
+ 
+-    // the spec rows: [label, value, small grey line under it]
++    // Compact single-line spec rows. Auxiliary facts sit on the same line in smaller type.
+     readonly property var rows: {
+         var o = info, r = [];
+         if (!o.cpu) return r;
+-        r.push({ k: I18n.tr("Processor"), v: o.cpu, s: o.cpusub || "" });
+-        r.push({ k: I18n.tr("Graphics"), v: (o.gpu || "").split("|").join("\n"), s: "" });
+-        r.push({ k: I18n.tr("Memory"), v: o.mem || "", s: "" });
+-        r.push({ k: I18n.tr("Storage"), v: o.disk || "", s: o.disksub || "" });
++        var cpuAux = o.cpucount ? o.cpucount + " " + I18n.tr("Cores") : (o.cpusub || "");
++        var diskAux = o.diskavail ? I18n.tr("Available") + " " + o.diskavail : (o.disksub || "");
++        r.push({ k: I18n.tr("Processor"), v: o.cpu, s: cpuAux });
++        r.push({ k: I18n.tr("Graphics"), v: (o.gpu || "").split("|").join(" · "), s: "" });
++        r.push({ k: I18n.tr("Memory"), v: o.mem || "", s: o.memspeed || "" });
++        r.push({ k: I18n.tr("Storage"), v: o.disk || "", s: diskAux });
+         r.push({ k: I18n.tr("Kernel"), v: o.kernel || "", s: "" });
+-        r.push({ k: o.osname || "Linux", v: o.osver || "", s: "" });
++        r.push({ k: o.osname || "Linux", v: (o.osver || "") + (o.osbuild || ""), s: "" });
+         return r;
+     }
+ 
+@@ -90,10 +92,10 @@ Scope {
+ 
+     Window {
+         id: win
+-        title: "About This Linux"
++        title: "About Omarchy Linux"
+         readonly property real uiS: root.bar ? root.bar.uiScale : 1      // UI scale (Settings → Menu Bar)
+         readonly property int wantH: Math.round((Math.ceil(content.implicitHeight) + 40 + 26) * uiS)
+-        width: Math.round(300 * uiS)
++        width: Math.round(340 * uiS)
+         height: wantH
+         minimumWidth: width; maximumWidth: width
+         minimumHeight: wantH; maximumHeight: wantH
+@@ -170,20 +172,21 @@ Scope {
+             // traffic lights: only Close is active, like the About window on a Mac
+             Item {
+                 x: 15; y: 12
+-                width: 58; height: 14
++                width: 72; height: 30
+                 Row {
+-                    scale: 0.93; transformOrigin: Item.TopLeft      // a touch smaller
++                    anchors.verticalCenter: parent.verticalCenter
++                    scale: 0.93; transformOrigin: Item.Left      // a touch smaller
+                     spacing: 8
+                     Repeater {
+                         model: [{ c: "#FF5F57", on: true }, { c: "#FEBC2E", on: false }, { c: "#28C840", on: false }]
+                         delegate: Rectangle {
+                             required property var modelData
+                             width: 14; height: 14; radius: 7
+-                            color: (modelData.on && (win.active || tl.containsMouse)) ? modelData.c : pal.lightOff
+-                            border.width: 1; border.color: pal.lightBorder(modelData.on && (win.active || tl.containsMouse), modelData.c)
++                            color: (modelData.on && (win.active || tlHover.hovered)) ? modelData.c : pal.lightOff
++                            border.width: 1; border.color: pal.lightBorder(modelData.on && (win.active || tlHover.hovered), modelData.c)
+                             Canvas {
+                                 anchors.fill: parent
+-                                visible: tl.containsMouse && parent.modelData.on
++                                visible: tlHover.hovered && parent.modelData.on
+                                 onVisibleChanged: if (visible) requestPaint()
+                                 onPaint: {
+                                     var ctx = getContext("2d");
+@@ -200,7 +203,8 @@ Scope {
+                         }
+                     }
+                 }
+-                MouseArea { id: tl; anchors.fill: parent; hoverEnabled: true; onClicked: mouse => { if (mouse.x < 22) win.visible = false; } }
++                HoverHandler { id: tlHover; cursorShape: Qt.PointingHandCursor }
++                TapHandler { onTapped: eventPoint => { if (eventPoint.position.x < 30) win.visible = false; } }
+             }
+ 
+             Column {
+@@ -211,24 +215,24 @@ Scope {
+ 
+                 // ── logo ──
+                 Item {
+-                    width: parent.width; height: 118
++                    width: parent.width; height: 102
+                     Image {
+                         id: userLogo
+                         anchors.centerIn: parent
+-                        width: 112; height: 112
++                        width: 96; height: 96
+                         visible: status === Image.Ready
+                         source: root.info.userlogo ? "file://" + root.info.userlogo : ""
+-                        sourceSize.width: 224; sourceSize.height: 224
++                        sourceSize.width: 192; sourceSize.height: 192
+                         fillMode: Image.PreserveAspectFit
+                         smooth: true; mipmap: true
+                     }
+                     Image {
+                         id: distroImg
+                         anchors.centerIn: parent
+-                        width: 112; height: 112
++                        width: 96; height: 96
+                         visible: !userLogo.visible && status === Image.Ready
+                         source: userLogo.visible ? "" : root.distroLogo
+-                        sourceSize.width: 224; sourceSize.height: 224
++                        sourceSize.width: 192; sourceSize.height: 192
+                         fillMode: Image.PreserveAspectFit
+                         smooth: true; mipmap: true
+                     }
+@@ -236,13 +240,13 @@ Scope {
+                     Rectangle {
+                         anchors.centerIn: parent
+                         visible: !userLogo.visible && !distroImg.visible
+-                        width: 108; height: 78; radius: 9
++                        width: 92; height: 68; radius: 9
+                         color: "transparent"
+                         border.width: 4; border.color: pal.text2
+                         Text { anchors.centerIn: parent; text: ">_"; font.family: Fonts.forWeight(Font.Bold, root.fam); font.pixelSize: 30; font.bold: true; color: pal.text2 }
+                     }
+                 }
+-                Item { width: 1; height: 20 }
++                Item { width: 1; height: 14 }
+ 
+                 // ── name ──
+                 Text {
+@@ -251,7 +255,7 @@ Scope {
+                     wrapMode: Text.Wrap
+                     maximumLineCount: 2
+                     elide: Text.ElideRight
+-                    text: "MacShell"
++                    text: "Omarchy Linux"
+                     color: pal.text
+                     font.family: root.fontForWeight(Font.Bold, root.fam); font.pixelSize: 24; font.weight: Font.Bold
+                 }
+@@ -260,65 +264,69 @@ Scope {
+                     width: parent.width
+                     horizontalAlignment: Text.AlignHCenter
+                     elide: Text.ElideRight
+-                    text: root.info.sub || ""
++                    text: root.info.model || root.info.sub || ""
+                     color: pal.text3
+                     font.family: root.fontForWeight(Font.Normal, root.fam); font.pixelSize: 12
+                 }
+-                Item { width: 1; height: 22 }
++                Item { width: 1; height: 18 }
+ 
+                 // ── specs ──
+                 Column {
++                    id: specRows
+                     width: parent.width
+-                    spacing: 5
+                     Repeater {
+                         model: root.rows
+-                        delegate: Row {
++                        delegate: Item {
+                             required property var modelData
+-                            width: parent.width
+-                            spacing: 8
++                            width: specRows.width
++                            height: 28
+                             Text {
+-                                width: 96
++                                id: specLabel
++                                x: 0; width: 88
++                                anchors.verticalCenter: parent.verticalCenter
+                                 horizontalAlignment: Text.AlignRight
+-                                wrapMode: Text.Wrap
+                                 text: modelData.k
+-                                color: pal.text
+-                                font.family: root.fontForWeight(Font.DemiBold, root.fam); font.pixelSize: 12; font.weight: Font.DemiBold
++                                color: pal.text2
++                                font.family: root.fontForWeight(Font.DemiBold, root.fam); font.pixelSize: 11; font.weight: Font.DemiBold
+                             }
+-                            Column {
+-                                width: parent.width - 104
+-                                Text {
+-                                    width: parent.width
+-                                    wrapMode: Text.Wrap
+-                                    text: modelData.v
+-                                    color: pal.text
+-                                    font.family: root.fontForWeight(Font.Normal, root.fam); font.pixelSize: 12
+-                                }
+-                                Text {
+-                                    visible: modelData.s !== ""
+-                                    width: parent.width
+-                                    wrapMode: Text.Wrap
+-                                    text: modelData.s
+-                                    color: pal.text2
+-                                    font.family: root.fontForWeight(Font.Normal, root.fam); font.pixelSize: 11
+-                                }
++                            Text {
++                                id: specValue
++                                x: 100
++                                width: Math.min(implicitWidth, parent.width - x - (specAux.visible ? specAux.implicitWidth + 10 : 0))
++                                anchors.verticalCenter: parent.verticalCenter
++                                elide: Text.ElideRight
++                                text: modelData.v
++                                color: pal.text
++                                font.family: root.fontForWeight(Font.Normal, root.fam); font.pixelSize: 12
++                            }
++                            Text {
++                                id: specAux
++                                visible: modelData.s !== ""
++                                anchors.left: specValue.right
++                                anchors.leftMargin: 10
++                                anchors.verticalCenter: parent.verticalCenter
++                                text: modelData.s
++                                color: pal.text3
++                                font.family: root.fontForWeight(Font.Normal, root.fam); font.pixelSize: 10
+                             }
+                         }
+                     }
+                 }
+-                Item { width: 1; height: 18 }
++                Item { width: 1; height: 16 }
+ 
+                 // ── More Info… ──
+                 Item {
+-                    width: parent.width; height: 24
++                    width: parent.width; height: 34
+                     Rectangle {
+                         anchors.centerIn: parent
+-                        width: moreTxt.implicitWidth + 30; height: 24; radius: 7
+-                        color: moreMa.pressed ? pal.btnDown : pal.btn
++                        width: moreTxt.implicitWidth + 36; height: 32; radius: 8
++                        color: moreTap.pressed ? pal.btnDown : pal.btn
+                         border.width: 1; border.color: pal.border
+                         Text { id: moreTxt; anchors.centerIn: parent; text: I18n.tr("More Info\u2026"); color: pal.text; font.family: root.fontForWeight(Font.Normal, root.fam); font.pixelSize: 12 }
+-                        MouseArea {
+-                            id: moreMa; anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+-                            onClicked: {
++                        HoverHandler { cursorShape: Qt.PointingHandCursor }
++                        TapHandler {
++                            id: moreTap
++                            onTapped: {
+                                 var cmd = (root.bar ? root.bar.terminal : "kitty") + " -e sh -c 'fastfetch || neofetch; echo; read -p \"Press Enter\" _'";
+                                 Quickshell.execDetached(["sh", "-c", cmd]);
+                             }
+@@ -329,15 +337,16 @@ Scope {
+ 
+                 // ── links and legal ──
+                 Item {
+-                    width: parent.width; height: siteTxt.implicitHeight
++                    width: parent.width; height: 32
+                     Text {
+                         id: siteTxt
+-                        anchors.horizontalCenter: parent.horizontalCenter
++                        anchors.centerIn: parent
+                         text: (root.info.osname || "Linux") + " " + I18n.tr("Website")
+                         color: pal.text2
+                         font.family: root.fontForWeight(Font.Normal, root.fam); font.pixelSize: 11; font.underline: true
+-                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: Quickshell.execDetached(["xdg-open", root.info.home || "https://www.kernel.org"]) }
+                     }
++                    HoverHandler { cursorShape: Qt.PointingHandCursor }
++                    TapHandler { onTapped: Quickshell.execDetached(["xdg-open", root.info.home || "https://www.kernel.org"]) }
+                 }
+                 Item { width: 1; height: 10 }
+                 Text {
+diff --git a/MacShell/I18n.js b/MacShell/I18n.js
+index d5296fb..44c88d7 100644
+--- a/MacShell/I18n.js
++++ b/MacShell/I18n.js
+@@ -1,6 +1,7 @@
+ .pragma library
+ .import "lang/ru.js" as Ru
+ .import "lang/es.js" as Es
++.import "lang/zh-CN.js" as ZhCN
+ 
+ // Interface translations. I18n.tr("English text") returns the text in the chosen language, or the English text
+ // itself when there is no translation. The language is Qt.uiLanguage (System Settings → General → Language,
+@@ -8,7 +9,7 @@
+ // read Qt.uiLanguage, so they update when the language changes.
+ // To add a language: copy lang/ru.js to lang/<code>.js, translate the values, and add it to `dicts` below.
+ 
+-var dicts = { ru: Ru.strings, es: Es.strings };
++var dicts = { ru: Ru.strings, es: Es.strings, zh: ZhCN.strings, "zh-CN": ZhCN.strings };
+ 
+ function code() {
+     return Qt.uiLanguage !== "" ? Qt.uiLanguage : String(Qt.locale().name || "en").split("_")[0];
+diff --git a/MacShell/MacBar.qml b/MacShell/MacBar.qml
+index 0f0b4a8..88d95a5 100644
+--- a/MacShell/MacBar.qml
++++ b/MacShell/MacBar.qml
+@@ -3434,7 +3434,7 @@ Scope {
+                     m.push(mi("Show Hidden Windows", "", disp('hl.dsp.workspace.toggle_special("hidden")')));
+                     m.push(msep());
+                     m.push(mi(I18n.tr("Quit ") + n, "Ctrl+Q", function () { root.quitActive(); }));
+-                    m.push(mc("Force Quit " + n, function () { root.forceQuitActive(aw); }));
++                    m.push(mc(I18n.tr("Force Quit ") + n, function () { root.forceQuitActive(aw); }));
+                 }
+             } else if (name === "file") {
+                 if (!has) {
+@@ -4112,7 +4112,9 @@ Scope {
+     readonly property var glassClients: hub ? hub.glassClients : []
+     property int popCount: 0
+     onBarEnabledChanged: { if (!barEnabled) popCount = 0; clipStart(); }
+-    Binding { target: root.hub; property: "barWantsGeo"; value: root.liquidActive }
++    // Real-time geometry is useful only while some glass is actually on screen.
++    // popCount includes menus, Control Center, Spotlight, OSD and switchers.
++    Binding { target: root.hub; property: "barWantsGeo"; value: root.liquidActive && root.glassRealtime && root.popCount > 0 }
+     // window captures are admitted by the shared gate in shell.qml (hub.tlFor): 0.2 s after a window appears, one every 110 ms
+ 
+     Component.onCompleted: {
+@@ -5111,7 +5113,10 @@ Scope {
+                 ShaderEffectSource {
+                     sourceItem: glassBackdrop.item
+                     hideSource: true
+-                    live: true
++                    // Do not force the full-screen backdrop to render while no glass is visible.
++                    // This avoids idle screencopy traffic and leaves the render thread free for interaction.
++                    live: ui.anyVisible || root.barGlass || levelOsd.visible
++                          || spotWin.openish || swWin.visible || wpWin.visible
+                     width: 1; height: 1
+                     opacity: 0.01
+                     sourceRect: Qt.rect(0, 0, 1, 1)
+@@ -5280,7 +5285,9 @@ Scope {
+                                     anchors.fill: parent
+                                     placeholder: root.darkMode ? "#1e1e20" : "#f2f2f7"
+                                     glassOn: ui.anyVisible || root.barGlass || levelOsd.visible || spotWin.openish || swWin.visible || wpWin.visible
+-                                    want: gw.tl
++                                    // Capture only windows intersecting visible glass. The Vulkan shader then
++                                    // performs blur/refraction on the GPU without streaming unrelated windows.
++                                    want: root.glassRealtime && sv.glassOn && gw.onGlass ? gw.tl : null
+                                     // While a screen recording / screen share runs the window captures sit out (root.captureQuiet). `hush` follows it
+                                     // with a random 0.6 s spread, so dozens of captures never start or stop in the same instant (that burst, with a
+                                     // recorder pulling frames at the same time, is what the compositor choked on).
+@@ -5296,7 +5303,8 @@ Scope {
+                                     // hidden right now (Spotlight, switcher, ...) are only kept warm with slow single captures.
+                                     // While recording only the windows behind visible glass stay live (so the glass is real-time exactly where you see it,
+                                     // e.g. a video behind the Control Center), every other window sits out.
+-                                    wantLive: !gw.gone && !root.captureHeld && bd.hostShown && (!sv.hush || gw.onGlass) && (root.glassRealtime || ui.anyVisible || levelOsd.visible || spotWin.glassGo || swWin.visible || wpWin.visible)
++                                    wantLive: root.glassRealtime && sv.glassOn && gw.onGlass && !gw.gone && !root.captureHeld
++                                              && bd.hostShown && !sv.hush
+                                     // a panel / menu just opened: every stream behind it starts afresh (a stream that died while the windows were
+                                     // re-tiled would otherwise leave the wallpaper behind the glass), and while it stays open the windows behind it
+                                     // are re-armed now and then, so the glass keeps following them (opening an app next to them, a resize, ...)
+@@ -5327,7 +5335,7 @@ Scope {
+                                                                  || (root.barGlass && gw.y < root.barH + 40)
+                                     Timer {
+                                         interval: sv.hush ? 1500 : (bd.hostShown ? (sv.busy ? 250 : 1500) : 1000); repeat: true
+-                                        running: !root.captureHeld && !sv.wantLive && sv.armed
++                                        running: !root.captureHeld && !sv.wantLive && sv.armed && (sv.busy || root.glassRealtime)
+                                                  && (!sv.hush || (bd.hostShown && (ui.anyVisible || levelOsd.visible || spotWin.openish || swWin.visible || wpWin.visible)))
+                                         onTriggered: sv.snap()
+                                     }
+diff --git a/MacShell/MacDock.qml b/MacShell/MacDock.qml
+index dc037ef..423864d 100644
+--- a/MacShell/MacDock.qml
++++ b/MacShell/MacDock.qml
+@@ -816,7 +816,8 @@ Scope {
+             readonly property color sidebar: dark ? "#292929" : "#E9E9EC"
+             // the pages are opaque (only the sidebar is translucent), so the cards are solid too
+             readonly property color contentSolid: dark ? "#1E1E1E" : "#F5F5F7"
+-            readonly property color sidebarGlass: dark ? Qt.rgba(0.17, 0.17, 0.18, 0.55) : Qt.rgba(0.94, 0.94, 0.96, 0.60)
++            // Keep the sidebar frosted but readable over text-heavy windows.
++            readonly property color sidebarGlass: dark ? Qt.rgba(0.17, 0.17, 0.18, 0.96) : Qt.rgba(0.94, 0.94, 0.96, 0.97)
+             readonly property color card: dark ? "#2B2B2D" : "#FFFFFF"
+             readonly property color cardBorder: dark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.12)
+             readonly property color windowBorder: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.22)
+@@ -1472,9 +1473,9 @@ Scope {
+                         subtitle: I18n.tr("Automatic follows the system language")
+                         SSegmented {
+                             t: pal
+-                            readonly property var codes: ["auto", "en", "ru", "es"]
+-                            model: ["Automatic", "English", "Русский", "Español"]
+-                            segWidth: 88
++                            readonly property var codes: ["auto", "en", "zh-CN", "ru", "es"]
++                            model: [I18n.tr("Automatic"), "English", "简体中文", "Русский", "Español"]
++                            segWidth: 76
+                             current: codes.indexOf(root.bar ? root.bar.language : "auto")
+                             onPicked: i => { if (root.bar) root.bar.language = codes[i]; }
+                         }
+@@ -4747,7 +4748,7 @@ Scope {
+ 
+     // live window geometry for the backdrop compositor (polled only while Liquid Glass is on)
+     readonly property var glassClients: hub ? hub.glassClients : []
+-    Binding { target: root.hub; property: "dockWantsGeo"; value: root.liquidActive && (root.dockEnabled || prefsWindow.visible) }
++    Binding { target: root.hub; property: "dockWantsGeo"; value: root.liquidActive && root.glassLive && (root.dockEnabled || prefsWindow.visible) }
+     // window captures are admitted by the shared gate in shell.qml (hub.tlFor): 0.2 s after a window appears, one every 110 ms
+ 
+     // ── smart hide: which monitors have a non-floating window on their active workspace ──
+@@ -5379,10 +5380,10 @@ Scope {
+                                 // only keep capturing windows that actually reach the Dock (+ refraction margin)
+                                 // real-time: EVERY visible window stays captured (also while the Dock is tucked and for windows far from the Dock), so a window
+                                 // dragged over the Dock or a revealed Dock never starts from the bare wallpaper
+-                                readonly property bool nearNow: root.glassRT || (!ui.tucked
++                                readonly property bool nearNow: !ui.tucked
+                                     && x < dock.x + dock.width + 48 && x + width > dock.x - 48
+                                     && y < dockTop + dock.height + 48
+-                                    && y + height > dockTop - 48)
++                                    && y + height > dockTop - 48
+                                 // a capture is only torn down 2.5 s after the window left the dock area: creating / destroying
+                                 // live window captures every time a window brushes past the dock is what the compositor can choke on
+                                 property bool near: false
+diff --git a/MacShell/assets/about-info.sh b/MacShell/assets/about-info.sh
+index 16e0f12..cd775bd 100755
+--- a/MacShell/assets/about-info.sh
++++ b/MacShell/assets/about-info.sh
+@@ -45,11 +45,23 @@ printf 'sub=%s\n' "$kind${vend:+ · $vend}"
+ cpu=$(awk -F: '/^model name/ {print $2; exit}' /proc/cpuinfo 2>/dev/null)
+ [ -n "$cpu" ] || cpu=$(lscpu 2>/dev/null | sed -n 's/^Model name: *//p' | head -n1)
+ [ -n "$cpu" ] || cpu=$(awk -F: '/^(Hardware|Processor|cpu model)/ {print $2; exit}' /proc/cpuinfo 2>/dev/null)
++# On ARM64, /proc/cpuinfo may omit a marketing name and sandboxed GUI launches may
++# not get lscpu's translated field names. The platform compatible is always available.
++if [ -z "$cpu" ]; then
++    platform_compat=$(tr '\0' ',' </proc/device-tree/compatible 2>/dev/null)
++    case "$platform_compat" in *qcom,x1e80100*) cpu="Qualcomm Oryon" ;; esac
++fi
+ cpu=$(printf %s "$cpu" | sed -e 's/(R)//g; s/(TM)//g; s/ CPU / /; s/ CPU$//; s/ @ .*//; s/ with Radeon.*//; s/ w\/ .*//; s/  */ /g; s/^ //; s/ $//')
++cpu_vendor=$(lscpu 2>/dev/null | sed -n 's/^Vendor ID: *//p' | head -n1)
++# ARM machines often expose only the microarchitecture name. Keep it useful and human-readable.
++case "$cpu_vendor:$cpu" in
++    Qualcomm:Oryon|Qualcomm:"Qualcomm Oryon") cpu="Qualcomm Oryon" ;;
++esac
+ threads=$(nproc --all 2>/dev/null || grep -c '^processor' /proc/cpuinfo)
+ cores=$(lscpu -p=CORE,SOCKET 2>/dev/null | grep -v '^#' | sort -u | wc -l)
+ printf 'cpu=%s\n' "${cpu:-Unknown}"
+ if [ "${cores:-0}" -gt 0 ] 2>/dev/null && [ "${threads:-0}" -gt 0 ] 2>/dev/null; then
++    printf 'cpucount=%s\nthreadcount=%s\n' "$cores" "$threads"
+     if [ "$cores" = "$threads" ]; then printf 'cpusub=%s cores\n' "$cores"; else printf 'cpusub=%s cores, %s threads\n' "$cores" "$threads"; fi
+ fi
+ 
+@@ -70,6 +82,20 @@ if [ -z "$gpu" ]; then
+         [ -n "$n" ] && gpu="${gpu:+$gpu|}$n"
+     done
+ fi
++# Integrated Qualcomm GPUs are platform devices, not PCI devices. Identify the stable
++# device-tree compatible used by Snapdragon X Elite / X1E80100 systems.
++if [ -z "$gpu" ]; then
++    gpu_compat=""
++    for f in /proc/device-tree/soc@0/gpu@*/compatible /sys/firmware/devicetree/base/soc@0/gpu@*/compatible; do
++        [ -r "$f" ] || continue
++        gpu_compat=$(tr '\0' ',' < "$f" 2>/dev/null)
++        [ -n "$gpu_compat" ] && break
++    done
++    case "$gpu_compat" in
++        *qcom,adreno-43050c01*) gpu="Qualcomm Adreno X1-85" ;;
++        *qcom,adreno*) gpu="Qualcomm Adreno" ;;
++    esac
++fi
+ printf 'gpu=%s\n' "${gpu:-Unknown}"
+ 
+ # ── memory (MemTotal is a little below the installed size: round up to the usual module sizes) ──
+@@ -79,10 +105,22 @@ awk '/^MemTotal/ {
+     r = int(g + 0.5)
+     for (i = 1; i <= n; i++) if (s[i] >= g) { r = s[i]; break }
+     printf "mem=%d GB\n", r }' /proc/meminfo
++# Prefer the speed reported by the running machine. Some ARM64 firmware exposes
++# this through DMI/inxi but not through the usual sysfs memory attributes.
++memspeed=""
++if command -v inxi >/dev/null 2>&1; then
++    memspeed=$(inxi -m -c 0 2>/dev/null | sed -n 's/.* speed: \([0-9][0-9]* MT\/s\).*/\1/p' | head -n1)
++fi
++# Lenovo's PSREF specifies LPDDR5X-8448 for this exact model. Keep this narrow
++# fallback for launches where the desktop process cannot read the DMI memory data.
++if [ -z "$memspeed" ]; then
++    case "$model" in *"Yoga Slim 7 14Q8X9"*) memspeed="8448 MT/s" ;; esac
++fi
++printf 'memspeed=%s\n' "$memspeed"
+ # ── storage: the disk holding / ──
+ df -B1 --output=size,avail / 2>/dev/null | awk 'NR==2 {
+     t=$1; a=$2
+-    printf "disk=%s\ndisksub=%s available\n", f(t), f(a) }
++    printf "disk=%s\ndiskavail=%s\ndisksub=%s available\n", f(t), f(a), f(a) }
+     function f(b) { if (b >= 1e12) return sprintf("%.1f TB", b/1e12); return sprintf("%d GB", int(b/1e9 + 0.5)) }'
+ # ── system ──
+ printf 'kernel=%s\n' "$(uname -r)"
+@@ -91,6 +129,13 @@ osname=$(printf %s "$osname" | sed -e 's/ GNU\/Linux$//; s/ Linux$//')
+ osver="${VERSION:-${VERSION_ID:-}}"
+ if [ -z "$osver" ]; then case "${BUILD_ID:-}" in rolling|"") osver="Rolling Release" ;; *) osver="$BUILD_ID" ;; esac; fi
+ printf 'osname=%s\nosver=%s\n' "$osname" "$osver"
++# Omarchy's package release (for example -3) is smaller but still useful than the main OS version.
++osbuild=""
++if [ "${ID:-}" = "omarchy" ] && command -v pacman >/dev/null 2>&1; then
++    pkgver=$(pacman -Q omarchy 2>/dev/null | awk 'NR==1 {print $2}')
++    case "$pkgver" in "$osver"-*) osbuild=${pkgver#"$osver"} ;; esac
++fi
++printf 'osbuild=%s\n' "$osbuild"
+ printf 'pretty=%s\n' "${PRETTY_NAME:-Linux}"
+ printf 'logo=%s\n' "${LOGO:-}"
+ printf 'osid=%s\n' "${ID:-linux}"
+diff --git a/MacShell/lang/zh-CN.js b/MacShell/lang/zh-CN.js
+new file mode 100644
+index 0000000..844231d
+--- /dev/null
++++ b/MacShell/lang/zh-CN.js
+@@ -0,0 +1,568 @@
++.pragma library
++
++// Simplified Chinese interface strings, following macOS terminology where practical.
++// Keys are the English texts exactly as written in the QML files.
++var strings = {
++    "On Your Desktop": "在桌面上",
++    "No widgets yet": "还没有小组件",
++    "Add one above and it appears on the desktop.": "在上方添加后，它会显示在桌面上。",
++    "Remove All": "全部移除",
++    "Remove all widgets": "移除所有小组件",
++    "Location": "位置",
++    "Date": "日期",
++    "Preview": "预览",
++    "About ": "关于 ",
++    "Hide ": "隐藏 ",
++    "Quit ": "退出 ",
++    " Connected": " 已连接",
++    " min remaining": " 分钟剩余",
++    " more notification": " 条其他通知",
++    " on desktop": " 个在桌面上",
++    " · Connected": " · 已连接",
++    " · Paused": " · 已暂停",
++    " · Saved": " · 已保存",
++    "Connected to ": "已连接到 ",
++    "Keep these display settings? Reverting in ": "要保留这些显示器设置吗？将在以下时间后还原：",
++    "Lap ": "单圈 ",
++    "Layout: ": "布局：",
++    "Recording ": "正在录制 ",
++    "No wallpapers match “": "没有匹配的墙纸：“",
++    "Search the web for “": "在网页中搜索：“",
++    "d MMMM yyyy": "yyyy年M月d日",
++    "ddd MMM d": "M月d日 ddd",
++    "dddd, MMMM d": "M月d日 dddd",
++
++    "About This Linux": "关于本机",
++    "Apple menu": "Apple 菜单",
++    "Application menus": "应用程序菜单",
++    "System Settings…": "系统设置…",
++    "Settings…": "设置…",
++    "Preferences…": "偏好设置…",
++    "Lock Screen": "锁定屏幕",
++    "Lock Screen Now": "立即锁定",
++    "Sleep": "睡眠",
++    "Restart": "重新启动",
++    "Restart…": "重新启动…",
++    "Shut Down": "关机",
++    "Shut Down…": "关机…",
++    "Log Out": "退出登录",
++    "Log Out…": "退出登录…",
++    "Force Quit ": "强制退出 ",
++    "Click again to confirm": "再次点按以确认",
++    "Click to Confirm": "点按以确认",
++    "Press Return again to confirm": "再次按下回车键以确认",
++    "File": "文件",
++    "Edit": "编辑",
++    "View": "显示",
++    "Window": "窗口",
++    "Help": "帮助",
++    "Desktop": "桌面",
++    "New Terminal": "新建终端",
++    "Open Home Folder": "打开个人文件夹",
++    "New Files Window": "新建文件窗口",
++    "New Window": "新建窗口",
++    "New Private Window": "新建无痕窗口",
++    "New Tab": "新建标签页",
++    "Close Tab": "关闭标签页",
++    "Close Window": "关闭窗口",
++    "Reopen Closed Tab": "重新打开关闭的标签页",
++    "Open…": "打开…",
++    "Save": "存储",
++    "Save As…": "存储为…",
++    "Print…": "打印…",
++    "Undo": "撤销",
++    "Redo": "重做",
++    "Cut": "剪切",
++    "Copy": "拷贝",
++    "Paste": "粘贴",
++    "Paste and Match Style": "粘贴并匹配样式",
++    "Select All": "全选",
++    "Find…": "查找…",
++    "Search…": "搜索…",
++    "Emoji & Symbols": "表情与符号",
++    "Clipboard History…": "剪贴板历史记录…",
++    "Pick Color": "选取颜色",
++    "Reload": "重新载入",
++    "Reload Ignoring Cache": "忽略缓存并重新载入",
++    "Actual Size": "实际大小",
++    "Zoom In": "放大",
++    "Zoom Out": "缩小",
++    "Minimize": "最小化",
++    "Center Window": "将窗口居中",
++    "Make Narrower": "缩窄",
++    "Make Wider": "加宽",
++    "Move Window Left": "将窗口移到左侧",
++    "Move Window Right": "将窗口移到右侧",
++    "Move to Next Monitor": "移到下一台显示器",
++    "Move to Next Workspace": "移到下一个工作区",
++    "Move to Previous Workspace": "移到上一个工作区",
++    "Toggle Split Direction": "切换拆分方向",
++    "Show Hidden Windows": "显示隐藏的窗口",
++    "Show Minimized Windows": "显示最小化的窗口",
++    "Screenshot Screen": "截取整个屏幕",
++    "Screenshot Selection…": "截取所选区域…",
++    "Screenshot Window": "截取窗口",
++    "Reload Hyprland Config": "重新载入 Hyprland 配置",
++    "Hyprland Keybinds": "Hyprland 键盘快捷键",
++    "Hyprland Wiki": "Hyprland Wiki",
++    "Quickshell Documentation": "Quickshell 文档",
++
++    "Dock": "程序坞",
++    "Show": "显示",
++    "Open": "打开",
++    "Quit": "退出",
++    "Keep in Dock": "在程序坞中保留",
++    "Kept in Dock": "已在程序坞中保留",
++    "Remove from Dock": "从程序坞中移除",
++    "Empty Trash": "清倒废纸篓",
++    "Trash": "废纸篓",
++    "Open Window": "打开窗口",
++    "Open Folder": "打开文件夹",
++    "Downloads": "下载",
++    "Pictures": "图片",
++    "Screenshots": "截屏",
++
++    "Search": "搜索",
++    "No Results": "无结果",
++    "Local Account": "本地帐户",
++    "Wi-Fi": "无线局域网",
++    "Bluetooth": "蓝牙",
++    "Network": "网络",
++    "Battery": "电池",
++    "General": "通用",
++    "Appearance": "外观",
++    "Control Center": "控制中心",
++    "Desktop & Dock": "桌面与程序坞",
++    "Displays": "显示器",
++    "Menu Bar": "菜单栏",
++    "Wallpaper": "墙纸",
++    "Notifications": "通知",
++    "Sound": "声音",
++    "Focus": "专注模式",
++    "Users & Groups": "用户与群组",
++    "Keyboard": "键盘",
++    "Mouse": "鼠标",
++    "Trackpad": "触控板",
++    "Applications": "应用程序",
++    "About": "关于本机",
++    "Settings": "系统设置",
++
++    "Language": "语言与地区",
++    "Software Update": "软件更新",
++    "Checking for updates…": "正在检查更新…",
++    "New update ": "有新更新 ",
++    "MacShell is up to date": "MacShell 已是最新版本",
++    "Couldn't check for updates": "无法检查更新",
++    "Update": "更新",
++    "Check for updates": "检查更新",
++    "A new version of MacShell is available.": "有新版本的 MacShell 可用。",
++    "Automatic follows the system language": "“自动”会跟随系统语言",
++    "Automatic": "自动",
++    "Shell": "桌面组件",
++    "Show the Dock at the bottom of the screen": "在屏幕底部显示程序坞",
++    "Show the panel at the top of the screen. Spotlight, Control Center and the calendar belong to it.": "在屏幕顶部显示菜单栏；聚焦搜索、控制中心和日历都位于其中。",
++    "Desktop Widgets": "桌面小组件",
++    "Widgets": "小组件",
++    "Arrange widgets": "整理小组件",
++    "Stop Editing": "完成",
++    "Edit on Desktop": "编辑小组件",
++    "Widget size": "小组件大小",
++    "Small": "小",
++    "Medium": "中",
++    "Large": "大",
++    "Temperature unit": "温度单位",
++    "Used by the Weather widget": "供天气小组件使用",
++    "Weather location": "天气位置",
++    "Automatic uses your IP address; or type a city name": "自动使用你的 IP 地址，也可输入城市名称",
++    "City": "城市",
++    "For example: Riyadh, Dubai, London": "例如：上海、北京、广州",
++    "Game Mode": "游戏模式",
++    "Turn on automatically for fullscreen games": "全屏游戏时自动开启",
++    "On now: a game is fullscreen": "已开启：检测到全屏游戏",
++    "On (game detected)": "开启（检测到游戏）",
++    "Play user interface sound effects": "播放用户界面声音效果",
++    "Install dependencies": "安装依赖项",
++    "Install…": "安装…",
++    "Keep clipboard history": "保留剪贴板历史记录",
++    "Paste Automatically": "自动粘贴",
++    "Paste after choosing": "选取后粘贴",
++
++    "Light": "浅色",
++    "Dark": "深色",
++    "Auto": "自动",
++    "Accent color": "强调色",
++    "Highlights in the Dock menu and this window": "用于程序坞菜单和此窗口中的高亮显示",
++    "Blue": "蓝色",
++    "Purple": "紫色",
++    "Pink": "粉红色",
++    "Red": "红色",
++    "Orange": "橙色",
++    "Yellow": "黄色",
++    "Green": "绿色",
++    "Teal": "青色",
++    "Graphite": "石墨色",
++    "White": "白色",
++    "Black": "黑色",
++    "Font": "字体",
++    "Used for labels and menus": "用于标签和菜单",
++    "System": "系统",
++    "Corner radius": "圆角",
++    "Square": "方形",
++    "Round": "圆润",
++    "Dock style": "程序坞样式",
++    "Menu Bar style": "菜单栏样式",
++    "Style of the menus and popovers": "菜单和弹出式窗口的样式",
++    "Normal Blur": "普通模糊",
++    "Apple Liquid Glass": "Apple 液态玻璃",
++    "Liquid Glass": "液态玻璃",
++    "Liquid Glass bar": "液态玻璃菜单栏",
++    "The menu bar strip itself is Liquid Glass, refracting the wallpaper and windows under it (needs Apple Liquid Glass style)": "让菜单栏本身呈现液态玻璃效果，折射其下方的墙纸和窗口（需要 Apple 液态玻璃样式）",
++    "Bar background": "菜单栏背景",
++    "A separate layer (macbarbg) so Hyprland can blur it. Needs: layerrule = blur, macbarbg": "使用独立的 macbarbg 图层，让 Hyprland 对其进行模糊处理",
++    "Liquid strength": "液态强度",
++    "Refraction, magnification and colour fringing of the glass": "玻璃的折射、放大和色散强度",
++    "Subtle": "轻微",
++    "Very liquid": "强烈",
++    "Blur": "模糊",
++    "How strongly the glass blurs what's behind it": "玻璃对背后内容的模糊程度",
++    "Very blurry": "非常模糊",
++    "Sharp": "清晰",
++    "Icon Tint": "图标着色",
++    "Tint Dock icons": "为程序坞图标着色",
++    "Strength": "强度",
++    "Tinted": "着色",
++    "Clear": "透明",
++    "Frosted": "磨砂",
++    "Opaque": "不透明",
++    "Real-time glass": "实时玻璃效果",
++    "Animated wallpaper in glass": "玻璃中的动态墙纸",
++    "Live window capture": "实时窗口捕捉",
++    "Size": "大小",
++    "Magnification": "放大效果",
++    "Enlarge icons as the pointer moves over them": "指针移过图标时将其放大",
++    "Magnification amount": "放大倍数",
++    "Icon spacing": "图标间距",
++    "Tight": "紧凑",
++    "Loose": "宽松",
++    "Distance from screen edge": "与屏幕边缘的距离",
++    "Flush": "贴边",
++    "Floating": "悬浮",
++    "Automatically hide and show the Dock": "自动隐藏和显示程序坞",
++    "Smart": "智能",
++    "Always": "始终",
++    "Never": "永不",
++    "Hide delay": "隐藏延迟",
++    "Instant": "立即",
++    "Show Dock on": "显示程序坞的位置",
++    "All Displays": "所有显示器",
++    "Primary Only": "仅主显示器",
++    "Show labels": "显示标签",
++    "Display an app's name when you hover its icon": "将指针移到图标上时显示应用名称",
++    "Show indicators for open applications": "为打开的应用程序显示指示灯",
++    "Animate opening applications": "打开应用程序时显示动画",
++    "Show Trash in the Dock": "在程序坞中显示废纸篓",
++    "Show window previews": "显示窗口预览",
++    "Changes apply to the Dock immediately.": "更改会立即应用到程序坞。",
++    "No apps are kept in the Dock": "程序坞中没有保留的应用程序",
++    "Reset Dock Items": "还原程序坞项目",
++    "Go back to the default set of apps": "恢复默认应用程序组合",
++    "Reset": "还原",
++    "Remove": "移除",
++    "Add": "添加",
++
++    "Brightness": "亮度",
++    "Night Shift": "夜览",
++    "Warmer colours to reduce blue light": "使用较暖的颜色以减少蓝光",
++    "Colour Temperature": "色温",
++    "Less Warm": "偏冷",
++    "More Warm": "偏暖",
++    "Resolution": "分辨率",
++    "Refresh rate": "刷新率",
++    "Main display": "主显示器",
++    "Keep Changes": "保留更改",
++    "Revert": "还原",
++    "Menu Bar and widget size": "菜单栏和小组件大小",
++    "Menu Bar size": "菜单栏大小",
++    "Menu Bar logo": "菜单栏标志",
++    "Choose the Arch mark, Apple logo, or a custom image": "选择 Arch 标志、Apple 标志或自定义图像",
++    "Arch": "Arch",
++    "Apple": "Apple",
++    "Custom": "自定义",
++    "Custom image path": "自定义图像路径",
++    "Clock and calendar": "时钟与日历",
++    "24-hour clock": "24 小时制",
++    "Show seconds": "显示秒钟",
++    "Show date": "显示日期",
++    "Week starts on Monday": "每周从星期一开始",
++    "Top Bar Widgets": "菜单栏项目",
++    "Battery percentage": "电池百分比",
++    "System tray": "系统托盘",
++    "Workspace switcher": "工作区切换器",
++    "Spotlight search": "聚焦搜索",
++    "Wi-Fi and network": "无线局域网与网络",
++    "Privacy indicators": "隐私指示器",
++    "Keyboard layout": "键盘布局",
++    "Wallpapers": "墙纸",
++    "Search wallpapers": "搜索墙纸",
++    "No wallpaper": "无墙纸",
++    "Animated wallpaper": "动态墙纸",
++    "Animated": "动态",
++    "Dynamic": "动态",
++
++    "Show notification banners": "显示通知横幅",
++    "Play sound for notifications": "播放通知声音",
++    "Notification system": "通知系统",
++    "Send Test Notification": "发送测试通知",
++    "Test notification": "测试通知",
++    "Notifications are working": "通知工作正常",
++    "Do Not Disturb": "勿扰模式",
++    "Silences notification banners": "静音通知横幅",
++    "Keep Awake": "防止休眠",
++    "Stop the computer from going to sleep or locking": "防止电脑进入睡眠或锁定",
++    "Output": "输出",
++    "Input": "输入",
++    "Output volume": "输出音量",
++    "Input volume": "输入音量",
++    "No output devices": "没有输出设备",
++    "No input devices": "没有输入设备",
++    "Mute": "静音",
++    "Volume": "音量",
++    "No apps are playing audio": "没有应用程序正在播放音频",
++    "Energy Mode": "能源模式",
++    "Power profile used by the system": "系统使用的电源模式",
++    "Low Power": "低电量模式",
++    "High Power": "高性能",
++    "Battery Level": "电池电量",
++    "Charging": "正在充电",
++    "On battery": "使用电池",
++
++    "Above Password": "密码上方",
++    "Under Clock": "时钟下方",
++    "Now Playing position": "“正在播放”的位置",
++    "Analog clock face": "模拟时钟表盘",
++    "Rounded": "圆体",
++    "Serif": "衬线体",
++    "Default": "默认",
++    "Classic": "经典",
++    "Glass": "玻璃",
++    "Liquid": "液态",
++    "Solid": "实色",
++    "Style": "样式",
++    "Weight": "字重",
++    "Thin": "细",
++    "Heavy": "粗",
++    "Color": "颜色",
++    "Colour": "颜色",
++    "Instrumental": "纯音乐",
++    "Full name": "全名",
++    "Account name": "帐户名称",
++    "Home folder": "个人文件夹",
++    "Picture": "图片",
++    "Change…": "更改…",
++    "Key repeat rate": "按键重复速率",
++    "Delay until repeat": "重复前延迟",
++    "Slow": "慢",
++    "Fast": "快",
++    "Long": "长",
++    "Short": "短",
++    "Off": "关闭",
++    "On": "开启",
++    "Tracking speed": "跟踪速度",
++    "Scrolling speed": "滚动速度",
++    "Natural scrolling": "自然滚动",
++    "Content tracks finger movement": "内容随手指移动",
++    "Tap to click": "轻点来点按",
++    "Ignore trackpad while typing": "键入时忽略触控板",
++
++    "Configuration": "配置",
++    "Open configuration folder": "打开配置文件夹",
++    "Reset MacShell": "还原 MacShell",
++    "Reset…": "还原…",
++    "Credits": "制作人员",
++    "Wi-Fi is turned off": "无线局域网已关闭",
++    "Wi-Fi Settings…": "无线局域网设置…",
++    "Known Networks & Other Networks": "已知网络与其他网络",
++    "Networks": "网络",
++    "No networks found": "未找到网络",
++    "Connected": "已连接",
++    "Not Connected": "未连接",
++    "Not connected": "未连接",
++    "Connect": "连接",
++    "Disconnect": "断开连接",
++    "Connecting…": "正在连接…",
++    "Disconnecting…": "正在断开连接…",
++    "Join": "加入",
++    "Join…": "加入…",
++    "Password": "密码",
++    "Enter Password": "输入密码",
++    "Secured": "安全网络",
++    "Ethernet": "以太网",
++    "Ethernet & VPN": "以太网与 VPN",
++    "Airplane Mode": "飞行模式",
++    "Bluetooth is turned off": "蓝牙已关闭",
++    "Bluetooth Settings…": "蓝牙设置…",
++    "My Devices": "我的设备",
++    "Devices": "设备",
++    "Nearby Devices": "附近的设备",
++    "Nearby Devices — searching…": "附近的设备 — 正在搜索…",
++    "No devices found": "未找到设备",
++    "No new devices found": "未找到新设备",
++    "Paired": "已配对",
++    "Not paired": "未配对",
++    "Pairing…": "正在配对…",
++    "Scan": "扫描",
++    "Scan Again": "再次扫描",
++    "Scanning…": "正在扫描…",
++    "Searching for devices…": "正在搜索设备…",
++    "In Use": "使用中",
++    "Selected": "已选择",
++    "Use": "使用",
++    "Refresh": "刷新",
++    "Add Controls": "添加控制项",
++    "Edit Controls": "编辑控制项",
++    "Done": "完成",
++    "Display": "显示器",
++    "Dark Mode": "深色模式",
++    "Now Playing": "正在播放",
++    "Not Playing": "未播放",
++    "Screen Recording": "屏幕录制",
++    "Screen Sharing": "屏幕共享",
++    "Microphone": "麦克风",
++    "Record": "录制",
++    "Stop": "停止",
++    "Screen": "屏幕",
++    "Unit conversion": "单位换算",
++    "Notification": "通知",
++    "Clear All": "全部清除",
++    "Clear Notification Center": "清除通知中心",
++    "No Notifications": "没有通知",
++    "Show Less": "收起",
++    "Show More": "展开",
++    "Close": "关闭",
++    "TIME SENSITIVE": "时效性通知",
++
++    "Screenshot notifications": "截屏通知",
++    "Show a notification": "显示通知",
++    "Save to a folder": "存储到文件夹",
++    "Save location": "存储位置",
++    "Leave empty to save on the Desktop": "留空则存储到桌面",
++    "Choose…": "选取…",
++    "Quick folders": "快捷文件夹",
++    "Spotlight Search": "聚焦搜索",
++    "Suggestions": "建议",
++    "Top Hits": "最佳匹配",
++    "Recents": "最近使用",
++    "Apps": "应用程序",
++    "Files": "文件",
++    "Clipboard": "剪贴板",
++    "Emoji": "表情符号",
++    "Actions": "操作",
++    "Action": "操作",
++    "Application": "应用程序",
++    "Copy to clipboard": "拷贝到剪贴板",
++    "Return to copy": "按回车键拷贝",
++    "Return to insert": "按回车键插入",
++    "Searching files…": "正在搜索文件…",
++    "Searching…": "正在搜索…",
++    "No matching files": "没有匹配的文件",
++    "No recently used emoji": "没有最近使用的表情符号",
++    "★ Favourites": "★ 个人收藏",
++    "App Switcher (Alt + Tab)": "应用程序切换器 (Alt + Tab)",
++    "Developer Tools": "开发者工具",
++    "Games": "游戏",
++    "Productivity & Finance": "效率与财务",
++    "Internet & Social": "互联网与社交",
++    "Graphics & Design": "图形与设计",
++    "Music & Video": "音乐与视频",
++    "Education & Science": "教育与科学",
++    "Utilities": "实用工具",
++    "All": "全部",
++
++    "Add a Widget": "添加小组件",
++    "Calendar": "日历",
++    "Weather": "天气",
++    "Clock": "时钟",
++    "Player": "播放器",
++    "Image": "图像",
++    "Photo": "照片",
++    "Text": "文本",
++    "Label": "标签",
++    "Choose Image…": "选取图像…",
++    "Image not found": "找不到图像",
++    "No image": "无图像",
++    "Unknown Title": "未知标题",
++    "Loading lyrics…": "正在载入歌词…",
++    "Searching for lyrics…": "正在搜索歌词…",
++    "No lyrics found": "未找到歌词",
++    "Compact": "紧凑",
++    "Full": "完整",
++    "Normal": "正常",
++    "Hidden": "隐藏",
++    "Bright": "明亮",
++    "Min": "最小",
++    "Max": "最大",
++    "World Clock": "世界时钟",
++    "Alarms": "闹钟",
++    "Stopwatch": "秒表",
++    "Timers": "计时器",
++    "Timer": "计时器",
++    "Alarm": "闹钟",
++    "Add Alarm": "添加闹钟",
++    "Edit Alarm": "编辑闹钟",
++    "No Alarms": "没有闹钟",
++    "Click + to add an alarm.": "点按 + 以添加闹钟。",
++    "No World Clocks": "没有世界时钟",
++    "Search cities": "搜索城市",
++    "Lap": "计次",
++    "Start": "开始",
++    "Pause": "暂停",
++    "Resume": "继续",
++    "Cancel": "取消",
++    "Cupertino": "库比蒂诺",
++    "New York": "纽约",
++    "London": "伦敦",
++    "Tokyo": "东京",
++
++    "Liquid Glass couldn't start (install qt6-shadertools)": "无法启动液态玻璃效果（请安装 qt6-shadertools）",
++    "Preparing the Liquid Glass shader…": "正在准备液态玻璃着色器…",
++    "System Settings": "系统设置",
++    "Behavior": "行为",
++    "Recording": "正在录制",
++    "Restore": "恢复",
++    "Sound effects": "声音效果",
++    "Enter your password to unlock": "输入密码以解锁",
++    "If you turn both off, reopen this window with:  qs -c MacShell ipc call settings open": "如果两项都关闭，可运行以下命令重新打开此窗口：qs -c MacShell ipc call settings open",
++    "Reset to default": "恢复默认设置",
++    "Automatic scaling": "自动缩放",
++    "UI scale": "界面缩放",
++    "Smaller": "更小",
++    "Larger": "更大",
++    "Just now": "刚刚",
++    "min ago": "分钟前",
++    "hour ago": "小时前",
++    "hours ago": "小时前",
++    "Yesterday": "昨天",
++    "days ago": "天前",
++    "Loading recent files…": "正在载入最近使用的文件…",
++    "No recent files": "没有最近使用的文件",
++    "Processor": "处理器",
++    "Graphics": "图形卡",
++    "Memory": "内存",
++    "Storage": "储存空间",
++    "Kernel": "内核",
++    "Cores": "核",
++    "Available": "可用",
++    "More Info…": "更多信息…",
++    "Website": "网站",
++    "Rename": "重新命名",
++    "Device": "设备",
++    "Notes": "备忘录",
++    "Featured Photo": "精选照片",
++    "Add pictures to ~/Pictures": "将图片添加到 ~/Pictures",
++    "Reminders": "提醒事项",
++    "New Reminder": "新建提醒事项",
++    "Paused": "已暂停",
++    "Running": "运行中",
++    "No alarms": "没有闹钟",
++    "Loading…": "正在载入…"
++};
+diff --git a/MacShell/shell.qml b/MacShell/shell.qml
+index 9bb2572..d2d744f 100644
+--- a/MacShell/shell.qml
++++ b/MacShell/shell.qml
+@@ -163,7 +163,9 @@ ShellRoot {
+         property bool geoHot: true
+         property string lastActive: ""
+         property string geoLast: ""
+-        Timer { id: geoCool; interval: 1500; onTriggered: sharedHub.geoHot = false }
++        // A dragged window is composited directly by Hyprland; the glass geometry does not
++        // need to keep the GUI thread hot for another 1.5 seconds after every movement.
++        Timer { id: geoCool; interval: 700; onTriggered: sharedHub.geoHot = false }
+         Connections {
+             target: Hyprland
+             function onRawEvent(event) {
+@@ -259,8 +261,9 @@ ShellRoot {
+                 for (i = 0; i < ts.length; i++) { o = ts[i].lastIpcObject; if (o && o.address !== undefined) cl.push(o); }
+                 for (i = 0; i < ms.length; i++) { m = ms[i].lastIpcObject; if (m && m.name !== undefined) mo.push(m); }
+                 Hyprland.refreshToplevels();      // the answer lands in lastIpcObject and is read on the next tick
+-                // monitors only change on workspace / monitor events (those refresh them right away, see onRawEvent): every 6th tick is plenty
+-                if ((++monTick % 6) === 0) Hyprland.refreshMonitors();
++                // Monitor geometry is also refreshed immediately by the relevant raw events.
++                // Keep this only as a slow reconciliation path while a window is being dragged.
++                if ((++monTick % 12) === 0) Hyprland.refreshMonitors();
+             } catch (err) { ipcBroken = true; ipcOk = false; return; }
+             if (mo.length === 0 || (ts.length > 0 && cl.length === 0)) { ipcOk = false; return; }
+             ipcOk = true;
+@@ -304,8 +307,11 @@ ShellRoot {
+             }
+         }
+         Timer {
+-            // fast (60 Hz) for 1.5 s after any window event, otherwise a relaxed 2.5 Hz check (idle CPU)
+-            interval: sharedHub.geoHot ? 16 : 400
++            // Hyprland itself moves the real window at the display refresh rate. This poll only
++            // updates the synthetic glass backdrop, so running it at 60 Hz competed with the
++            // compositor and caused an occasional hitch during circular window drags. Live glass
++            // gets 30 Hz; the current snapshot-based glass needs only 12.5 Hz while moving.
++            interval: sharedHub.geoHot ? ((macBar.glassRealtime || macDock.glassLive) ? 33 : 80) : 500
+             repeat: true
+             running: (sharedHub.barWantsGeo || sharedHub.dockWantsGeo) && !sharedHub.ipcBroken
+             triggeredOnStart: true
+@@ -318,6 +324,10 @@ ShellRoot {
+             command: ["sh", "-c",
+                 ""
+                 + "out=\"\"\n"
++                // Omarchy 4.x owns the desktop wallpaper and stores the current choice here.
++                // Read it first so Liquid Glass follows the same image without a second daemon.
++                + "p=$(readlink -f \"$HOME/.local/state/omarchy/current/background\" 2>/dev/null)\n"
++                + "[ -f \"$p\" ] && out=\"wallpaper.default$(printf '\\t')$p\"\n"
+                 + "st=\"${XDG_STATE_HOME:-$HOME/.local/state}/noctalia\"; ns=\"${NOCTALIA_STATE_HOME:-/nonexistent}\"\n"
+                 + "for f in \"$ns/settings.toml\" \"$st/settings.toml\" \"$HOME/.config/noctalia/settings.toml\" \"$HOME/.config/noctalia/config.toml\"; do\n"
+                 + "  [ -f \"$f\" ] || continue\n"
