@@ -71,6 +71,7 @@ var chinese = {
     "Power mode": "电源模式",
     "Could not change the power mode": "无法切换电源模式",
     "No power modes available": "暂无可用的电源模式",
+    "Show battery percentage": "显示电量百分比",
     "balanced": "平衡",
     "power-saver": "省电",
     "performance": "高性能",

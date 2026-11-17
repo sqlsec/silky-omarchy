@@ -14,7 +14,10 @@ Item {
     required property var battery
     required property real charge
     property bool active: false
+    // the menu-bar battery's number (MacShell's showBatteryPercent); toggled from the right-click power-mode panel
+    property bool showPercent: true
     signal dismiss()
+    signal togglePercent()
     readonly property real preferredHeight: Math.ceil(header.height + content.implicitHeight + 27)
     readonly property string title: mode === "network" ? Status.tr("Network")
                                     : mode === "thermal" ? Status.tr("CPU Temperature")
@@ -705,6 +708,67 @@ Item {
                             }
                         }
                     }
+                }
+            }
+
+            // right-click on the battery: show / hide the number inside the menu-bar battery
+            Rectangle {
+                visible: root.mode === "profiles"
+                width: parent.width
+                height: 41
+                radius: 12
+                color: root.surface
+                border.color: root.outline
+                border.width: 1
+                Accessible.role: Accessible.CheckBox
+                Accessible.checked: root.showPercent
+                Accessible.name: Status.tr("Show battery percentage")
+                Accessible.onPressAction: root.togglePercent()
+
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: 5
+                    radius: 7
+                    color: percentMouse.containsMouse ? root.palette.hover : "transparent"
+                }
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 14
+                    anchors.rightMargin: 12
+                    spacing: 7
+                    SilkyStatusIcon {
+                        Layout.preferredWidth: 15
+                        Layout.preferredHeight: 15
+                        kind: "battery"
+                        ink: root.muted
+                    }
+                    LabelText {
+                        Layout.fillWidth: true
+                        text: Status.tr("Show battery percentage")
+                    }
+                    // macOS-style switch
+                    Rectangle {
+                        Layout.preferredWidth: 30
+                        Layout.preferredHeight: 18
+                        radius: 9
+                        color: root.showPercent ? root.palette.accent
+                                                : (root.palette.dark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0, 0, 0, 0.14))
+                        Behavior on color { ColorAnimation { duration: 160 } }
+                        Rectangle {
+                            width: 14; height: 14; radius: 7
+                            y: 2
+                            x: root.showPercent ? parent.width - width - 2 : 2
+                            color: "white"
+                            Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                        }
+                    }
+                }
+                MouseArea {
+                    id: percentMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.togglePercent()
                 }
             }
 

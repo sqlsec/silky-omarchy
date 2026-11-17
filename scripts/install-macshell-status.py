@@ -41,6 +41,8 @@ INLINE = """
                         palette: pal
                         battery: root.bat
                         charge: root.batPct
+                        showPercent: root.showBatteryPercent
+                        onTogglePercent: root.showBatteryPercent = !root.showBatteryPercent
                         onDismiss: ui.pop = ""
                     }
                 }
@@ -84,6 +86,26 @@ TRAY_KIND_V1 = """                                readonly property string silky
                                 }
 """
 
+TRAY_KIND_V2 = """                                readonly property string silkyIconKind: {
+                                    const item = tray.modelData;
+                                    if (item.status === Status.NeedsAttention)
+                                        return "";
+                                    switch (item.id.toLowerCase()) {
+                                    case "remmina-icon": return "remmina";
+                                    case "tray-icon tray app clash-verge-rev-tray": return "clash";
+                                    case "clippy": return "clippy";
+                                    case "netcatty_status_icon_1": return "netcatty";
+                                    case "chrome_status_icon_1": {
+                                        const name = (item.tooltipTitle || item.title).trim().toLowerCase();
+                                        if (name === "chatgpt") return "chatgpt";
+                                        if (name === "google chrome") return "chrome";
+                                        return "";
+                                    }
+                                    default: return "";
+                                    }
+                                }
+"""
+
 TRAY_KIND = """                                readonly property string silkyIconKind: {
                                     const item = tray.modelData;
                                     if (item.status === Status.NeedsAttention)
@@ -93,6 +115,7 @@ TRAY_KIND = """                                readonly property string silkyIco
                                     case "tray-icon tray app clash-verge-rev-tray": return "clash";
                                     case "clippy": return "clippy";
                                     case "netcatty_status_icon_1": return "netcatty";
+                                    case "wechat": return "wechat";
                                     case "chrome_status_icon_1": {
                                         const name = (item.tooltipTitle || item.title).trim().toLowerCase();
                                         if (name === "chatgpt") return "chatgpt";
@@ -125,14 +148,31 @@ BATTERY_INDICATOR = '''                            readonly property color indic
                                                     : (bpal.dark ? "#30d158" : "#187b45")
 '''
 
+# A shorter battery pill (28 -> 24 px body): the number inside is two digits most of the time, and macOS keeps
+# the battery about this wide. Every pair is applied only where the old value is still there.
+BATTERY_COMPACT = [
+    ("width: root.hasBattery ? 36 : 0; height: 28", "width: root.hasBattery ? 32 : 0; height: 28"),
+    ("                                width: 31; height: 14\n", "                                width: 27; height: 14\n"),
+    ("                                    width: 28; height: 14; radius: 4.5\n", "                                    width: 24; height: 14; radius: 4.5\n"),
+    ("Rectangle { x: 29; y: 4.5; width: 2; height: 5; radius: 1;", "Rectangle { x: 25; y: 4.5; width: 2; height: 5; radius: 1;"),
+]
+
+
 def integrate(text):
     previous_color_placement = "                            id: silkyBatteryButton\n" + BATTERY_INDICATOR
     if previous_color_placement in text:
         text = text.replace(previous_color_placement, "                            id: silkyBatteryButton\n", 1)
-    if TRAY_KIND_V1 in text:
-        text = text.replace(TRAY_KIND_V1, TRAY_KIND, 1)
+    for old_kind in (TRAY_KIND_V1, TRAY_KIND_V2):
+        if old_kind in text:
+            text = text.replace(old_kind, TRAY_KIND, 1)
     if STATUS_OPEN not in text:
         text = text.replace(STATUS_OPEN_V1, STATUS_OPEN, 1)
+    percent_before = '                        charge: root.batPct\n                        onDismiss: ui.pop = ""\n'
+    if percent_before in text:
+        text = text.replace(percent_before, '                        charge: root.batPct\n'
+                            '                        showPercent: root.showBatteryPercent\n'
+                            '                        onTogglePercent: root.showBatteryPercent = !root.showBatteryPercent\n'
+                            '                        onDismiss: ui.pop = ""\n', 1)
     if STATUS_WIDTH_V1 in text and 'id: silkyStatusPop' in text:
         text = text.replace(STATUS_WIDTH_V1, STATUS_WIDTH, 1)
     changes = [
@@ -196,6 +236,9 @@ def integrate(text):
         battery = battery.replace(battery_click, """acceptedButtons: Qt.LeftButton | Qt.RightButton
                                 onClicked: mouse => ui.openPop(mouse.button === Qt.RightButton ? "profiles" : "power",
                                     silkyBatteryButton.mapToItem(ui, silkyBatteryButton.width / 2, 0).x)""", 1)
+    for before, after in BATTERY_COMPACT:
+        if before in battery:
+            battery = battery.replace(before, after, 1)
     return text[:start] + battery + text[end:]
 
 

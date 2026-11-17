@@ -83,6 +83,31 @@ Canvas {
             line([6.4, 9.5, 8.4, 11.4, 6.4, 13.3]);
             line([10.4, 13.4, 13.6, 13.4]);
             break;
+        case "wechat": {
+            // two speech bubbles, the small one in front: erase the big bubble's line where the small one covers it
+            ctx.ellipse(1.6, 2.6, 12.8, 10.6);
+            line([4.3, 12.2, 3.6, 15, 6.6, 13.2]);
+            ctx.stroke();
+            ctx.save();
+            ctx.globalCompositeOperation = "destination-out";
+            ctx.beginPath();
+            ctx.ellipse(7.4, 7.0, 12.0, 10.0);
+            ctx.fill();
+            ctx.restore();
+            ctx.beginPath();
+            ctx.ellipse(8.4, 8.0, 10.0, 8.2);
+            line([16.2, 15.4, 16.9, 17.8, 14.2, 16.3]);
+            ctx.stroke();
+            ctx.fillStyle = ink;
+            ctx.beginPath();
+            circle(5.6, 6.6, 0.95);
+            circle(9.6, 6.6, 0.95);
+            circle(11.6, 11.6, 0.8);
+            circle(15.2, 11.6, 0.8);
+            ctx.fill();
+            ctx.beginPath();          // the final stroke below has nothing left to draw
+            break;
+        }
         case "remmina":
             ctx.roundedRect(2.5, 3.5, 15, 10.5, 2.2, 2.2);
             line([10, 14, 10, 16.7]);
