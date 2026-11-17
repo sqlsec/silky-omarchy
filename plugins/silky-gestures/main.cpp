@@ -674,6 +674,21 @@ static void endWindowDrag() {
 // A single finger came down: is it on a floating window's title area, edge, or body?
 static bool grabFloatingWindow(const ITouch::SDownEvent& e, PHLMONITOR monitor) {
     const Vector2D P{g_touch.fingers.back().x, g_touch.fingers.back().y};
+
+    // A shell layer above the windows (MacShell's Applications / Spotlight overlay, the bar, a menu) takes this touch:
+    // the window hit test below ignores layers, so without this a finger on the overlay dragged the window behind it.
+    {
+        const auto& HIT = Desktop::viewState()->hitTest();
+        PHLLS       layer;
+        Vector2D    local;
+        if (HIT.layerPopupSurfaceAt(P, monitor, &local, &layer))
+            return false;
+        for (const auto L : {3 /* overlay */, 2 /* top */}) {
+            if (HIT.layerSurfaceAt(P, &monitor->m_layerSurfaceLayers[L], &local, &layer))
+                return false;
+        }
+    }
+
     const auto     WINDOW = Desktop::viewState()->hitTest().windowAt(
         P, Desktop::View::RESERVED_EXTENTS | Desktop::View::INPUT_EXTENTS | Desktop::View::ALLOW_FLOATING);
     if (!WINDOW || !WINDOW->mapped() || WINDOW->isHidden() || !WINDOW->isFloating() || !WINDOW->layoutTarget())

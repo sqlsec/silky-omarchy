@@ -227,7 +227,8 @@ replace('var pad = !mouseWheel && w.pixelDelta.y !== 0;', 'var pad = !mouseWheel
 # The glass frame and the content share one stage: it settles from 114 % to 100 % and from blurred to sharp as a
 # single picture (one offscreen pass and one blur for both), instead of only the icons zooming inside a frame that
 # merely faded. The icons keep a smaller staggered zoom of their own on top.
-replace('''                        readonly property real blurAmt: root.reduceMotion ? 0 : Math.max(0, 1 - t) * 0.95
+if 'readonly property real zoom: root.reduceMotion' not in s:
+    replace('''                        readonly property real blurAmt: root.reduceMotion ? 0 : Math.max(0, 1 - t) * 0.95
 ''', '''                        readonly property real blurAmt: root.reduceMotion ? 0 : Math.max(0, 1 - t) * 0.95
                         readonly property real zoom: root.reduceMotion ? 1 : 1 + 0.14 * Math.max(0, 1 - t)
 ''')
@@ -306,7 +307,8 @@ replace("else to = lp > 0.5 ? 1 : 0;",
 # frame made the panel jump ahead right after it started to move. For the first three frames after a (re)start or a
 # change of direction the spring therefore advances by at most one display frame: a long frame only delays the motion
 # by a few milliseconds. The stage is also set up in the very frame a close is requested, not two frames into it.
-replace('''                    property real goal: 1
+if 'property int fresh: 0' not in s:
+    replace('''                    property real goal: 1
                     onTriggered: {
                         var dt = frameTime > 0 ? Math.min(0.05, frameTime) : 0;
                         if (dt <= 0) return;
@@ -390,5 +392,173 @@ for line in s.splitlines():
     if 'console.log("FLKDBG"' in line:
         s = s.replace(line, '                            onContentYChanged: if (dragging) { appsScroller.sample(contentY - lastDragY); lastDragY = contentY; }')
         break
+
+# Touch-screen drag: Flickable writes contentY straight from each touch event, which arrive out of step with the
+# display (uneven steps, the judder). The finger now only moves the scroller's target and the list follows it per
+# frame, like the touchpad; any release, slow or fast, glides on with the same decay instead of stopping dead.
+replace('''                            onContentYChanged: if (dragging) { appsScroller.sample(contentY - lastDragY); lastDragY = contentY; }
+                            onFlickStarted: { var v = appsScroller.measured(); cancelFlick(); appsScroller.glide(v); }''',
+        '''                            onContentYChanged: {
+                                if (appsScroller.writing) return;
+                                if (dragging) appsScroller.finger(contentY); else appsScroller.shown = contentY;
+                            }
+                            onDraggingChanged: if (!dragging && appsScroller.mode === 4) appsScroller.glide(appsScroller.measured())
+                            onFlickStarted: cancelFlick()''')
+replace('''                            property int mode: 0            // 0 idle · 1 wheel easing · 2 touchpad follow · 3 glide''',
+        '''                            property int mode: 0            // 0 idle · 1 wheel easing · 2 touchpad follow · 3 glide · 4 finger follow
+                            property real shown: 0          // the contentY on screen, restored when Flickable writes the finger's
+                            property bool writing: false''')
+if 'function finger(y) {' not in s:
+    replace('''                            function glide(v) {
+                                samples = [];
+                                if (Math.abs(v) < 60) { if (mode === 2) mode = 1; else stop(); return; }   // no speed: just settle''',
+        '''                            function finger(y) {
+                                if (mode !== 4) {
+                                    appsPadEnd.stop();
+                                    vel = 0; samples = []; mode = 4;
+                                    target = shown;
+                                }
+                                y = clampY(y);
+                                sample(y - target);
+                                target = y;
+                                writing = true;
+                                appsFlick.contentY = shown;
+                                writing = false;
+                            }
+                            function glide(v) {
+                                samples = [];
+                                if (Math.abs(v) < 60) { if (mode === 2 || mode === 4) mode = 1; else stop(); return; }   // no speed: just settle''')
+replace('''                                y += (target - y) * (1 - Math.exp(-dt * (mode === 1 ? 20 : 40)));
+                                if (mode === 1 && Math.abs(target - y) < 0.5) { y = target; mode = 0; }
+                                f.contentY = clampY(y);''',
+        '''                                y += (target - y) * (1 - Math.exp(-dt * (mode === 1 ? 20 : mode === 4 ? 55 : 40)));
+                                if (mode === 1 && Math.abs(target - y) < 0.5) { y = target; mode = 0; }
+                                writing = true;
+                                f.contentY = clampY(y);
+                                shown = f.contentY;
+                                writing = false;''')
+
+# Touch-screen drag moves the list further than the finger (and so glides further on release).
+replace('''    readonly property real appsGlideDecay: 1.7''',
+        '''    readonly property real appsTouchScroll: 1.1        // touch-screen finger pixels → content pixels
+    readonly property real appsGlideDecay: 1.7''')
+replace('''                                    vel = 0; samples = []; mode = 4;
+                                    target = shown;
+                                }
+                                y = clampY(y);
+                                sample(y - target);
+                                target = y;''', '''                                    vel = 0; samples = []; mode = 4;
+                                    target = shown;
+                                    fingerY = shown;   // Flickable measures the drag from where the list was at the press
+                                }
+                                var d = (y - fingerY) * root.appsTouchScroll;
+                                fingerY = y;
+                                var to = clampY(target + d);
+                                sample(to - target);
+                                target = to;''')
+replace('''                            property bool writing: false''', '''                            property bool writing: false
+                            property real fingerY: 0        // the last finger position Flickable reported''')
+
+# Closing (Esc, a click outside, the Dock icon) only blurs and fades: the panel and its icons no longer zoom back up.
+# zoomMix drops to 0 at once when a close starts from the open panel; a close released mid-pinch, or a reopening
+# during the close, eases it instead so the size never jumps.
+replace('''                        readonly property real zoom: root.reduceMotion ? 1 : 1 + 0.14 * Math.max(0, 1 - t)''',
+        '''                        property real zoomMix: ui.lpClosing ? 0 : 1
+                        Behavior on zoomMix {
+                            enabled: !ui.lpClosing || appsPanel.t < 0.97
+                            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                        }
+                        readonly property real zoom: root.reduceMotion ? 1 : 1 + 0.14 * Math.max(0, 1 - t) * zoomMix''')
+replace('''                                                    scale: 1 + 0.12 * (1 - tileReveal)''',
+        '''                                                    scale: 1 + 0.12 * (1 - tileReveal) * appsPanel.zoomMix''')
+
+# A plain close (Esc, a click outside, an app launched) is a short timed fade instead of the spring: the spring's
+# acceleration and long settling tail read as a bounce. Openings and pinch releases (which carry a speed) keep it.
+replace('''                    property int fresh: 0
+                    onTriggered: {
+                        var dt = frameTime > 0 ? Math.min(0.05, frameTime) : 0;
+                        if (dt <= 0) return;
+                        if (fresh > 0) { fresh--; dt = Math.min(dt, 0.0125); }''', '''                    property int fresh: 0
+                    property bool fade: false           // timed close: lp eases from fadeFrom to 0 over fadeTime
+                    property real fadeFrom: 1
+                    property real fadeAt: 0
+                    readonly property real fadeTime: 0.15
+                    onTriggered: {
+                        var dt = frameTime > 0 ? Math.min(0.05, frameTime) : 0;
+                        if (dt <= 0) return;
+                        if (fresh > 0) { fresh--; dt = Math.min(dt, 0.0125); }
+                        if (fade) {
+                            fadeAt += dt;
+                            var k = Math.min(1, fadeAt / fadeTime);
+                            ui.lp = fadeFrom * (1 - k) * (1 - k);   // ease-out: quick to start, no tail
+                            if (k < 1) return;
+                            ui.lp = 0;
+                            fade = false;
+                            running = false;
+                            velocity = 0;
+                            ui.lpSettled();
+                            return;
+                        }''')
+replace('''                    lpWarm = false;
+                    if (lpSpring.goal !== to || !lpSpring.running) lpSpring.fresh = 3;''', '''                    lpWarm = false;
+                    if (lpSpring.goal !== to || !lpSpring.running) lpSpring.fresh = 3;
+                    if (to === 0 && vel === undefined && lp > 0) {
+                        if (!lpSpring.fade || !lpSpring.running) { lpSpring.fade = true; lpSpring.fadeFrom = lp; lpSpring.fadeAt = 0; lpSpring.fresh = 3; }
+                        lpSpring.goal = 0;
+                        lpSpring.velocity = 0;
+                        if (!lpSpring.running) lpSpring.start();
+                        return;
+                    }
+                    lpSpring.fade = false;''')
+
+
+# The plain close is a single fade of the whole panel as one picture: while it runs the panel's own progress stays at
+# 1 (no blur, no separate glass / content curves, no per-icon stagger, no zoom) and only its opacity follows ui.lp.
+replace('''                property double lpT: 0
+''', '''                property double lpT: 0
+                readonly property bool lpFading: lpSpring.running && lpSpring.fade
+''')
+replace('''                        readonly property real t: ui.lp
+''', '''                        readonly property real t: ui.lpFading ? 1 : ui.lp
+                        opacity: ui.lpFading ? ui.lp : 1
+''')
+
+# Entrance colour order, like macOS: the light frosted glass is there first and the icons / text solidify on top of
+# it. With the content leading (t^0.55) and the glass trailing (t^1.35), the first frames showed blurred icons over
+# the dark window behind, darker than the finished panel, and the panel then lightened.
+s = s.replace('opacity: root.reduceMotion || ui.lpFading ? 1 : Math.pow(Math.min(1, appsPanel.t), 1.35)', 'opacity: root.reduceMotion ? 1 : Math.pow(Math.min(1, appsPanel.t), 1.6)')
+s = s.replace('opacity: root.reduceMotion ? 1 : Math.pow(Math.min(1, appsPanel.t), 1.35)', 'opacity: root.reduceMotion ? 1 : Math.pow(Math.min(1, appsPanel.t), 1.6)')
+s = s.replace('opacity: root.reduceMotion ? 1 : Math.pow(Math.min(1, appsPanel.t), 0.5)', 'opacity: root.reduceMotion ? 1 : Math.pow(Math.min(1, appsPanel.t), 1.6)')   # glass starts faint, darkens evenly
+s = s.replace('opacity: root.reduceMotion ? 1 : Math.pow(Math.min(1, appsPanel.t), 0.55)', 'opacity: root.reduceMotion ? 1 : Math.pow(Math.min(1, appsPanel.t), 1.8)')
+s = s.replace('opacity: root.reduceMotion ? 1 : Math.pow(Math.min(1, appsPanel.t), 1.2)', 'opacity: root.reduceMotion ? 1 : Math.pow(Math.min(1, appsPanel.t), 1.8)')
+s = s.replace('opacity: root.reduceMotion ? 1 : Math.pow(Math.min(1, appsPanel.t), 1.0)', 'opacity: root.reduceMotion ? 1 : Math.pow(Math.min(1, appsPanel.t), 1.6)')   # glass: fainter start
+
+# The Applications panel's glass blurs captures of the windows behind it. Windows are only captured while glass over
+# them is visible, so on opening every capture behind the panel started from nothing and the glass first blurred the
+# dark placeholder (or an old frame) for a few frames, then jumped to the real, often lighter, windows. While the
+# panel is closed, the windows in its area now keep a single snapshot every 1.5 s (no live stream), so it opens on a
+# current picture of them.
+if 'property bool warm: false' not in s:
+    for old, new in [
+        ('                        property rect region: Qt.rect(0, 0, 0, 0)',
+         '                        property bool warm: false          // keep single snapshots of the windows in `region` while no glass is shown\n'
+         '                        property rect region: Qt.rect(0, 0, 0, 0)'),
+        ('                        property alias region: bd.region\n',
+         '                        property alias region: bd.region\n                        property alias warm: bd.warm\n'),
+        ('want: root.glassRealtime && sv.glassOn && gw.onGlass ? gw.tl : null',
+         'want: root.glassRealtime && (sv.glassOn || bd.warm) && gw.onGlass ? gw.tl : null'),
+        ('item.region = Qt.binding(function () { return Qt.rect(spot.x - 128, spot.y - 128, spot.width + 256, spot.height + 256); });',
+         'item.region = Qt.binding(function () {\n'
+         '                                    if (!spotWin.openish) {     // closed: where the Applications panel will open\n'
+         '                                        var aw = appsPanel.panelW, ah = appsPanel.height;\n'
+         '                                        return Qt.rect((spotRoot.sw - aw) / 2 - 128, (spotRoot.sh - ah) / 2 - 128, aw + 256, ah + 256);\n'
+         '                                    }\n'
+         '                                    return Qt.rect(spot.x - 128, spot.y - 128, spot.width + 256, spot.height + 256);\n'
+         '                                });\n'
+         '                                item.warm = Qt.binding(function () { return root.spotlightEnabled && !root.gaming; });'),
+    ]:
+        if s.count(old) != 1:
+            raise SystemExit(f'Applications panel tuning: backdrop warm-up anchor missing: {old.strip()[:80]!r}')
+        s = s.replace(old, new, 1)
 if s != original:
     path.write_text(s)
