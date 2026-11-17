@@ -1,5 +1,7 @@
 # Silky Omarchy
 
+简体中文 | [English](README.en.md)
+
 一套受 macOS 启发的 [Omarchy](https://omarchy.org/) Linux 体验优化。每一项都记录了设计思路、配置、验证方法和回滚方式，并提供一键安装脚本。
 
 > 想让 AI 编程助手帮你复现？把 [docs/00-ai-reproduction.md](docs/00-ai-reproduction.md) 交给它：里面按模块列出了效果、关键文件、检索关键词、踩过的坑和验证命令。
@@ -16,9 +18,9 @@
 | 04 | macOS Tahoe 主题 | ✅ | 深色 / 浅色主题、Apple 系统色、圆角阴影玻璃、MacTahoe 蓝色文件夹图标、Finder 风格 Nautilus、主题联动、浮动窗口圆形红绿灯 |
 | 05 | 语音浮条 | ✅ | WowType 语音输入的毛玻璃声波浮条；修复与 Superwhisper 抢右 Alt |
 | 06 | 终端 | ✅ | zsh + Oh My Zsh（ys）、历史建议、语法高亮、增强补全，保持快速启动 |
-| 07 | 锁屏与开机界面 | 🧪 开机界面待重启验证 | 快捷键、菜单、闲置、合盖都改用 MacLock；开机磁盘解锁界面做成 macOS FileVault 风格 |
+| 07 | 锁屏与开机界面 | ✅ | 快捷键、菜单、闲置、合盖都改用 MacLock；开机磁盘解锁界面做成 macOS FileVault 风格 |
 | 08 | 文件管理器右键 | ✅ | Nautilus 右键「复制路径」「在终端打开」「解压到此处 / 解压到…」 |
-| 09 | 候选框毛玻璃 | 🧪 微信内待重启验证 | WowType 候选框圆角毛玻璃皮肤，跟随深色/浅色自动切换；修复微信里候选条重影 |
+| 09 | 候选框毛玻璃 | ✅ | WowType 候选框圆角毛玻璃皮肤，跟随深色/浅色自动切换；修复微信里候选条重影 |
 | 10 | 快捷键 | ✅ | MacShell 与 Omarchy 冲突的键只留 MacShell，Omarchy 的动作挪到空闲键；Super+K 换成可搜索、可直接执行的 macOS 27 风格快捷键面板 |
 | 11 | 菜单玻璃 | ✅ | Omarchy 自带菜单（Super+Esc、Super+Ctrl+M、剪贴板、表情）改成 macOS 27 毛玻璃，跟随日间 / 暗色实时切换 |
 
@@ -58,16 +60,16 @@ patches/          MacShell 0.5.1 + MacLock 的补丁
 plugins/          Hyprland C++ 插件 silky-gestures
 themes/           Omarchy 主题 macos-tahoe-dark / macos-tahoe-light
 hooks/            Omarchy theme-set 钩子
-bin/              silky-lock、silky-sleep-lock（MacLock 锁屏入口）
+bin/              silky-lock、silky-sleep-lock（MacLock 锁屏入口）、silky-menu-glass
 config/omarchy/   Omarchy shell 插件 silky.idle 与菜单覆盖
-config/systemd/   用户服务 silky-sleep-lock、silky-ime-theme
+config/systemd/   用户服务 silky-sleep-lock、silky-ime-theme、silky-menu-glass
 plymouth/         开机解锁界面主题与预览图
 voice-overlay/    WowType 语音浮条（Quickshell + D-Bus 桥）
 keys-panel/       Super+K 快捷键面板 Silky Keys（Quickshell）
 nautilus/         Nautilus 右键菜单扩展（nautilus-python）
 wowtype-glass/    WowType 候选框 Silky Glass 皮肤生成器与深浅色切换脚本
 scripts/          安装脚本
-docs/             逐项说明
+docs/             逐项说明（英文版在 docs/en/）
 ```
 
 ## 配置原则

@@ -1,5 +1,7 @@
 # 10 · 快捷键：MacShell 优先，Super+K 换成可搜索的 macOS 面板
 
+简体中文 | [English](en/10-shortcuts.md)
+
 ## 目标
 
 1. MacShell 和 Omarchy 抢同一个键时，只保留 MacShell 的功能；Omarchy 原来的动作挪到没人用的键上，不丢功能。

@@ -1,5 +1,7 @@
 # 09 · WowType 候选框：圆角毛玻璃与微信重影修复
 
+简体中文 | [English](en/09-wowtype-glass.md)
+
 ```bash
 ./scripts/install-wowtype-glass.sh
 ```
@@ -27,14 +29,16 @@ Hyprland 默认给弹出层做淡入淡出（`fadePopups` 继承 `fade`），旧
 
 | 主题 | 底色 | 选中 |
 | --- | --- | --- |
-| `silky-glass-dark` | 74% 不透明深灰 + 细亮边 | macOS 蓝 `#0A84FF` 圆角胶囊 |
-| `silky-glass-light` | 84% 不透明近白 + 细暗边 | macOS 蓝 `#007AFF` 圆角胶囊 |
+| `silky-glass-dark` | 40% 不透明深灰 + 细亮边 | macOS 蓝 `#0A84FF` 圆角胶囊 |
+| `silky-glass-light` | 50% 不透明近白 + 细暗边 | macOS 蓝 `#007AFF` 圆角胶囊 |
 
-- 高亮贴边：外框和高亮之间不留间距（`PAD = 0`），外框圆角等于高亮圆角（都是 9px，`R = HR + PAD`）。选中第一个候选时，蓝色高亮正好盖住外框左端的圆角，两者是同一条弧线；高度由文字上下边距 6px 撑开。圆角和半透明画在 PNG 九宫格里：微信内置的 fcitx5-qt 只认图片、纯色和边距，不认模糊、深色主题、强调色等键。
+- 高亮贴边：外框和高亮之间不留间距（`PAD = 0`），外框圆角等于高亮圆角（都是 8px，`R = HR + PAD`）。选中第一个候选时，蓝色高亮正好盖住外框左端的圆角，两者是同一条弧线。
+- 高亮的边距必须等于文字边距：fcitx5 的 `[InputPanel/Highlight/Margin]` 有两个作用，一是高亮从文字向外扩出的距离，二是 `highlight.png` 的九宫格边框。它比 `[InputPanel/TextMargin]` 大时，高亮会溢出候选框被裁掉，圆角就变成了方角（试过高亮边距 11、文字上下边距 6，就是这样）。现在两者都是左右 11、上下 8，圆角半径不超过上下边距（`HR <= TM_Y`）。系统自带的 default 和 wowtype 主题也是两者相等。
+- 玻璃感：底色不透明度原来是 74%（深色），模糊几乎透不出来，背后是深色时看上去就是一块灰板。现在深色 40%、浅色 50%，比 Omarchy 菜单玻璃（55% / 68%）更透一些：候选条很小，透得多才看得出玻璃。圆角和半透明画在 PNG 九宫格里：微信内置的 fcitx5-qt 只认图片、纯色和边距，不认模糊、深色主题、强调色等键。
 - 磨砂由 Hyprland 提供：`decoration.blur.input_methods`（fcitx5 自己的候选框）和 `decoration.blur.popups`（微信的候选条），
   `ignorealpha = 0.1` 让透明圆角外侧不被模糊。
 - 想改颜色、圆角：改 `build-themes.py` 顶部的 `R`、`HR` 和 `SKINS`，重新运行安装脚本。
-- 比例：fcitx5 默认字体 `Sans 10` 配原来 7+5 px 的上下边距，候选条显得又高字又小。现在字体是 `Inter 12`（和 Omarchy 菜单同款，中文自动回退；没装 Inter 就用 `Sans 12`），高亮贴边、文字上下边距 6，整条更紧凑、字更大。字体由 `silky-ime-theme` 写进 `classicui.conf` 的 `Font=`，只在你没自己设置 `Font=` 时才写；想换字号直接改那一行即可，之后不会被覆盖。
+- 比例：fcitx5 默认字体 `Sans 10` 配原来 7+5 px 的上下边距，候选条显得又高字又小。现在字体是 `Inter 12`（和 Omarchy 菜单同款，中文自动回退；没装 Inter 就用 `Sans 12`），高亮贴边、文字上下边距 8，整条更紧凑、字更大。字体由 `silky-ime-theme` 写进 `classicui.conf` 的 `Font=`，只在你没自己设置 `Font=` 时才写；想换字号直接改那一行即可，之后不会被覆盖。
 
 ## 深色 / 浅色自动切换
 

@@ -1,5 +1,7 @@
 # 06 · 终端：zsh + Oh My Zsh（ys 主题）
 
+简体中文 | [English](en/06-terminal.md)
+
 ## 目标
 
 - 用 zsh 替代 bash，Oh My Zsh 的 `ys` 主题（两行提示符：用户@主机、路径、git 分支与状态、时间）

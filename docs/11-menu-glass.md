@@ -1,5 +1,7 @@
 # 11 · Omarchy 自带菜单：macOS 27 玻璃质感，跟随日间 / 暗色
 
+简体中文 | [English](en/11-menu-glass.md)
+
 ## 目标
 
 Omarchy 自己的菜单（Super+Esc 系统菜单、Super+Ctrl+M Omarchy 菜单，以及继承同一套样式的剪贴板、表情面板）原来是不透明的深色卡片，背后整屏压暗，字体是终端等宽字体。改成和 MacShell 一样的样式：

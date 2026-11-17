@@ -1,5 +1,7 @@
 # 01 · 触控板手势
 
+简体中文 | [English](en/01-touchpad-gestures.md)
+
 ## 目标
 
 - 双指滚动：使用 macOS 式自然滚动，内容跟随手指方向移动

@@ -1,5 +1,7 @@
 # 07 · 统一用 MacLock 锁屏，开机解锁界面换成 macOS 风格
 
+简体中文 | [English](en/07-lock-and-boot.md)
+
 ## 目标
 
 - 停用 Omarchy 自带的锁屏，所有锁屏都用 MacShell 的 MacLock
@@ -83,6 +85,8 @@ plymouth-set-default-theme
 ```
 
 预期：`silky.idle` 启用、`omarchy.idle` 停用；`silky-sleep-lock` 为 active、`omarchy-sleep-lock` 为 inactive；抑制锁列表里有 “Silky Omarchy”；Plymouth 默认主题为 `silky-maclock`。
+
+锁屏和开机界面都已在真机上确认。
 
 ## 回滚
 

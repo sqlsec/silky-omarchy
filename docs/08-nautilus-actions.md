@@ -1,5 +1,7 @@
 # 08 · 文件管理器右键菜单
 
+简体中文 | [English](en/08-nautilus-actions.md)
+
 运行 `./scripts/install-nautilus-actions.sh`，然后关闭所有文件窗口并执行 `nautilus -q`，重新打开文件管理器。脚本将扩展安装到 `~/.local/share/nautilus-python/extensions/`，更新时备份已有的不同版本；需要 `nautilus-python` 和 `xdg-terminal-exec`。
 
 - 右键本地文件或文件夹可选择「复制路径」；多选时每行一个路径。

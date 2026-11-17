@@ -1,5 +1,7 @@
 # 04 · macOS Tahoe 主题（深色 / 浅色）
 
+简体中文 | [English](en/04-macos-theme.md)
+
 ## 目标
 
 - 两个 Omarchy 主题：`macos-tahoe-dark` 和 `macos-tahoe-light`，配色取自 Apple 系统色板

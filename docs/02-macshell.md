@@ -1,5 +1,7 @@
 # 02 · MacShell 汉化、实时玻璃与 GPU 优化
 
+简体中文 | [English](en/02-macshell.md)
+
 ## 目标
 
 - 为 MacShell 0.5.1 增加简体中文，并补齐菜单、设置和系统操作中的遗漏文本
