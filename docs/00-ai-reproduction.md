@@ -1,5 +1,7 @@
 # 00 · 给 AI 编程助手的复现索引
 
+> 全部界面与交互改动的总览见 [12 · UI 交互优化总览](12-ui-interactions.md)。
+
 把这份文件连同仓库地址交给 Claude Code、Codex、Cursor 等 AI 编程助手，它就能按模块复现这套优化，不需要你逐条解释。每个模块列出：要达到的效果、关键文件、检索关键词、容易踩的坑、验证命令。细节见对应的编号文档。
 
 ## 环境前提
@@ -25,6 +27,8 @@ omarchy theme set macos-tahoe-dark
 ./scripts/install-zsh.sh                      # 06：终端
 ./scripts/install-maclock.sh                  # 07：所有锁屏改用 MacLock
 ./scripts/install-boot-screen.sh              # 07：macOS 风格开机解锁界面
+./scripts/install-nautilus-actions.sh         # 08：Nautilus 右键菜单
+./scripts/install-wowtype-glass.sh            # 09：WowType 候选框皮肤
 ./scripts/install-shortcuts.sh                # 10：快捷键冲突 + Super+K 面板
 ./scripts/install-menu-glass.sh               # 11：Omarchy 菜单玻璃 + 深浅色
 ```
@@ -106,6 +110,21 @@ omarchy theme set macos-tahoe-dark
 - **坑**：睡眠锁服务锁好后必须立即退出释放 delay 抑制锁，否则 logind 要等到超时才睡眠；Plymouth 在 initramfs 里没有中文字体，文字要预先渲染成图片；高分屏要在 `plymouthd.conf` 设 `DeviceScale=1` 并按原生分辨率出图，否则 Plymouth 按 2 倍缩放整帧放大、发虚；`omarchy-plymouth-set-by-theme` 会把主题改回 `omarchy`
 - **验证**：`omarchy plugin list | grep idle`、`systemctl --user is-active silky-sleep-lock`、`plymouth-set-default-theme`
 - **状态**：开机界面需要重启后确认
+
+## 08 Nautilus 右键菜单
+
+- **效果**：本地文件 / 文件夹右键「复制路径」（多选每行一个）、「在终端打开」、压缩包「解压到此处 / 解压到…」
+- **文件**：`nautilus/silky_actions.py` → `~/.local/share/nautilus-python/extensions/`
+- **关键词**：`nautilus-python`、`Nautilus.MenuProvider`、`xdg-terminal-exec`
+- **验证**：`nautilus -q` 后重新打开，右键看菜单
+
+## 09 WowType 候选框
+
+- **效果**：圆角毛玻璃候选框，深浅色两套皮肤随 `color-scheme` 切换；Inter 12 号字；高亮贴边，与外框共用 9 px 圆角；微信内候选条不再重影
+- **文件**：`wowtype-glass/build-themes.py`（生成 fcitx5 主题 PNG + theme.conf）、`wowtype-glass/silky-ime-theme` + `config/systemd/silky-ime-theme.service`、`config/hypr/silky-ime.lua`
+- **关键词**：fcitx5 classicui `Theme=`、`Font=`、`[InputPanel/ContentMargin]`、九宫格 `Margin`；微信内置 fcitx5-qt 只认图片 / 纯色 / 边距；Hyprland `decoration.blur.input_methods`、`fadePopups` 关掉防重影
+- **坑**：外框圆角必须 = 高亮圆角 + 内边距（`R = HR + PAD`），否则拐角不协调；微信要重启才换皮肤
+- **验证**：`grep -E '^(Theme|Font)=' ~/.config/fcitx5/conf/classicui.conf`
 
 ## 10 快捷键
 
