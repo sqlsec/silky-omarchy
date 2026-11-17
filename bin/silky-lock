@@ -1,0 +1,44 @@
+#!/bin/bash
+# Silky Omarchy: lock with MacLock instead of Omarchy's own lock screen.
+#
+#   silky-lock              lock now (Super+L, Super+Ctrl+L, the menu, idle)
+#   silky-lock --is-locked  exit 0 while MacLock holds the session
+#   silky-lock --sleep      lock before suspend and wait until it is up (run by silky-sleep-lock)
+set -u
+
+maclock_dir="$HOME/.config/quickshell/MacLock"
+
+state() { timeout 1 qs -c MacLock ipc call lockscreen state 2>/dev/null; }
+
+case "${1:-}" in
+  --is-locked)
+    [[ $(state) == busy ]]
+    exit
+    ;;
+esac
+
+sh "$maclock_dir/lock-via-ipc.sh" >/dev/null 2>&1 &
+
+# The same housekeeping omarchy-system-lock does: default keyboard layout, lock 1Password, stop the screensaver.
+hyprctl switchxkblayout all 0 >/dev/null 2>&1
+if pgrep -x 1password >/dev/null; then
+  timeout --kill-after=1s 3s 1password --lock >/dev/null 2>&1 &
+fi
+pkill -x ttfx 2>/dev/null
+pkill -f '[o]rg.omarchy.screensaver' 2>/dev/null
+
+if [[ ${1:-} == --sleep ]]; then
+  # logind only waits a few seconds for a delay inhibitor: poll until MacLock reports the lock, then give the
+  # lock surface a moment to be drawn so the screen never shows the desktop on wake.
+  for _ in $(seq 1 60); do
+    if [[ $(state) == busy ]]; then
+      sleep 0.4
+      exit 0
+    fi
+    sleep 0.1
+  done
+  omarchy-notification-send -u critical "MacLock did not lock before suspend" >/dev/null 2>&1 || true
+  exit 1
+fi
+wait
+exit 0

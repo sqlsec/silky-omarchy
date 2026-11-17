@@ -15,9 +15,13 @@
 
 - `I18n.js` 与 `lang/zh-CN.js`：中文语言注册与完整翻译
 - `AboutApp.qml`、`assets/about-info.sh`：关于页布局及硬件识别
-- `MacBar.qml`：菜单、控制中心的触控与按需实时捕获
-- `MacDock.qml`：Dock 触控与仅捕获相交窗口
+- `MacBar.qml`：菜单、控制中心的触控与按需实时捕获；自动对比度改为事件驱动，不再定时截屏
+- `MacDock.qml`：Dock 触控、仅捕获相交窗口，并且只为已最小化窗口显示缩略图
+- `TouchWindowMove.qml`（新增）及 `AboutApp.qml`、`MacDock.qml`、`ClockApp.qml`、`Installer.qml`：用手指拖动“关于本机”、设置、时钟和安装器窗口
 - `shell.qml`：识别 Omarchy 当前壁纸，并降低窗口几何轮询开销
+- `MacLock/shell.qml`：锁屏同样读取 Omarchy 当前壁纸（图片或视频）
+- `MacBar.qml`：新增 `appearance` IPC，供 macOS Tahoe 主题切换深浅色；电池图标去掉 `%` 并缩窄
+- `macshell.lua`：不再绑定 `PRINT`，避免与 Omarchy 截图冲突
 
 实时玻璃仍需要 CPU 完成 Wayland 窗口枚举和捕获调度，无法做到 100% 零 CPU；实际的 Qt Quick 场景图、模糊、折射和合成通过 Vulkan 在 GPU 上执行。GPU 保持 `simple_ondemand` 动态升频，不强制锁定最高频率。
 
@@ -38,6 +42,20 @@
 
 完成后，从 MacShell 设置的“工具”页面重新启动 MacShell。
 
+### 应用 QML 更新
+
+顶栏和 Dock 共用一个 Quickshell 实例，保存顶栏代码时，自动重载会连带重建 Dock。0.5.1 的 Silky 优化脚本会关闭 QML 文件监听。对正在运行的 0.5.2，可单独应用这项设置：
+
+```bash
+python3 scripts/configure-macshell-reload.py "${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/MacShell/shell.qml"
+```
+
+之后，完成一组文件修改或安装顶栏系统监控后，运行一次：
+
+```bash
+qs ipc -c MacShell call macshell reload
+```
+
 ### 90 Hz 内屏
 
 本机专用显示器配置位于 [`config/hypr/monitor-yoga-slim-7-14q8x9.lua`](../config/hypr/monitor-yoga-slim-7-14q8x9.lua)。将它加入 `~/.config/hypr/monitors.lua`，然后运行：
@@ -49,6 +67,39 @@ hyprctl monitors
 ```
 
 只有面板确实是 `eDP-1` 且支持 `2944x1840@90` 时才应使用该片段。
+
+## 顶栏系统监控
+
+MacShell 0.5.1 和 0.5.2 可单独安装网速、CPU 温度和电池面板。
+
+```bash
+python3 scripts/install-macshell-status.py --check
+python3 scripts/install-macshell-status.py
+```
+
+网速和温度每 1.5 秒采样，面板显示最近约 1 分钟的趋势。点击网速可查看应用流量排行和本机 IPv4 / IPv6，点击地址可复制。应用排行使用当前用户可见、采样时仍存在的 TCP 套接字，UDP 和 QUIC 不计入。代理转发的流量可能显示在代理进程名下。
+
+点击温度可查看实时 CPU 占用最高的 10 个进程，以及显卡、固态硬盘、无线网卡和风扇等硬件概览。硬件概览下方显示整机 CPU、内存和系统盘（`/`）的占用率。进程占用按相邻两次采样的 CPU 时间增量计算，100% 表示占满一个逻辑核心。点击电池图标可查看供电来源、功率、电压、电量、容量、循环次数和健康度，内容随硬件暴露的字段变化。MacShell 运行时每 3 秒记录电池的充放电功率，保留最近约 5 分钟。关闭面板后继续采样，图表按当前充电或电池供电状态切换。Yoga Slim 7 14Q8X9 可在电池面板拖动滑条设置 55%–100% 的充电上限，点「应用」后通过系统授权写入并校验内核回读。右键电池图标可以切换系统提供的电源模式，所选模式由 Omarchy 按外接电源和电池供电分别记忆。右键面板底部还有「显示电量百分比」开关，关掉后电池里只显示电量条，不显示数字；它就是 MacShell 设置里的 `showBatteryPercent`，会保存到 `~/.config/macbar/settings.json`。
+
+托盘图标统一成和菜单栏其他图标一样的单色线条（跟随深浅色）：按托盘项的 id 换成 `SilkyStatusIcon` 里手绘的图标，目前覆盖 Chrome、ChatGPT、Clippy、Netcatty、Remmina、Clash Verge 和微信（id `wechat`，两个叠在一起的对话气泡）。其他应用保持原图标；需要提醒（`NeedsAttention`）时也显示原图标。查托盘 id：`busctl --user get-property <服务> /StatusNotifierItem org.kde.StatusNotifierItem Id`。装完后执行 `qs -c MacShell ipc call macshell reload` 让 MacShell 重新加载。
+
+## 应用程序面板交互
+
+[`tune-apps-panel.py`](../scripts/tune-apps-panel.py)：应用程序面板的鼠标滚轮每格移动 320 像素，触控板和触摸屏松手后使用平滑减速；玻璃面板与图标一起跟随点击或捏合进度渐显。安装脚本会在现有安装上应用这些调整，滚动距离仍受列表边界限制。
+
+### 打开 / 关闭动画
+
+整块面板（玻璃外框和里面的内容）作为一个画面，从 114% 缩小到 100%、从模糊变清晰、从透明变实；每个图标在此之上再叠加一点自己的缩放（外圈先到位）。之前只有图标在缩放，外框只是淡入。实现上外框和内容放进同一个 `appsStage`，只做一次离屏渲染和一次模糊，比原来“外框一层、内容一层再模糊”更省。
+
+动画由一根按真实帧时间推进的弹簧驱动，90 Hz 内屏上实测整个过程平均 11.0 ms / 帧，没有掉帧。另外处理了三处会让它“顿一下”的地方：
+
+| 现象 | 原因 | 处理 |
+| --- | --- | --- |
+| 刚开始动就跳一下 | 开关后的头几帧最贵（打开约 25 ms，关闭时重建离屏层约 20 ms），弹簧按真实时长推进就会多走一截 | 每次启动或反向后的前 3 帧最多推进一个显示帧；关闭时在收到请求的那一帧就建好离屏层 |
+| 登录后第一次打开卡约 200 ms | 着色器、离屏层、图标纹理都在第一帧创建 | Shell 启动 3 秒后以 0.4% 不透明度（低于 8 位色的一个级差，看不见，也不接收输入）预先画一次 |
+| 连续点击 Dock 图标时卡 60–70 ms | 指针焦点在 Dock 和全屏面板之间来回切换，每次回到 Dock 都重建图标的悬停标签（一整个玻璃气泡） | 和 macOS 一样：点过图标后，标签在指针移动 4 px 之前不再出现（[`tune-dock-hover-label.py`](../scripts/tune-dock-hover-label.py)） |
+
+连续快速点击 Dock 的“应用程序”图标时，每一次点击都会让弹簧立即反向（速度连续，不会停顿重来）。这依赖 `silky-gestures` 插件在按键按下时重新确定指针下的窗口，见 [03 · 触控屏工作区手势](03-silky-gestures.md#快速连续点击)。
 
 ## 默认玻璃参数
 
@@ -65,32 +116,149 @@ hyprctl monitors
 
 菜单和控制中心只在可见时捕获，而且只捕获与玻璃区域相交的窗口；Dock 同样只处理其附近窗口。窗口静止或玻璃关闭后，几何轮询会自动降频。
 
-## 验证
+## 鼠标指针周期性卡顿
+
+MacShell 0.5.1 的“自动对比度”每 1.2 秒用 `grim` 截取菜单栏背后的画面，菜单打开时每 0.7 秒再截一次。在 Adreno X1-85 上，每次截屏都会让 Hyprland 主线程停顿 60–110 ms（90 Hz 下约 6 帧），表现为什么都不开、鼠标匀速画圈时指针随机顿一下并漂移。Hyprland 日志里对应的是 libinput 的 `event processing lagging behind by …ms`。
+
+补丁删除了这两个定时器，只在菜单栏背后的内容确实可能变化时重新测量：切换工作区、窗口打开/关闭/移动、全屏切换、壁纸或外观变化，以及菜单打开的那一刻。
+
+截图和录屏本身仍会触发同样的停顿，这是 Hyprland 在该 GPU 上的截屏开销，不在本补丁范围内。
+
+## 打开菜单和控制中心时卡顿
+
+原因同上：自动对比度会在菜单打开的瞬间截一次菜单背后的画面，正好落在弹出动画中间；菜单关闭、窗口改标题等任何窗口信息变化后，还会再截一次菜单栏背后的画面。
+
+补丁做了三处调整：
+
+- 深色模式下菜单文字固定为白色，不再为菜单截屏（测量结果本来就用不上）
+- 只有窗口出现、关闭、移动或改变大小时才重新测量菜单栏，标题和焦点变化不再触发
+- 菜单栏背后只有壁纸时（平时都是如此，菜单栏占用自己的区域），用新增的 `assets/tone-wall.sh` 读取壁纸文件计算亮度，不再截屏；结果按壁纸缓存。只有窗口真的伸到菜单栏下面（浮动窗口、全屏、特殊工作区）或使用视频壁纸时才退回截屏
+
+实测打开控制中心时的停顿从约 76 ms 降到约 19 ms，切换工作区时不再有截屏。剩余的短暂停顿来自实时玻璃对菜单背后窗口的捕获，关闭实时玻璃效果可以进一步消除。
+
+## 重载配置后鼠标设置丢失
+
+MacShell 设置里的鼠标自然滚动、跟踪速度、按键重复和触控板选项是用 `hyprctl eval` 临时写进 Hyprland 的，只在设置变化时写一次。任何一次配置重载（`hyprctl reload`、切换主题、保存配置文件）都会把它们清掉，表现为设置里开着自然滚动，滚轮方向却变回去了。
+
+补丁让 MacBar 在收到 `configreloaded` 事件后重新应用一次这些设置。
+
+## 触控拖动窗口
+
+MacShell 的窗口通过 `startSystemMove()`（即 `xdg_toplevel.move`）拖动。Hyprland 0.57.2 只接受带鼠标按键序列号的移动请求，手指触发的请求会被丢弃，所以触控屏上拖不动。
+
+补丁让原有的拖动处理只响应鼠标和触控板，并新增 `TouchWindowMove.qml` 处理触控屏：手指每移动一次，就通过 Hyprland IPC 把窗口相对移动同样的距离，拖动期间临时关闭该窗口的移动动画，使窗口贴着手指走。可拖动区域与鼠标一致：“关于本机”整个窗口，设置、时钟和安装器的顶部栏。
+
+## 锁屏看不到壁纸
+
+MacLock 只从 MacShell 的 `wallpaperPath` 设置或 `awww query` 读取壁纸。Omarchy 4.x 自己管理桌面壁纸，这两处通常都是空的，锁屏于是只剩纯黑背景。
+
+补丁让 MacLock 在这两处之前先读取 `~/.local/state/omarchy/current/background`：图片作为锁屏背景，视频则作为动态锁屏壁纸（MacShell 自己设置的视频壁纸仍然优先）。
+
+预览锁屏（不会真正锁定）：
 
 ```bash
-tr '\0' '\n' < /proc/$(pgrep -n -f '^qs -c MacShell$')/environ \
-  | grep '^QSG_'
-
-grep -E 'screencopy failure|shader status: 2' \
-  /run/user/$(id -u)/quickshell/by-id/*/log.log
+MACLOCK_PREVIEW=1 qs -c MacLock
 ```
 
-预期环境包含：
+## 重启后菜单栏、Dock 消失，鼠标滚轮方向反了
 
-```text
-QSG_RHI_BACKEND=vulkan
-QSG_RENDER_LOOP=threaded
+MacShell 由 `~/.config/hypr/macshell.lua` 在 Hyprland 启动时拉起，`hyprland.lua` 里需要一段 `-- >>> MacShell (added by install.sh) >>>` 块来加载它。这两者丢失后，当前会话里手动启动的 MacShell 一切正常，但重启后菜单栏和 Dock 都不会出现。
+
+鼠标滚轮的自然滚动是 MacShell 设置里的选项，由 MacShell 启动后通过 `hyprctl eval` 写入 Hyprland。MacShell 没有启动，这个设置也就不存在，滚轮方向回到 Linux 默认。
+
+修复：
+
+- 安装脚本会检查并恢复 `macshell.lua` 和 `hyprland.lua` 中的加载块
+- [`config/hypr/input-touchpad.lua`](../config/hypr/input-touchpad.lua) 直接在 Hyprland 配置中开启鼠标 `natural_scroll`，从登录起就生效，不再依赖 MacShell
+
+检查：
+
+```bash
+grep -n 'hypr.macshell' ~/.config/hypr/hyprland.lua
+pgrep -af '^qs -c MacShell'
+hyprctl getoption input:natural_scroll
 ```
 
-玻璃展开时 Adreno 会按需升频；关闭菜单后捕获停止。日志中不应出现 `screencopy failure` 或着色器状态 `2`。
+## 截图要按两次、还会再弹出一次
 
-## 回滚
+Omarchy 把 `PRINT` 绑定到 omasnap，MacShell 的 `macshell.lua` 又把同一个键绑定到自己的区域截图。按一次键两个截图界面同时启动、互相取消：第一次看起来没反应，接着又弹出另一个截图界面。
 
-退出 MacShell，将最近一次 `silky-backup-*` 中的文件复制回原位置，并恢复：
+补丁删掉了 `macshell.lua` 里的 `PRINT` 绑定，这个键只交给 omasnap。MacShell 自己的截图在控制中心里仍然可以用。
 
-- `~/.config/quickshell/MacShell/`
-- `~/.config/macbar/settings.json`
-- `~/.config/macdock/settings.json`
-- `~/.config/macshell/env`
+## 截图不再发通知
 
-随后重新启动 MacShell。也可以重新安装官方 MacShell 0.5.1 来恢复所有 QML 文件。
+原来每次截图会出现两条通知：omasnap 的“截图已保存并复制”，以及 MacShell 的 “Screenshot saved”。
+
+- Omarchy 默认的截图命令带 `--notify`。[`config/hypr/bindings-screenshot.lua`](../config/hypr/bindings-screenshot.lua) 把 `PRINT` 改为直接运行 `omasnap`：截图照样保存并复制到剪贴板，右下角显示一个和 macOS 一样的浮动预览（7 秒后消失，可拖出或点“编辑”标注），不进通知中心
+- MacShell 的 `screenshotNotify` 设为 `false`
+
+## 电池图标
+
+菜单栏电池改成 macOS 26 的样式：更窄的胶囊（电池本体 24 px，按钮 32 px），里面只有数字，没有 `%`。数字通常只有两位，所以不需要更长。右键电池可以开关数字（见上方「顶栏系统监控」）。
+
+## 桌面不显示图标
+
+MacShell 默认把桌面目录里的文件和文件夹画成桌面图标（`macdock/settings.json` 里的 `desktopIcons`）。安装脚本把它设为 `false`，桌面只显示壁纸。需要时可在 MacShell 设置里重新打开。
+
+## 只保留 MacShell 的 Dock
+
+Omarchy shell 自带一个 Dock（插件 `omarchy.dock`）。MacShell 平时会压住它，但 Omarchy shell 一重启（`omarchy restart shell`、切换插件后）它就会重新出现在屏幕底部，与 MacShell 的 Dock 叠在一起。永久关掉：
+
+```bash
+omarchy plugin disable omarchy.dock
+```
+
+`scripts/install-maclock.sh` 会顺带执行这一步，因为它需要重启 Omarchy shell。
+
+## “关于本机”变宽、打开时白边闪一下
+
+两个问题都出在 Hyprland 窗口规则上，[`config/hypr/silky-macshell-windows.lua`](../config/hypr/silky-macshell-windows.lua) 一条规则解决：
+
+```lua
+o.window("^(org\\.quickshell)$", { float = true, center = true, border_size = 0 })
+```
+
+- **变宽**：Omarchy 的浮动工作区模式会把新打开的窗口统一放大到标准尺寸（最多 1100×760，屏幕的 64%×68%），只有“自己带浮动规则”的应用例外。MacShell 的窗口（关于本机、设置、时钟、安装器，class 都是 `org.quickshell`）不在例外名单里，于是被撑宽。用 `o.window(..., { float = true })` 登记后，Omarchy 就不再改它们的尺寸
+- **白边闪烁**：这些窗口自己画 macOS 风格的边缘，原本是在窗口出现**之后**用定时器（60 ms 一次）通知 Hyprland 去掉 1 px 边框并重新居中，所以打开动画的前几帧能看到 Hyprland 的白色描边，随后突然消失，窗口还会轻微跳一下。现在在窗口创建时就由规则设好无边框、居中，第一帧起就是最终样子
+
+验证方法：用 `wf-recorder` 以 60 fps 录下打开过程，逐帧查看边缘。
+
+注意：规则只对新创建的窗口生效，修改后需要重启 MacShell 一次。
+
+## 崩溃后出现两个菜单栏、两个 Dock
+
+MacShell 崩溃时有两套机制同时把它拉起来：Quickshell 自带的崩溃处理会弹出报告窗口并**自己重新启动一份**（进程名是不带参数的 `/usr/bin/quickshell`，环境里有 `__QUICKSHELL_CRASH_*`），而 `macshell-start` 也会再启动一份。两份各画一套菜单栏和 Dock。
+
+- `~/.config/macshell/env` 加 `QS_DISABLE_CRASH_HANDLER=1`：不弹崩溃窗口、不自行重启，只由 `macshell-start` 安静地重启；崩溃信息仍在 `~/.local/state/macshell/MacShell.log` 和系统核心转储里
+- `macshell-start` 改用 `qs -n -c MacShell`：已有 MacShell 在运行时新启动的直接退出（退出码 0，守护脚本随之安静结束），保证永远只有一份
+
+## Omarchy 菜单里显示 “system.lock”
+
+覆盖菜单项时只写 `action` 会丢掉原来的 `icon` 和 `label`，菜单里就直接显示 id。覆盖时把三者都写上：`"system.lock": {"icon":"󰌾","label":"锁屏","action":"silky-lock"}`。图标是 Nerd Font 私有区字符（这里是 Material Design 的锁 U+F033E，与菜单里其他图标同一套），在终端或脚本里复制时很容易被吞掉变成空字符串，菜单里就只剩文字；写入时用转义（如 Python 的 `"\U000F033E"`）更稳妥，写完可以用 `od -c` 确认。
+
+## 玻璃面板边缘“错位”
+
+菜单栏弹出的面板（日历、控制中心等）边缘会出现一条和背景对不上的深色宽带，看起来像背景偏移了。原因是 Liquid Glass 着色器的边缘折射太强：弹出面板把折射强度放大到基准的 1.6 倍（`liquidglass.frag` 里再乘 1.35），斜面宽 26 px，边缘会把面板外 50–60 px 的背景“折”进来——面板旁边正好有窗口边缘时，就是那条错位的暗带。
+
+补丁把 `MacBar.qml` 里两处弹出面板玻璃的倍数从 1.6 降到 0.6、斜面上限从 26 px 降到 18 px：边缘仍有玻璃厚度和高光，但只偏折约 18 px，与 Apple Liquid Glass 的克制程度接近。Dock 的玻璃不受影响。
+
+日历还需要单独处理：它以右上角为缩放原点，旧代码却从未缩放的左上角截取背景，因此菜单栏尺寸或显示缩放变化后，面板里的壁纸会横向错位。日历现在按实际屏幕矩形取样，并把固定的 42 px 模糊改为最多 18 px、降低染色与折射、把饱和度收回到 1.05。这样仍保留轻微玻璃质感，但底色和面板外的壁纸连续，不再像另贴了一张经过重调色的模糊图。
+
+## 控制中心
+
+[`tune-control-center-glass.py`](../scripts/tune-control-center-glass.py)：分组后的控制中心和菜单栏下拉菜单共用同一套玻璃材质（同一块底板、渐变和描边，以后调一处两边都变）。MacShell 0.5.2 把控制中心固定成深色，浅色外观下也是黑的；现在跟随外观，浅色下是浅色玻璃。
+
+[`tune-display-controls.py`](../scripts/tune-display-controls.py)：控制中心新增「显示」页，入口和「声音」一样（左边点名称进页面，右边直接拖滑条）。页面里有亮度滑条，以及「夜览」和「外观」（深色 / 浅色）两个开关。
+
+## Dock 图标与设置窗口
+
+- [`tune-dock-icons.py`](../scripts/tune-dock-icons.py)：Dock 图标的光学缩放以图标中心为基准，悬停放大时不会往一边偏；旋转（抖动）的支点不变。
+- [`tune-settings-scroll.py`](../scripts/tune-settings-scroll.py)：设置窗口左侧导航列表原来滚轮一格只动几像素。现在每格 140 px，多格累加后逐帧平滑过去；触控板的像素级滚动仍交给列表自己处理，保留原生惯性。
+
+## 焦点切换时玻璃背景跟着刷新
+
+[`tune-glass-stacking.py`](../scripts/tune-glass-stacking.py)：玻璃背后窗口的“指纹”原来只看位置和大小，点击切换浮动窗口的前后顺序时，玻璃里还是旧的叠放顺序。现在把焦点顺序（`focusHistoryID`）也算进去，切换焦点时立即刷新；窗口改标题（终端、浏览器标签页、播放器）依然不会唤醒 60 Hz 刷新。
+
+## 窗口最小化
+
+Silky 不再提供窗口最小化入口（[`disable-minimize.py`](../scripts/disable-minimize.py)）：标题栏仅保留关闭和最大化，MacShell 菜单及客户端请求转发也已关闭。Dock 仍保留恢复先前已最小化窗口的能力。

@@ -1,0 +1,105 @@
+#!/bin/bash
+# Silky Omarchy theme-set hook. Omarchy calls it with the slug of the theme that was just applied.
+#
+# For "macos-tahoe-dark" / "macos-tahoe-light" it switches everything Omarchy's own theming does not reach:
+# the GTK 3 / libadwaita look (Finder-style Nautilus, traffic lights on the left), the macOS cursor, and
+# MacShell's light / dark appearance and icon set. For any other theme it puts those back.
+set -u
+
+theme=${1:-}
+state_dir="$HOME/.local/state/silky-omarchy"
+state_file="$state_dir/macos-theme.previous"
+themes_dir="$HOME/.local/share/themes"
+gtk4_dir="$HOME/.config/gtk-4.0"
+macshell_env="$HOME/.config/macshell/env"
+gtk4_links=(gtk.css gtk-dark.css assets windows-assets)
+
+iface() { gsettings "$1" org.gnome.desktop.interface "${@:2}" 2>/dev/null; }
+wm() { gsettings "$1" org.gnome.desktop.wm.preferences "${@:2}" 2>/dev/null; }
+unquote() { local value=$1; value=${value#\'}; printf '%s' "${value%\'}"; }
+
+# Only ever touch links this hook made: a gtk.css the user wrote themselves is left alone.
+is_our_link() {
+  [[ -L $1 && ( $(readlink -- "$1") == "$themes_dir"/MacTahoe-* || $(readlink -- "$1") == "$themes_dir"/Silky-MacTahoe-* ) ]]
+}
+
+link_gtk4() {
+  local source="$themes_dir/$1/gtk-4.0" name
+  [[ -d $source ]] || return 0
+  mkdir -p "$gtk4_dir"
+  for name in "${gtk4_links[@]}"; do
+    if [[ -e $gtk4_dir/$name ]] && ! is_our_link "$gtk4_dir/$name"; then
+      mv -- "$gtk4_dir/$name" "$gtk4_dir/$name.silky-backup"
+    fi
+    ln -nsf -- "$source/$name" "$gtk4_dir/$name"
+  done
+}
+
+unlink_gtk4() {
+  local name
+  for name in "${gtk4_links[@]}"; do
+    is_our_link "$gtk4_dir/$name" && rm -f -- "$gtk4_dir/$name"
+    if [[ -e $gtk4_dir/$name.silky-backup && ! -e $gtk4_dir/$name ]]; then
+      mv -- "$gtk4_dir/$name.silky-backup" "$gtk4_dir/$name"
+    fi
+  done
+}
+
+set_macshell() {
+  local mode=$1 icons=$2
+  if command -v qs >/dev/null && pgrep -f '^qs -c MacShell$' >/dev/null; then
+    timeout 3 qs -c MacShell ipc call appearance set "$mode" >/dev/null 2>&1 || true
+  fi
+  # The Dock and Spotlight read the icon theme once, at start-up.
+  if [[ -f $macshell_env ]] && grep -q '^export QS_ICON_THEME=MacTahoe' "$macshell_env"; then
+    sed -i "s/^export QS_ICON_THEME=MacTahoe.*/export QS_ICON_THEME=$icons/" "$macshell_env"
+  fi
+}
+
+case "$theme" in
+  macos-tahoe-dark) variant=Dark; mode=dark; icons=MacTahoe-dark ;;
+  macos-tahoe-light) variant=Light; mode=light; icons=MacTahoe-light ;;
+  *) variant= ;;
+esac
+
+if [[ -n $variant ]]; then
+  if [[ ! -f $state_file ]]; then
+    mkdir -p "$state_dir"
+    {
+      printf 'button_layout=%s\n' "$(unquote "$(wm get button-layout)")"
+      printf 'cursor_theme=%s\n' "$(unquote "$(iface get cursor-theme)")"
+      printf 'cursor_size=%s\n' "$(iface get cursor-size)"
+    } > "$state_file"
+  fi
+
+  if [[ -d $themes_dir/MacTahoe-$variant ]]; then
+    iface set gtk-theme "MacTahoe-$variant"
+    if [[ -d $themes_dir/Silky-MacTahoe-$variant/gtk-4.0 ]]; then
+      link_gtk4 "Silky-MacTahoe-$variant"
+    else
+      link_gtk4 "MacTahoe-$variant"
+    fi
+  fi
+  wm set button-layout 'close,maximize:'
+
+  # macOS keeps the same black arrow with a white edge in both appearances.
+  if [[ -d $HOME/.local/share/icons/MacTahoe/cursors ]]; then
+    size=$(iface get cursor-size); size=${size:-24}
+    iface set cursor-theme MacTahoe
+    hyprctl setcursor MacTahoe "$size" >/dev/null 2>&1 || true
+  fi
+
+  set_macshell "$mode" "$icons"
+elif [[ -f $state_file ]]; then
+  button_layout=$(sed -n 's/^button_layout=//p' "$state_file")
+  cursor_theme=$(sed -n 's/^cursor_theme=//p' "$state_file")
+  cursor_size=$(sed -n 's/^cursor_size=//p' "$state_file")
+
+  unlink_gtk4
+  [[ -z $button_layout ]] || wm set button-layout "$button_layout"
+  if [[ -n $cursor_theme ]]; then
+    iface set cursor-theme "$cursor_theme"
+    hyprctl setcursor "${HYPRCURSOR_THEME:-${XCURSOR_THEME:-$cursor_theme}}" "${cursor_size:-24}" >/dev/null 2>&1 || true
+  fi
+  rm -f -- "$state_file"
+fi

@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Silky Omarchy: point WowType / fcitx5 at the Silky Glass skin that matches the system appearance.
+#
+#   silky-ime-theme            apply once (light or dark, from org.gnome.desktop.interface color-scheme)
+#   silky-ime-theme --watch    apply, then follow every light / dark change (run by silky-ime-theme.service)
+#
+# fcitx5's own "follow system dark mode" switch is not used: the fcitx5-qt copy inside WeChat ignores it
+# and only reads Theme=. Rewriting Theme= keeps WeChat and every other app on the same skin.
+set -u
+
+conf="${XDG_CONFIG_HOME:-$HOME/.config}/fcitx5/conf/classicui.conf"
+light=silky-glass-light
+dark=silky-glass-dark
+
+current_mode() {
+  case $(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null) in
+    *dark*) printf dark ;;
+    *) printf light ;;
+  esac
+}
+
+set_key() { # set_key KEY VALUE: replace the key (even if commented out) or append it
+  local key=$1 value=$2
+  if grep -qE "^#? ?$key=" "$conf"; then
+    # Rewrite in place (not a rename) so programs watching the file keep their watch.
+    local text
+    text=$(sed -E "s|^#? ?$key=.*|$key=$value|" "$conf")
+    printf '%s\n' "$text" > "$conf"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$conf"
+  fi
+}
+
+apply() {
+  local mode theme
+  mode=$(current_mode)
+  [[ $mode == dark ]] && theme=$dark || theme=$light
+  mkdir -p "${conf%/*}"
+  [[ -f $conf ]] || : > "$conf"
+  # fcitx5's default Sans 10 is too small for the skin's margins; use the menus' face at 12 unless you set your own.
+  if ! grep -qE '^Font=' "$conf"; then
+    local face=Sans
+    fc-list : family 2>/dev/null | grep -qx Inter && face=Inter
+    set_key Font "\"$face 12\""
+  fi
+  if ! grep -qx "Theme=$theme" "$conf" || ! grep -qx 'UseDarkTheme=False' "$conf"; then
+    set_key Theme "$theme"
+    set_key DarkTheme "$dark"
+    set_key UseDarkTheme False
+  fi
+  busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 \
+    ReloadAddonConfig s classicui >/dev/null 2>&1 || true
+}
+
+apply
+if [[ ${1:-} == --watch ]]; then
+  gsettings monitor org.gnome.desktop.interface color-scheme | while read -r _; do apply; done
+fi

@@ -1,0 +1,36 @@
+diff --git i/src/evdev-mt-touchpad-gestures.c w/src/evdev-mt-touchpad-gestures.c
+index ae42b51..d8b6437 100644
+--- i/src/evdev-mt-touchpad-gestures.c
++++ w/src/evdev-mt-touchpad-gestures.c
+@@ -1136,13 +1136,6 @@ tp_gesture_handle_event_on_state_3fg_drag_start(struct tp_dispatch *tp,
+ 	}
+ }
+ 
+-static void
+-tp_gesture_set_3fg_drag_timer(struct tp_dispatch *tp, usec_t time)
+-{
+-	tp->gesture.drag_3fg_release_time = time;
+-	libinput_timer_set(&tp->gesture.drag_3fg_timer, usec_add_millis(time, 700));
+-}
+-
+ static void
+ tp_gesture_handle_event_on_state_3fg_drag(struct tp_dispatch *tp,
+ 					  enum gesture_event event,
+@@ -1161,10 +1154,13 @@ tp_gesture_handle_event_on_state_3fg_drag(struct tp_dispatch *tp,
+ 		tp->gesture.state = GESTURE_STATE_NONE;
+ 		break;
+ 	case GESTURE_EVENT_END:
+-		/* If the gesture ends we start the timer so we
+-		 * can keep dragging */
+-		tp_gesture_set_3fg_drag_timer(tp, time);
+-		tp->gesture.state = GESTURE_STATE_3FG_DRAG_RELEASED;
++		/* Release as soon as all fingers lift, allowing the next
++		 * gesture to be recognised without a drag-lock interval. */
++		evdev_pointer_notify_button(tp->device,
++					    time,
++					    evdev_usage_from(EVDEV_BTN_LEFT),
++					    LIBINPUT_BUTTON_STATE_RELEASED);
++		tp->gesture.state = GESTURE_STATE_NONE;
+ 		break;
+ 	case GESTURE_EVENT_FINGER_SWITCH_TIMEOUT:
+ 		if (tp->gesture.finger_count_pending < 2) {

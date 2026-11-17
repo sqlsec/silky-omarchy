@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Silky Omarchy: Omarchy's own menus (Super+Esc system menu, Super+Ctrl+M Omarchy menu, clipboard, emojis) in
+# MacShell's macOS 27 glass, light or dark with the system appearance.
+#
+#   silky-menu-glass            apply once (light or dark, from org.gnome.desktop.interface color-scheme)
+#   silky-menu-glass --watch    apply, then follow every light / dark change (run by silky-menu-glass.service)
+#   silky-menu-glass --remove   take the glass out again
+#
+# It writes a marked block into ~/.config/omarchy/shell.toml, the machine-level override the Omarchy shell layers
+# over the theme and re-reads live. The blur behind the card comes from Hyprland (hypr/silky-menu-glass.lua).
+# color-scheme is set both by MacShell (Settings → Appearance, including Auto) and by `omarchy theme set`.
+set -u
+
+conf="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/shell.toml"
+macshell_settings="${XDG_CONFIG_HOME:-$HOME/.config}/macbar/settings.json"
+begin='# >>> silky-menu-glass (managed by silky-menu-glass; edits inside are overwritten) >>>'
+end='# <<< silky-menu-glass <<<'
+
+current_mode() {
+  case $(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null) in
+    *dark*) printf dark ;;
+    *) printf light ;;
+  esac
+}
+
+# MacShell's accent colour (Settings → Appearance), so the selected row matches Spotlight and the menus up top.
+accent() {
+  local a=""
+  [[ -f $macshell_settings ]] && a=$(jq -r '.accent // empty' "$macshell_settings" 2>/dev/null)
+  [[ $a =~ ^#[0-9A-Fa-f]{6}$ ]] && printf '%s' "$a" || printf '#0a84ff'
+}
+
+block() {
+  local mode=$1 acc
+  acc=$(accent)
+  if [[ $mode == dark ]]; then
+    # Smoky glass: dark tint over the blur, hairline white rim.
+    local bg='#1c1c1e' bga=0.55 fg='#f5f5f7' rim='#ffffff' rima=0.14
+  else
+    # Frosted white glass, dark text, a faint dark rim so it still reads on white windows.
+    local bg='#f7f7f9' bga=0.68 fg='#1d1d1f' rim='#000000' rima=0.09
+  fi
+  local section
+  for section in menu launcher; do
+    cat <<EOF
+[$section]
+background                = "$bg"
+background-alpha          = $bga
+text                      = "$fg"
+border                    = "$rim"
+border-alpha              = $rima
+border-width              = 1
+scrim                     = "#000000"
+scrim-alpha               = 0.0
+selected-background       = "$acc"
+selected-background-alpha = 1.0
+selected-text             = "#ffffff"
+selected-border           = "$acc"
+selected-border-alpha     = 0.0
+EOF
+  done
+}
+
+strip() { # the file without our block
+  [[ -f $conf ]] || return 0
+  awk -v b="$begin" -v e="$end" '$0 == b { skip = 1; next } $0 == e { skip = 0; next } !skip' "$conf"
+}
+
+write() { # in place, not a rename, so the shell's file watch keeps working
+  local text=$1
+  mkdir -p "${conf%/*}"
+  [[ -f $conf && $(cat "$conf") == "$text" ]] && return 0
+  printf '%s\n' "$text" > "$conf"
+}
+
+apply() {
+  local rest
+  rest=$(strip)
+  write "$(printf '%s\n%s\n%s%s' "$begin" "$(block "$(current_mode)")" "$end" "${rest:+$'\n'$rest}")"
+}
+
+case ${1:-} in
+  --remove)
+    rest=$(strip)
+    if [[ -z ${rest//[$'\n ']/} ]]; then rm -f "$conf"; else write "$rest"; fi
+    ;;
+  --watch)
+    apply
+    # The accent can change too; re-check it with every appearance change and once a minute.
+    { gsettings monitor org.gnome.desktop.interface color-scheme & while sleep 60; do echo tick; done; } |
+      while read -r _; do apply; done
+    ;;
+  *)
+    apply
+    ;;
+esac

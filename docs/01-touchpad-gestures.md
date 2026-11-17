@@ -34,7 +34,7 @@ hl.config({
 hl.gesture({ fingers = 4, direction = "horizontal", action = "workspace" })
 ```
 
-`natural_scroll = true` 只改变触控板滚动方向，不影响外接鼠标。双指向上移动时，页面内容也会向上移动。`drag_3fg = 1` 表示使用三指拖移；值 `2` 会改用四指，与四指工作区手势冲突，因此不要使用。
+`touchpad.natural_scroll = true` 改变触控板滚动方向：双指向上移动时，页面内容也会向上移动。外层的 `input.natural_scroll = true` 让鼠标滚轮也用同样的方向。它原本由 MacShell 启动后临时写入，MacShell 没启动时就会失效，所以直接写进 Hyprland 配置。`drag_3fg = 1` 表示使用三指拖移；值 `2` 会改用四指，与四指工作区手势冲突，因此不要使用。
 
 ### 工作区过渡动画
 
@@ -63,6 +63,7 @@ hl.animation({
 hyprctl reload
 hyprctl configerrors
 hyprctl getoption input:touchpad:natural_scroll
+hyprctl getoption input:natural_scroll
 hyprctl getoption input:touchpad:drag_3fg
 hyprctl animations
 ```
