@@ -12,19 +12,23 @@ import pathlib
 import subprocess
 import sys
 
-HR = 9   # highlight radius (logical px)
-PAD = 0  # gap between the panel edge and the highlight ([InputPanel/ContentMargin])
+HR = 8     # highlight radius (logical px)
+PAD = 0    # gap between the panel edge and the highlight ([InputPanel/ContentMargin])
+TM_X = 11  # text margin left / right: room around each candidate
+TM_Y = HR  # text margin top / bottom
+# fcitx5 draws the highlight over the candidate's text-margin box and uses [InputPanel/Highlight/Margin] both as
+# that box's size and as the 9-slice border of highlight.png, so it must equal TextMargin, and the corner radius
+# must fit inside it (HR <= TM_Y). A larger highlight margin overflows the panel and the clip squares the corners.
 # The highlight fills the bar edge to edge: on the first (or last) candidate it lies exactly over the panel's
-# rounded end, so the two corners are one curve. R = HR + PAD keeps that true if PAD is ever raised again
-# (then the corners stay concentric instead).
+# rounded end, so the two corners are one curve. R = HR + PAD keeps them concentric if PAD is ever raised again.
 R = HR + PAD
 
 SKINS = {
     "silky-glass-dark": {
         "name": "Silky Glass Dark",
-        "panel": "rgba(38,38,42,0.74)",
-        "rim": "rgba(255,255,255,0.11)",
-        "sheen": "rgba(255,255,255,0.03)",
+        "panel": "rgba(30,30,34,0.40)",
+        "rim": "rgba(255,255,255,0.16)",
+        "sheen": "rgba(255,255,255,0.06)",
         "accent": "#0A84FF",
         "text": "#F5F5F7",
         "comment": "#A1A1A6",
@@ -35,7 +39,7 @@ SKINS = {
     },
     "silky-glass-light": {
         "name": "Silky Glass Light",
-        "panel": "rgba(252,252,254,0.84)",
+        "panel": "rgba(250,250,252,0.50)",
         "rim": "rgba(0,0,0,0.10)",
         "sheen": "rgba(255,255,255,0.55)",
         "accent": "#007AFF",
@@ -58,7 +62,7 @@ def panel_svg(s):
 
 
 def highlight_svg(s):
-    size = 2 * HR + 10
+    size = 2 * max(TM_X, TM_Y) + 10
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}">
   <rect width="{size}" height="{size}" rx="{HR}" fill="{s['accent']}"/>
 </svg>"""
@@ -79,7 +83,7 @@ def radio_svg(s):
 
 def theme_conf(s):
     pm = R + 2  # 9-slice margin: keeps the whole corner (and rim) out of the stretched part
-    hm = HR + 2
+    hm_x, hm_y = TM_X, TM_Y
     return f"""[Metadata]
 Name={s['name']}
 Version=1
@@ -107,10 +111,10 @@ Top={PAD}
 Bottom={PAD}
 
 [InputPanel/TextMargin]
-Left=11
-Right=11
-Top=6
-Bottom=6
+Left={TM_X}
+Right={TM_X}
+Top={TM_Y}
+Bottom={TM_Y}
 
 [InputPanel/Background]
 Image=panel.png
@@ -125,10 +129,10 @@ Bottom={pm}
 Image=highlight.png
 
 [InputPanel/Highlight/Margin]
-Left={hm}
-Right={hm}
-Top={hm}
-Bottom={hm}
+Left={hm_x}
+Right={hm_x}
+Top={hm_y}
+Bottom={hm_y}
 
 [InputPanel/PrevPage]
 Image=prev.png
