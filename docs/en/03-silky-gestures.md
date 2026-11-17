@@ -30,6 +30,7 @@ So this is done by a small Hyprland plugin: [`plugins/silky-gestures/main.cpp`](
 | Either touchscreen swipe past the end | Resistance, spring back on release |
 | Four- or five-finger pinch on touchpad / touchscreen | Opens MacShell's Applications panel (Launchpad) |
 | Four- or five-finger spread on touchpad / touchscreen | Closes the Applications panel |
+| Four fingers up / down on the touchpad | MacShell window overview: every window of the workspace / of the current app, following the fingers (see [13](13-window-overview.md)) |
 | Rapid clicks without moving the pointer, where each click changes which layer takes input (the Dock's Applications icon) | Every click takes effect |
 
 Details:

@@ -12,7 +12,7 @@ To see every interface and interaction change grouped by where you feel it (menu
 
 | # | Module | Status | What it does |
 | --- | --- | --- | --- |
-| 01 | Touchpad | ✅ | Natural scrolling (touchpad and mouse), three-finger drag, four-finger swipe between workspaces |
+| 01 | Touchpad | ✅ | Natural scrolling (touchpad and mouse), three-finger drag, four-finger swipe between workspaces (four fingers up / down: see 13) |
 | 02 | MacShell | ✅ | Simplified Chinese, compact "About This Mac", Vulkan live glass, stutter fixes, network / temperature / battery panels, monochrome tray icons, battery pill with a percentage switch, Control Center "Display" page, Dock and Applications panel animations, screenshots without duplicates or notifications, lock-screen wallpaper, autostart fixes |
 | 03 | Touchscreen gestures | ✅ | Rubber-band at the ends, three-finger and edge swipes on the touchscreen, touch drag / pinch-resize of floating windows (Hyprland plugin) |
 | 04 | macOS Tahoe theme | ✅ | Dark / light themes, Apple system colors, rounded shadowed glass, MacTahoe blue folder icons, Finder-style Nautilus, theme sync, round traffic lights on floating windows |
@@ -23,6 +23,7 @@ To see every interface and interaction change grouped by where you feel it (menu
 | 09 | Frosted candidate window | ✅ | Rounded frosted WowType candidate skin that follows dark/light mode; fixes the ghosting candidate bar in WeChat |
 | 10 | Shortcuts | ✅ | Keys MacShell and Omarchy both use go to MacShell only, Omarchy's actions move to free keys; Super+K becomes a searchable macOS 27-style shortcut panel that runs what you pick |
 | 11 | Menu glass | ✅ | Omarchy's own menus (Super+Esc, Super+Ctrl+M, clipboard, emoji) become macOS 27 frosted glass that switches light / dark live |
+| 13 | Window overview | ✅ | Four fingers up on the touchpad shows every window of the workspace, four fingers down every window of the current app; linear, follows the fingers, interruptible and reversible (plugin + MacShell component) |
 
 ## Quick start
 
@@ -31,6 +32,7 @@ Requirements: Omarchy 4.x (Hyprland 0.57, Lua config) with MacShell 0.5.1 instal
 ```bash
 ./scripts/install-macshell-optimizations.sh
 ./scripts/install-silky-gestures.sh
+python3 scripts/install-macshell-overview.py
 ./scripts/install-macos-theme.sh && omarchy theme set macos-tahoe-dark
 ./scripts/install-voice-overlay.sh
 ./scripts/install-zsh.sh
@@ -54,7 +56,7 @@ Every script backs up the files it changes first. After installing or upgrading,
 
 ```text
 config/hypr/      Hyprland Lua snippets (touchpad, animations, monitors, screenshot key, plugin loading, voice overlay, shortcuts)
-config/macshell/  MacShell glass settings and GPU environment variables
+config/macshell/  MacShell glass settings, GPU environment variables, window overview component
 config/zsh/       ~/.zshrc
 patches/          Patches for MacShell 0.5.1 and MacLock
 plugins/          Hyprland C++ plugin silky-gestures
@@ -94,3 +96,4 @@ docs/             One document per module (English in docs/en/)
 - [10 · Shortcuts: MacShell first, searchable Super+K panel](docs/en/10-shortcuts.md)
 - [11 · Omarchy's own menus: macOS 27 glass, light / dark](docs/en/11-menu-glass.md)
 - [12 · UI interaction overview](docs/en/12-ui-interactions.md)
+- [13 · Four fingers up / down: window overview](docs/en/13-window-overview.md)

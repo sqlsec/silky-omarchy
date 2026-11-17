@@ -23,6 +23,7 @@ A general prompt for the AI:
 ```bash
 ./scripts/install-macshell-optimizations.sh   # 02: MacShell patch (MacShell 0.5.1 must be installed first)
 ./scripts/install-silky-gestures.sh           # 03: workspace gesture plugin
+python3 scripts/install-macshell-overview.py  # 13: four fingers up / down window overview (needs 02, 03)
 ./scripts/install-macos-theme.sh              # 04: macOS Tahoe theme
 omarchy theme set macos-tahoe-dark
 ./scripts/install-voice-overlay.sh            # 05: voice overlay
@@ -143,6 +144,14 @@ omarchy theme set macos-tahoe-dark
 - **Keywords**: the `menu.*` keys of Omarchy's `Commons/Color.qml` (`background-alpha`, `scrim-alpha`, `selected-background`…); the user-level `shell.toml` wins over the theme and has `watchChanges: true`; layers `omarchy-menu` / `omarchy-clipboard` / `omarchy-emojis`; `gsettings monitor org.gnome.desktop.interface color-scheme`
 - **Pitfalls**: write the file in place (a rename loses the watch); `ignore_alpha` keeps the transparent full-screen click layer unblurred; the font variable needs `hl.env` and then `omarchy-restart-shell`
 - **Verify**: `./scripts/silky-doctor.sh`; `omarchy-menu toggle system`; switch `color-scheme` and watch the menu change
+
+## 13 Window overview (four fingers up / down)
+
+- **Effect**: four fingers up on the touchpad shows every window of the workspace, four fingers down every window of the current app (other workspaces included), the opposite swipe returns to the desktop; progress is linear and follows the fingers, finishes at a constant speed after release, and can be grabbed again mid-animation to interrupt or reverse; clicking a window focuses it
+- **Files**: `plugins/silky-gestures/main.cpp` (`CSilkyOverviewGesture`), `config/macshell/overview/SilkyOverview.qml`, `scripts/install-macshell-overview.py`
+- **Keywords**: `g_pTrackpadGestures->addGesture(…, 4, TRACKPAD_GESTURE_DIR_VERTICAL, …)`, `ITrackpadGesture::begin/update/end`, `events.config.preReload / reloaded` (a reload clears the gesture table), `removeGesture` (must run before unload), socket2 `silkyoverview>>begin,up|down / update,<travel> / end[,cancel]`, Quickshell `Hyprland.rawEvent`, `SafeCapture` (`want` / `wantLive`), constant-speed `FrameAnimation`, `WlrLayer.Overlay`, `qs -c MacShell ipc call overview …`
+- **Pitfalls**: the plugin loads while a config is being read, so the first `reloaded` must not register it again (flag set in `preReload`); never create the overview window when the swipe begins (Vulkan surface + pipelines: ~0.5 s with no frames); keep it mapped and parked off-screen (margins + empty input region + a `no_anim` layer rule) and draw it once at startup to compile the shaders; use single-frame captures during the gesture and go live only once settled; draw fixed-size thumbnails through `ShaderEffectSource` + the rounded-corner shader `silkyround.frag`, not a per-window layer/MultiEffect whose size changes; no full-screen live blur; the overview's captures must not follow the Dock's "live window capture" switch; do not cover the desktop before the captures have their first frame, but keep the finger travel made meanwhile; stacking order must match Hyprland's; the Dock sits below the overview layer and needs a hole that fades closed
+- **Verify**: `qs -c MacShell ipc call overview begin up` → `update 120` → `state` (`p` is 0.5) → `end`; `socat … .socket2.sock | grep silkyoverview` for real gesture events
 
 ## Miscellaneous
 

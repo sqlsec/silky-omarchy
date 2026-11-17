@@ -12,7 +12,7 @@
 
 | # | 模块 | 状态 | 内容 |
 | --- | --- | --- | --- |
-| 01 | 触控板 | ✅ | 自然滚动（触控板和鼠标）、三指拖移、四指横滑切换工作区 |
+| 01 | 触控板 | ✅ | 自然滚动（触控板和鼠标）、三指拖移、四指横滑切换工作区（四指上下滑见 13） |
 | 02 | MacShell | ✅ | 简体中文、紧凑的“关于本机”、Vulkan 实时玻璃、消除卡顿、网速 / 温度 / 电池监控面板、单色托盘图标、电池胶囊与百分比开关、控制中心「显示」页、Dock 与应用程序面板动画、截图不重复不发通知、锁屏壁纸、开机自启修复 |
 | 03 | 触控屏手势 | ✅ | 到头回弹、触控屏三指滑动与边缘单指滑动、触控拖动/缩放浮动窗口（Hyprland 插件） |
 | 04 | macOS Tahoe 主题 | ✅ | 深色 / 浅色主题、Apple 系统色、圆角阴影玻璃、MacTahoe 蓝色文件夹图标、Finder 风格 Nautilus、主题联动、浮动窗口圆形红绿灯 |
@@ -23,6 +23,7 @@
 | 09 | 候选框毛玻璃 | ✅ | WowType 候选框圆角毛玻璃皮肤，跟随深色/浅色自动切换；修复微信里候选条重影 |
 | 10 | 快捷键 | ✅ | MacShell 与 Omarchy 冲突的键只留 MacShell，Omarchy 的动作挪到空闲键；Super+K 换成可搜索、可直接执行的 macOS 27 风格快捷键面板 |
 | 11 | 菜单玻璃 | ✅ | Omarchy 自带菜单（Super+Esc、Super+Ctrl+M、剪贴板、表情）改成 macOS 27 毛玻璃，跟随日间 / 暗色实时切换 |
+| 13 | 窗口总览 | ✅ | 触控板四指上滑显示当前工作区所有窗口、四指下滑显示当前应用所有窗口；线性跟手、可打断回退（插件 + MacShell 组件） |
 
 ## 快速开始
 
@@ -31,6 +32,7 @@
 ```bash
 ./scripts/install-macshell-optimizations.sh
 ./scripts/install-silky-gestures.sh
+python3 scripts/install-macshell-overview.py
 ./scripts/install-macos-theme.sh && omarchy theme set macos-tahoe-dark
 ./scripts/install-voice-overlay.sh
 ./scripts/install-zsh.sh
@@ -54,7 +56,7 @@
 
 ```text
 config/hypr/      Hyprland Lua 配置片段（触控板、动画、显示器、截图键、插件加载、语音浮条、快捷键）
-config/macshell/  MacShell 玻璃参数与 GPU 环境变量
+config/macshell/  MacShell 玻璃参数、GPU 环境变量、窗口总览组件
 config/zsh/       ~/.zshrc
 patches/          MacShell 0.5.1 + MacLock 的补丁
 plugins/          Hyprland C++ 插件 silky-gestures
@@ -94,3 +96,4 @@ docs/             逐项说明（英文版在 docs/en/）
 - [10 · 快捷键：MacShell 优先，Super+K 可搜索面板](docs/10-shortcuts.md)
 - [11 · Omarchy 自带菜单：macOS 27 玻璃，跟随日间 / 暗色](docs/11-menu-glass.md)
 - [12 · UI 交互优化总览](docs/12-ui-interactions.md)
+- [13 · 四指上滑 / 下滑：窗口总览](docs/13-window-overview.md)
