@@ -2,6 +2,10 @@
 
 hl.config({
   input = {
+    -- Mouse wheel scrolls the same way as the touchpad (macOS "natural" scrolling). Set here so it holds from
+    -- login on, not only once MacShell has started and applied its own setting.
+    natural_scroll = true,
+
     touchpad = {
       -- Content follows the two-finger movement, as on macOS.
       natural_scroll = true,

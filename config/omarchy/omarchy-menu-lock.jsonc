@@ -1,0 +1,2 @@
+  // Silky Omarchy: lock with MacLock.
+  "system.lock": {"icon":"󰌾","label":"锁屏","action":"silky-lock"},

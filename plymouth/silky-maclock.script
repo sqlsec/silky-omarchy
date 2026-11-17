@@ -1,0 +1,183 @@
+# Silky MacLock: the disk unlock screen, laid out exactly like MacLock (MacShell's lock screen).
+#
+# Sharp wallpaper; at the bottom an avatar, the user name and a frosted password pill, using MacLock's own unit
+# (u = screen height / 1200) and spacing. After the password: the logo and a thin progress bar.
+#
+# plymouthd.conf sets DeviceScale=1, so this script works in real device pixels, and every image is drawn by
+# scripts/install-boot-screen.sh at exactly the size it is shown on the built-in panel (BUILD_HEIGHT). Any other
+# screen size is scaled from those, never the built-in one: that is what keeps it sharp on a HiDPI panel.
+
+global.build_height = @BUILD_HEIGHT@;
+
+Window.SetBackgroundTopColor(0.04, 0.04, 0.05);
+Window.SetBackgroundBottomColor(0.04, 0.04, 0.05);
+
+wall.image = Image("background.png");
+avatar.image = Image("avatar.png");
+name.image = Image("name.png");
+entry.image = Image("entry.png");
+hint.image = Image("hint.png");
+bullet.image = Image("bullet.png");
+logo.image = Image("logo.png");
+track.image = Image("track.png");
+fill.original = Image("fill.png");
+
+wall.sprite = Sprite();
+avatar.sprite = Sprite();
+name.sprite = Sprite();
+entry.sprite = Sprite();
+hint.sprite = Sprite();
+logo.sprite = Sprite();
+track.sprite = Sprite();
+fill.sprite = Sprite();
+bullet.sprites = [];
+
+global.layout_width = 0;
+global.layout_height = 0;
+global.k = 1;
+global.progress = 0;
+global.bullet_count = 0;
+
+# Size relative to the panel the images were drawn for. On that panel k is 1 and images are used untouched.
+fun fit(img) {
+  if (global.k == 1) return img;
+  return img.Scale(Math.Int(img.GetWidth() * global.k), Math.Int(img.GetHeight() * global.k));
+}
+
+# MacLock's layout unit: 1.0 on a 1200 px tall screen.
+fun u(v) {
+  return v * global.layout_height / 1200;
+}
+
+fun set_dialog(opacity) {
+  avatar.sprite.SetOpacity(opacity);
+  name.sprite.SetOpacity(opacity);
+  entry.sprite.SetOpacity(opacity);
+  if (global.bullet_count > 0) hint.sprite.SetOpacity(0);
+  else hint.sprite.SetOpacity(opacity);
+  for (i = 0; bullet.sprites[i]; i++) {
+    if (i < global.bullet_count) bullet.sprites[i].SetOpacity(opacity);
+    else bullet.sprites[i].SetOpacity(0);
+  }
+}
+
+fun set_boot(opacity) {
+  logo.sprite.SetOpacity(opacity);
+  track.sprite.SetOpacity(opacity);
+  fill.sprite.SetOpacity(opacity);
+}
+
+# Bullets start where the hint text starts (16u in), like MacLock's password field.
+fun place_bullets() {
+  b = fit(bullet.image);
+  for (i = 0; bullet.sprites[i]; i++) {
+    bullet.sprites[i].SetPosition(global.entry_x + u(16) + i * (b.GetWidth() + u(5)),
+      global.entry_y + global.entry_h / 2 - b.GetHeight() / 2, 30);
+  }
+}
+
+fun update_fill() {
+  w = Math.Int(global.track_w * global.progress);
+  if (w < 2) w = 2;
+  fill.sprite.SetImage(fill.original.Scale(w, global.track_h));
+}
+
+fun layout() {
+  global.layout_width = Window.GetWidth();
+  global.layout_height = Window.GetHeight();
+  global.k = global.layout_height / global.build_height;
+  W = global.layout_width;
+  H = global.layout_height;
+
+  # Wallpaper: cover the screen; on the built-in panel it is already the exact size.
+  if (wall.image.GetWidth() == W && wall.image.GetHeight() == H) wall.sprite.SetImage(wall.image);
+  else {
+    s = H / wall.image.GetHeight();
+    if (W / wall.image.GetWidth() > s) s = W / wall.image.GetWidth();
+    wall.sprite.SetImage(wall.image.Scale(Math.Int(wall.image.GetWidth() * s), Math.Int(wall.image.GetHeight() * s)));
+  }
+  wall.sprite.SetPosition(W / 2 - wall.sprite.GetImage().GetWidth() / 2, H / 2 - wall.sprite.GetImage().GetHeight() / 2, 0);
+
+  a = fit(avatar.image);
+  n = fit(name.image);
+  e = fit(entry.image);
+  h = fit(hint.image);
+  avatar.sprite.SetImage(a);
+  name.sprite.SetImage(n);
+  entry.sprite.SetImage(e);
+  hint.sprite.SetImage(h);
+
+  # MacLock: a column 78u above the bottom, 10u between avatar, name and password field.
+  global.entry_h = e.GetHeight();
+  global.entry_y = H - u(78) - global.entry_h;
+  global.entry_x = W / 2 - e.GetWidth() / 2;
+  name_y = global.entry_y - u(10) - n.GetHeight();
+  avatar_y = name_y - u(10) - a.GetHeight();
+  avatar.sprite.SetPosition(W / 2 - a.GetWidth() / 2, avatar_y, 10);
+  name.sprite.SetPosition(W / 2 - n.GetWidth() / 2, name_y, 10);
+  entry.sprite.SetPosition(global.entry_x, global.entry_y, 10);
+  hint.sprite.SetPosition(global.entry_x + u(16), global.entry_y + global.entry_h / 2 - h.GetHeight() / 2, 20);
+  place_bullets();
+
+  l = fit(logo.image);
+  logo.sprite.SetImage(l);
+  logo.sprite.SetPosition(W / 2 - l.GetWidth() / 2, H / 2 - l.GetHeight() / 2 - u(30), 10);
+  t = fit(track.image);
+  global.track_w = t.GetWidth();
+  global.track_h = t.GetHeight();
+  track.sprite.SetImage(t);
+  track.sprite.SetPosition(W / 2 - global.track_w / 2, H / 2 + l.GetHeight() / 2 + u(10), 10);
+  fill.sprite.SetPosition(W / 2 - global.track_w / 2, H / 2 + l.GetHeight() / 2 + u(10), 11);
+  update_fill();
+}
+
+layout();
+set_dialog(0);
+set_boot(1);
+
+fun refresh_callback() {
+  # A display that comes up late makes the window bigger: lay everything out again.
+  if (Window.GetWidth() != global.layout_width || Window.GetHeight() != global.layout_height) layout();
+}
+Plymouth.SetRefreshFunction(refresh_callback);
+
+fun display_password_callback(prompt, bullets) {
+  if (bullets > 20) bullets = 20;
+  global.bullet_count = bullets;
+  for (i = 0; i < bullets; i++) {
+    if (!bullet.sprites[i]) bullet.sprites[i] = Sprite(fit(bullet.image));
+  }
+  place_bullets();
+  set_boot(0);
+  set_dialog(1);
+}
+Plymouth.SetDisplayPasswordFunction(display_password_callback);
+
+fun display_normal_callback() {
+  global.bullet_count = 0;
+  set_dialog(0);
+  set_boot(1);
+}
+Plymouth.SetDisplayNormalFunction(display_normal_callback);
+
+fun progress_callback(duration, progress) {
+  if (progress > global.progress) {
+    global.progress = progress;
+    update_fill();
+  }
+}
+Plymouth.SetBootProgressFunction(progress_callback);
+
+# Messages (for example a wrong passphrase) just under the password field, small and quiet.
+message.sprite = Sprite();
+fun display_message_callback(text) {
+  message.sprite.SetImage(Image.Text(text, 1, 1, 1, 0.75));
+  message.sprite.SetPosition(global.layout_width / 2 - message.sprite.GetImage().GetWidth() / 2,
+    global.entry_y + global.entry_h + u(14), 40);
+  message.sprite.SetOpacity(1);
+}
+fun hide_message_callback(text) {
+  message.sprite.SetOpacity(0);
+}
+Plymouth.SetDisplayMessageFunction(display_message_callback);
+Plymouth.SetHideMessageFunction(hide_message_callback);

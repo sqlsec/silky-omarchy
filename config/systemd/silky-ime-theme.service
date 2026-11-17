@@ -1,0 +1,13 @@
+[Unit]
+Description=Match the WowType candidate skin to light / dark mode (Silky Omarchy)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/silky-ime-theme --watch
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

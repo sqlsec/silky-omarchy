@@ -1,0 +1,25 @@
+#!/bin/bash
+# Silky Omarchy: hold a logind delay inhibitor and lock with MacLock when the machine is about to suspend
+# (lid close, sleep menu, idle suspend). Replaces Omarchy's omarchy-sleep-lock.service, which uses its own lock.
+set -u
+
+if [[ ${1:-} != --inhibited ]]; then
+  exec systemd-inhibit --what=sleep --mode=delay --who="Silky Omarchy" --why="Lock screen before suspend" \
+    "$0" --inhibited
+fi
+
+# One suspend per inhibitor: once the lock is up, stop the monitor and exit so the inhibitor is released at once
+# and logind proceeds; systemd restarts this service, which takes a fresh inhibitor for the next suspend.
+coproc SLEEP_EVENTS {
+  exec dbus-monitor --system \
+    "type='signal',sender='org.freedesktop.login1',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'"
+}
+monitor_pid=$SLEEP_EVENTS_PID
+trap 'kill "$monitor_pid" 2>/dev/null' EXIT
+
+while IFS= read -r line <&"${SLEEP_EVENTS[0]}"; do
+  if [[ $line == *"boolean true"* ]]; then
+    "$(dirname -- "$(readlink -f -- "$0")")/silky-lock" --sleep
+    exit 0
+  fi
+done

@@ -1,0 +1,319 @@
+--- a/MacShell/MacBar.qml
++++ b/MacShell/MacBar.qml
+@@ -3606,7 +3606,9 @@
+                 m.push(mchk("Dark Mode", "", root.darkMode, function () { root.setAppearance(root.darkMode ? "light" : "dark"); }));
+             } else if (name === "window") {
+                 if (has) {
+-                    m.push(mi("Minimize", "", disp('hl.dsp.window.move({ workspace = "special:minimized", follow = false })')));
++                    m.push(mi("Minimize", "", function () {
++                        if (aw && root.hub && root.hub.dock) root.hub.dock.minimizeAddress(aw.address);
++                    }));
+                     m.push(mchk("Zoom", "", fsMode === 1, disp('hl.dsp.window.fullscreen({ mode = "maximized", action = "toggle" })')));
+                     m.push(mi(floating ? "Tile Window" : "Float Window", "", disp('hl.dsp.window.float({ action = "toggle" })')));
+                     m.push(msep());
+--- a/MacShell/MacDock.qml
++++ b/MacShell/MacDock.qml
+@@ -36,6 +36,11 @@
+ 
+     // shared helpers from shell.qml (window geometry poller, wallpaper lookup)
+     property var hub: null
++    property var minimizeFx: null
++    // monitor name -> the rectangle where the next minimized-window cell appears. Kept outside the delegates so
++    // the genie always has a stable destination, including before the new thumbnail has been inserted.
++    property var dockTargets: ({})
++    property var restoringWindows: ({})
+     property bool dockEnabled: true      // false = no Dock at all (settings window stays available)
+     property bool settingsEnabled: true  // false = keep the System Settings window closed
+     property bool desktopIcons: true     // show files, folders and .desktop shortcuts from the XDG Desktop directory
+@@ -4312,6 +4317,126 @@
+         for (var i = 0; i < tls.length; i++) if (tls[i].wayland === tl) return tls[i];
+         return null;
+     }
++    function normalizedAddress(value) { return String(value || "").replace(/^0x/, ""); }
++    function hyprByAddress(value) {
++        var want = normalizedAddress(value), tls = Hyprland.toplevels.values;
++        for (var i = 0; i < tls.length; i++) if (normalizedAddress(tls[i].address) === want) return tls[i];
++        return null;
++    }
++    function addressOf(tl) {
++        var h = hyprToplevel(tl);
++        return h ? normalizedAddress(h.address) : "";
++    }
++    function monitorNameFor(o) {
++        var ms = hub ? (hub.monData || []) : [];
++        for (var i = 0; i < ms.length; i++) if (ms[i].id === o.monitor) return ms[i].name;
++        var screens = Quickshell.screens;
++        for (var j = 0; j < screens.length; j++) {
++            var mon = Hyprland.monitorFor(screens[j]);
++            if (mon && mon.id === o.monitor) return screens[j].name;
++        }
++        return "";
++    }
++    function windowRect(o) {
++        return { x: o && o.at ? o.at[0] : 0, y: o && o.at ? o.at[1] : 0,
++                 width: Math.max(1, o && o.size ? o.size[0] : 1), height: Math.max(1, o && o.size ? o.size[1] : 1) };
++    }
++    function targetRect(name) {
++        if (dockTargets[name]) return dockTargets[name];
++        for (var key in dockTargets) return dockTargets[key];
++        return { x: 0, y: 0, width: Math.max(1, iconSize), height: Math.max(1, iconSize) };
++    }
++    function setDockTarget(name, rect) {
++        if (!name || !rect) return;
++        var old = dockTargets[name];
++        if (old && old.x === rect.x && old.y === rect.y && old.width === rect.width && old.height === rect.height) return;
++        var out = {};
++        for (var key in dockTargets) out[key] = dockTargets[key];
++        out[name] = rect;
++        dockTargets = out;
++    }
++    function setRestoring(address, on) {
++        var key = normalizedAddress(address), out = {};
++        for (var k in restoringWindows) if (k !== key) out[k] = true;
++        if (on && key) out[key] = true;
++        restoringWindows = out;
++        rebuild();
++    }
++    function rememberAndMinimize(h) {
++        if (!h) return;
++        var o = h.lastIpcObject, address = normalizedAddress(h.address);
++        if (!o || !o.workspace || !(o.workspace.id >= 1) || !address) return;
++        var tags = o.tags || [];
++        for (var i = 0; i < tags.length; i++) {
++            if (/^omarchy-minimized-from-[0-9]+$/.test(String(tags[i])))
++                Hyprland.dispatch('hl.dsp.window.tag({ tag = "-' + tags[i] + '", window = "address:0x' + address + '" })');
++        }
++        Hyprland.dispatch('hl.dsp.window.tag({ tag = "+omarchy-minimized-from-' + o.workspace.id + '", window = "address:0x' + address + '" })');
++        Hyprland.dispatch('hl.dsp.window.move({ workspace = "special:minimized", follow = false, window = "address:0x' + address + '" })');
++        Hyprland.dispatch('hl.dsp.focus({ workspace = "' + o.workspace.id + '" })');
++    }
++    function minimizeAddress(address) {
++        var h = hyprByAddress(address), o = h ? h.lastIpcObject : null;
++        if (!h || !h.wayland || !o || !o.workspace || String(o.workspace.name || "") === "special:minimized") return;
++        var screenName = monitorNameFor(o), rect = windowRect(o);
++        var job = { screen: screenName, tl: h.wayland, win: rect, targetFn: function() { return root.targetRect(screenName); }, reverse: false,
++                    before: function() { root.rememberAndMinimize(h); }, after: function() { minimizedDebounce.restart(); } };
++        if (minimizeFx) minimizeFx.play(job); else { job.before(); job.after(); }
++    }
++    function minimizeWindow(title) {
++        var tls = Hyprland.toplevels.values;
++        for (var i = 0; i < tls.length; i++) {
++            var o = tls[i].lastIpcObject;
++            if (o && String(o.title || "") === String(title || "")) { minimizeAddress(tls[i].address); return; }
++        }
++    }
++    function restoreWorkspace(o) {
++        var tags = o && o.tags ? o.tags : [];
++        for (var i = 0; i < tags.length; i++) {
++            var m = /^omarchy-minimized-from-([0-9]+)$/.exec(String(tags[i]));
++            if (m) return Number(m[1]);
++        }
++        var mon = Hyprland.focusedMonitor;
++        return mon && mon.activeWorkspace ? mon.activeWorkspace.id : -1;
++    }
++    property var restoreCleanupAddresses: []
++    Timer {
++        id: restoreCleanup
++        interval: 520
++        onTriggered: {
++            var list = root.restoreCleanupAddresses;
++            root.restoreCleanupAddresses = [];
++            for (var i = 0; i < list.length; i++) {
++                Hyprland.dispatch('hl.dsp.window.set_prop({ prop = "no_anim", value = "unset", window = "address:0x' + list[i] + '" })');
++                root.setRestoring(list[i], false);
++            }
++        }
++    }
++    function restoreWindow(item) {
++        if (!item || !item.tl) return;
++        var h = hyprToplevel(item.tl), o = h ? h.lastIpcObject : null, address = h ? normalizedAddress(h.address) : "";
++        if (!h || !o || !address) { item.tl.activate(); return; }
++        var workspace = restoreWorkspace(o), screenName = monitorNameFor(o), rect = windowRect(o);
++        if (!(workspace >= 1)) return;
++        var showReal = function() {
++            var sel = 'window = "address:0x' + address + '"';
++            Hyprland.dispatch('hl.dsp.window.set_prop({ prop = "no_anim", value = "1", ' + sel + ' })');
++            Hyprland.dispatch('hl.dsp.window.move({ workspace = "' + workspace + '", follow = false, ' + sel + ' })');
++            Hyprland.dispatch('hl.dsp.focus({ ' + sel + ' })');
++            Hyprland.dispatch('hl.dsp.window.alter_zorder({ mode = "top", ' + sel + ' })');
++            var pending = root.restoreCleanupAddresses.slice();
++            if (pending.indexOf(address) < 0) pending.push(address);
++            root.restoreCleanupAddresses = pending;
++            restoreCleanup.restart();
++        };
++        var job = { screen: screenName, tl: item.tl, win: rect, targetFn: function() { return root.targetRect(screenName); }, reverse: true,
++                    before: function() { root.setRestoring(address, true); }, after: showReal };
++        if (minimizeFx) minimizeFx.play(job); else { job.before(); job.after(); }
++    }
++    function restoreAddress(address) {
++        var h = hyprByAddress(address);
++        if (h && h.wayland) restoreWindow({ tl: h.wayland });
++    }
+     function isMinimized(tl) {
+         var h = hyprToplevel(tl);
+         var o = h ? h.lastIpcObject : null;
+@@ -4403,7 +4528,7 @@
+     }
+ 
+     function activate(item, forceNew) {
+-        if (item.kind === "win") { if (item.tl) item.tl.activate(); return; }
++        if (item.kind === "win") { restoreWindow(item); return; }
+         if (item.special === "apps") { if (bar) bar.spotOpen("apps"); return; }
+         if (item.special === "trash") {
+             // the file manager first (Dolphin understands trash:/ natively); xdg-open only as the last resort
+@@ -4602,6 +4727,8 @@
+                 var tl = tls[w];
+                 if (!tl.appId || tl.title === "macshell Settings") continue;
+                 if (!isMinimized(tl)) continue;
++                var address = addressOf(tl);
++                if (restoringWindows[address]) continue;
+                 // live capture off: a preview cell is only an app icon, so a pinned app (its icon is already in the Dock) gets none; unpinned apps keep theirs
+                 if (!windowCapture && seen[keyOf(appOf(tl))]) continue;
+                 var e3 = lookup(appOf(tl));
+@@ -4609,7 +4736,7 @@
+                 liveWins.push(tl);
+                 if (winAge(tl) < 200) { if (!youngWin.running) youngWin.start(); continue; }     // no preview (= no capture) for brand-new windows
+                 var own3 = isShellApp(tl.appId);
+-                winItems.push({ kind: "win", key: "win:" + wid, tl: tl,
++                winItems.push({ kind: "win", key: "win:" + wid, tl: tl, address: address,
+                                 name: own3 ? (tl.title || "MacShell") : (e3 ? e3.name : tl.appId),
+                                 icon: own3 ? logoPath : (e3 ? e3.icon : tl.appId.toLowerCase()),
+                                 entry: null, running: false, pinned: false });
+@@ -4641,6 +4768,9 @@
+             for (var pv = 0; pv < prev.length; pv++) {
+                 var po = prev[pv];
+                 if (!po.key || liveKeys[po.key]) continue;
++                // Restore is represented by the full-screen genie overlay. Keeping a second fading Dock cell here
++                // retained its ScreencopyView and was the source of the stale thumbnail / full-background blur.
++                if (po.kind === "win" && po.address && restoringWindows[normalizedAddress(po.address)]) continue;
+                 if (LV[po.key] === undefined) { if (po.leaving) continue; LV[po.key] = now; }
+                 // put it back after the item that preceded it last time
+                 var at = 0;
+@@ -5009,6 +5139,18 @@
+                 id: ui
+                 anchors.fill: parent
+ 
++                function publishDockTarget() {
++                    if (!win.modelData || !dock) return;
++                    var trailing = (1 + (root.showTrash ? 1 : 0)) * (root.iconSize + root.spacing)
++                                 + root.sepWidth + root.spacing;
++                    var cx = win.modelData.x + dock.x + dock.width - root.hPad - trailing - root.iconSize / 2;
++                    var top = win.modelData.y + win.modelData.height - win.height + dock.y + dock.height
++                            - root.bottomPad - root.iconSize;
++                    root.setDockTarget(win.modelData.name,
++                        { x: Math.round(cx - root.iconSize / 2), y: Math.round(top),
++                          width: Math.round(root.iconSize), height: Math.round(root.iconSize) });
++                }
++
+                 // pointer x, followed EXACTLY (no animation). This used to ease over 55 ms, restarted on every pointer event: moving
+                 // the mouse quickly left the magnification a few frames behind the pointer, worse with many icons
+                 property real mx: 0
+@@ -5528,6 +5670,11 @@
+                     anchors.horizontalCenter: parent.horizontalCenter
+                     y: ui.height - root.margin - height + (ui.tucked ? height + root.margin + 6 : 0)
+                     Behavior on y { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
++                    onXChanged: Qt.callLater(ui.publishDockTarget)
++                    onYChanged: Qt.callLater(ui.publishDockTarget)
++                    onWidthChanged: Qt.callLater(ui.publishDockTarget)
++                    onHeightChanged: Qt.callLater(ui.publishDockTarget)
++                    Component.onCompleted: Qt.callLater(ui.publishDockTarget)
+ 
+                     // ── Apple Liquid Glass: real-time refraction of the backdrop (see liquidglass.frag) ──
+                     Loader {
+--- a/MacShell/WindowBar.qml
++++ b/MacShell/WindowBar.qml
+@@ -22,10 +22,12 @@
+     readonly property string fam: dock ? dock.fontFamily : "Open Runde"
+     readonly property bool darkMode: dock ? dock.darkMode : true
+ 
+-    readonly property bool enabled: bar ? bar.windowBar : true
+-    readonly property bool showTitle: bar ? bar.windowBarTitle : true
+-    readonly property bool alwaysSymbols: bar ? bar.tlAlwaysSymbols : false
+-    readonly property bool colorOnHover: bar ? bar.tlColorOnHover : false
++    readonly property bool enabled: false
++    // Applications retain their own window controls; do not draw a second set over their title bars.
++    // Server-decorated terminals continue to use Omarchy's titlebar buttons.
++    readonly property bool showTitle: false
++    readonly property bool alwaysSymbols: false
++    readonly property bool colorOnHover: false
+ 
+     // the focused window, straight from the geometry feed the glass already uses
+     readonly property var clients: hub ? (hub.glassClients || []) : []
+@@ -43,8 +45,9 @@
+             var c = clients[i];
+             if (("0x" + String(c.address).replace(/^0x/, "")) !== activeAddr && String(c.address) !== activeAddr) continue;
+             if (!c.mapped || c.hidden || c.fullscreen) return null;
+-            // our own windows have their lights already
++            // MacShell and server-decorated terminals already have working lights.
+             if (c.class === "org.quickshell" || c.class === "quickshell") return null;
++            if (/^(foot|kitty|Alacritty|com\.mitchellh\.ghostty|org\.wezfurlong\.wezterm)$/.test(String(c.class || ""))) return null;
+             if (c.size && (c.size[0] < 220 || c.size[1] < 120)) return null;
+             return c;
+         }
+@@ -59,7 +62,7 @@
+         var go = function () { Hyprland.dispatch('hl.dsp.window.close({ window = "address:' + a + '" })'); };
+         if (hub && hub.closeQuietly) hub.closeQuietly(go); else go();     // live captures pause for a moment first
+     }
+-    function minimize() { Hyprland.dispatch('hl.dsp.window.move({ workspace = "special:minimized", follow = false, window = "address:' + activeAddr + '" })'); }
++    function minimize() { if (hub && hub.dock) hub.dock.minimizeAddress(activeAddr); }
+     function zoom() { Hyprland.dispatch('hl.dsp.window.fullscreen_state({ internal = 2, client = 0, window = "address:' + activeAddr + '" })'); }
+ 
+     Variants {
+--- a/MacShell/shell.qml
++++ b/MacShell/shell.qml
+@@ -44,10 +44,12 @@
+         property var clock: clockApp
+         property var about: aboutApp
+         function openSettings(pane) { macDock.openPrefs(pane); }
++        function minimizeWindow(title) { macDock.minimizeWindow(title); }
+ 
+         // set by MacBar / MacDock (Binding elements) when their glass needs live data
+         property bool barWantsGeo: false
+         property bool dockWantsGeo: false
++        property bool winBarWantsGeo: false
+         property bool barWantsWallpaper: false
+         property bool dockWantsWallpaper: false
+         property bool widgetsWantWallpaper: false
+@@ -242,7 +244,7 @@
+         Timer {
+             interval: sharedHub.geoHot ? 90 : 250
+             repeat: true
+-            running: (sharedHub.barWantsGeo || sharedHub.dockWantsGeo) && !sharedHub.ipcOk
++            running: (sharedHub.barWantsGeo || sharedHub.dockWantsGeo || sharedHub.winBarWantsGeo) && !sharedHub.ipcOk
+             triggeredOnStart: true
+             onTriggered: if (!geoProc.running) geoProc.running = true
+         }
+@@ -313,7 +315,7 @@
+             // gets 30 Hz; the current snapshot-based glass needs only 12.5 Hz while moving.
+             interval: sharedHub.geoHot ? ((macBar.glassRealtime || macDock.glassLive) ? 33 : 80) : 500
+             repeat: true
+-            running: (sharedHub.barWantsGeo || sharedHub.dockWantsGeo) && !sharedHub.ipcBroken
++            running: (sharedHub.barWantsGeo || sharedHub.dockWantsGeo || sharedHub.winBarWantsGeo) && !sharedHub.ipcBroken
+             triggeredOnStart: true
+             onTriggered: sharedHub.ipcPoll()
+         }
+@@ -373,8 +375,12 @@
+         }
+     }
+ 
++    MinimizeFx { id: minimizeFx; hub: sharedHub }
+     MacBar { id: macBar; hub: sharedHub }
+-    MacDock { id: macDock; hub: sharedHub; bar: macBar }
++    MacDock { id: macDock; hub: sharedHub; bar: macBar; minimizeFx: minimizeFx }
++    // Client-side minimize requests are ignored by Hyprland. This small click-through overlay replaces only
++    // the traffic-light cluster, so Electron/GTK/Qt apps get the same reliable controls as server-decorated apps.
++    WindowBar { id: windowBar; hub: sharedHub }
+     // Keep the desktop layer below widgets; desktop placement also reserves each widget's live footprint.
+     Desktop { id: desktopIcons; hub: sharedHub }
+     MacWidgets { id: macWidgets; hub: sharedHub }
+@@ -433,4 +439,10 @@
+         target: "glass"
+         function captures(on: bool): void { macDock.windowCapture = on; }
+     }
++    // Used by hyprbars and any external titlebar: every minimize path goes through the same capture + genie effect.
++    IpcHandler {
++        target: "window"
++        function minimize(address: string): void { macDock.minimizeAddress(address); }
++        function restore(address: string): void { macDock.restoreAddress(address); }
++    }
+ }
