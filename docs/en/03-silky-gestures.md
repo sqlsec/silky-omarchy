@@ -30,6 +30,7 @@ So this is done by a small Hyprland plugin: [`plugins/silky-gestures/main.cpp`](
 | Either touchscreen swipe past the end | Resistance, spring back on release |
 | Four- or five-finger pinch on touchpad / touchscreen | Opens MacShell's Applications panel (Launchpad) |
 | Four- or five-finger spread on touchpad / touchscreen | Closes the Applications panel |
+| Four fingers up / down on the touchpad | MacShell window overview: every window of the workspace / of the current app, following the fingers (see [13](13-window-overview.md)) |
 | Rapid clicks without moving the pointer, where each click changes which layer takes input (the Dock's Applications icon) | Every click takes effect |
 
 Details:
@@ -120,7 +121,7 @@ Hyprland 0.57 only accepts `xdg_toplevel.move` / `resize` requests carrying a mo
 
 Moving and resizing take the same path as Hyprland's mouse drags (`g_layoutManager->beginDragTarget` → `moveMouse` → `endDragTarget`), so snapping and the like behave as with the mouse. Before the drag starts, the pointer is moved to the finger, because the layout reads the drag origin from the pointer position.
 
-Only floating windows are handled; tiled windows and windows filling the whole screen go to the app as usual. The 20 px workspace swipe at the left and right screen edges takes priority.
+Only floating windows are handled; tiled windows and windows filling the whole screen go to the app as usual. The 20 px workspace swipe at the left and right screen edges takes priority. A finger on a shell layer above the windows (MacShell's Applications / Spotlight panel, the menu bar, the Dock, popup menus: any top or overlay layer, judged by its input region) is left to that layer alone, so it never drags the window behind it.
 
 ### Floating windows cannot be dragged under the menu bar
 

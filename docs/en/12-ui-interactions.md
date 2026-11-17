@@ -61,6 +61,7 @@ The Control Center's new "Display" page has an Appearance switch, so you can swi
 - Touchpad: natural scrolling (mouse too), three-finger drag, four-finger horizontal swipe between workspaces with smoother transitions ([01](01-touchpad-gestures.md))
 - Touchscreen: three-finger and single-finger edge swipes between workspaces with rubber-band at the ends; touch drag and two-finger resize of floating windows; dragging terminal title bars ([03](03-silky-gestures.md))
 - Four- / five-finger pinch recognition; rapid repeated clicks are not lost ([03](03-silky-gestures.md))
+- Touchpad four fingers up: every window of the workspace; four fingers down: every window of the current app. Linear and follows the fingers, finishes at a constant speed after release, can be grabbed again mid-way to interrupt or reverse; click a window to switch to it ([13](13-window-overview.md))
 
 ## Keyboard and shortcuts
 

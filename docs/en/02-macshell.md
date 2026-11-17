@@ -87,11 +87,17 @@ Tray icons are unified as monochrome line icons like the rest of the menu bar (f
 
 ## Applications panel interaction
 
-[`tune-apps-panel.py`](../../scripts/tune-apps-panel.py): the mouse wheel moves the Applications panel 320 px per notch, and touchpad and touchscreen flicks decelerate smoothly after release; the glass panel fades in together with the icons, following the click or pinch progress. The installer applies these changes to existing installs, and scrolling is still limited by the list bounds.
+[`tune-apps-panel.py`](../../scripts/tune-apps-panel.py): the mouse wheel moves the Applications panel 320 px per notch, and touchpad and touchscreen flicks decelerate smoothly after release; the glass panel fades in together with the icons, following the click or pinch progress. The installer applies these changes to existing installs, and scrolling is still limited by the list bounds. On the touchscreen the finger only moves the scroll target and the list follows it frame by frame at 1.1× the finger distance (the same per-frame animation as the touchpad); on release, fast or slow, it glides on along the same deceleration curve, instead of stepping with each touch event or stopping dead after a slow release.
 
 ### Open / close animation
 
 The whole panel (glass frame and content) animates as one picture: it shrinks from 114% to 100%, goes from blurred to sharp and from transparent to solid; each icon adds a little scaling of its own on top (outer ring first). Before, only the icons scaled and the frame merely faded in. The frame and content now live in one `appsStage`, rendered offscreen and blurred once, which is cheaper than the old "frame layer plus content layer, then blur".
+
+Closing (Esc, a click outside the panel, the Dock icon again, launching an app) no longer zooms back up and no longer uses the spring (its acceleration and slow settling tail read as a bounce): it is a single 0.15 s fade of the whole panel as one picture: no blur, no separate glass and content curves, no per-icon stagger, and it stays at 100% size. Opening and pinch releases keep the spring.
+
+The entrance runs light-to-solid like macOS: the light frosted glass comes first (opacity t^1.6: a pinch starts faint and it deepens faster towards the end) and the icons and text solidify on top of it (t^1.8, always a step behind the glass). It used to be the other way round (content t^0.55, glass t^1.35), so the first frames were blurred icons over the window behind, darker than the finished panel, which then lightened.
+
+The other cause was the picture behind the glass: with real-time glass (`glassRealtime`) windows are only captured where glass is showing, so on opening every window behind the panel started capturing from scratch, and for the first frames the glass blurred the dark placeholder (`#1e1e20`) or an old frame before jumping to the real, often lighter, windows. While the panel is closed, the windows in the area where it opens now get a single snapshot every 1.5 s (not a live stream), so it opens on a current picture. A close released mid-pinch, or a reopening during the close, eases the zoom over 0.18 s so the size never jumps.
 
 A spring advanced by real frame time drives the animation; on the 90 Hz built-in screen the whole run measured 11.0 ms per frame on average with no dropped frames. Three things that made it "hiccup" were also fixed:
 

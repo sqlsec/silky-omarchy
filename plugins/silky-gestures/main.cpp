@@ -14,6 +14,8 @@
 //    Every touch reaches the app at once, as without this plugin; only when it becomes one of these is the app sent a
 //    touch cancel and the window taken over. Taps, scrolling and presses therefore behave exactly as before.
 //  * any drag of a floating window, mouse or touch                    -> it never slides under the menu bar
+//  * touchpad, four fingers up / down                                 -> MacShell's window overview (all windows of the
+//    workspace / of the focused app), following the fingers: streamed as socket2 events (see CSilkyOverviewGesture)
 //
 // Everything is done from event listeners: Hyprland's function hooks only exist on x86_64 and this targets aarch64 too.
 
@@ -47,6 +49,7 @@
 #include <hyprland/src/managers/SessionLockManager.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
+#include <hyprland/src/managers/input/trackpad/TrackpadGestures.hpp>
 #include <hyprland/src/output/Monitor.hpp>
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/state/MonitorState.hpp>
@@ -470,6 +473,73 @@ static void onPinchEnd(const IPointer::SPinchEndEvent& e, Event::SCallbackInfo& 
     postLaunchpad(e.cancelled ? "end,cancel" : "end");
 }
 
+// ══════════════ touchpad: four fingers up / down → MacShell's window overview ══════════════
+// Registered with Hyprland's own trackpad gesture table, next to the four-finger horizontal workspace gesture: Hyprland
+// decides from the first few units of travel whether a swipe is horizontal (workspaces) or vertical (this), so the two
+// never fight. hl.gesture's Lua actions cannot be used: they would have to start a process for every update.
+// socket2 lines "silkyoverview>>begin,up|down", "silkyoverview>>update,<travel>", "silkyoverview>>end[,cancel]";
+// travel = touchpad units moved since the gesture began, positive = up. MacShell turns that into progress, so the
+// overview follows the fingers both ways; the direction the gesture started in picks what it shows.
+static void postOverview(const std::string& data) {
+    IPC::Socket2::sock()->postEvent({.event = "silkyoverview", .data = data});
+}
+
+class CSilkyOverviewGesture : public ITrackpadGesture {
+  public:
+    void begin(const STrackpadGestureBegin& e) override {
+        m_scale  = e.scale;
+        m_travel = 0;
+        m_active = !g_pSessionLockManager->isSessionLocked();
+        if (m_active)
+            postOverview(e.direction == TRACKPAD_GESTURE_DIR_UP ? "begin,up" : "begin,down");
+    }
+
+    void update(const STrackpadGestureUpdate& e) override {
+        if (!m_active || !e.swipe)
+            return;
+        m_travel -= e.swipe->delta.y * m_scale; // libinput: negative y is up
+        postOverview(std::format("update,{:.2f}", m_travel));
+    }
+
+    void end(const STrackpadGestureEnd& e) override {
+        if (!m_active)
+            return;
+        m_active = false;
+        postOverview(e.swipe && e.swipe->cancelled ? "end,cancel" : "end");
+    }
+
+    bool isDirectionSensitive() override {
+        return false;
+    }
+
+    ~CSilkyOverviewGesture() override {
+        if (m_active) // the table was cleared (config reload) mid-gesture: MacShell must not wait for an end
+            postOverview("end,cancel");
+    }
+
+  private:
+    double m_travel = 0;
+    bool   m_active = false;
+};
+
+static constexpr size_t OVERVIEW_FINGERS = 4;
+static bool             g_overviewAdded  = false;
+
+// Hyprland clears its gesture table on every config reload, so this runs at load and after each reload.
+static void addOverviewGesture() {
+    const auto RES = g_pTrackpadGestures->addGesture(makeUnique<CSilkyOverviewGesture>(), OVERVIEW_FINGERS, TRACKPAD_GESTURE_DIR_VERTICAL,
+                                                     Input::HL_MODIFIER_NONE, 1.F, false);
+    g_overviewAdded = RES.has_value();
+    if (!RES) // a four-finger vertical (or "swipe") gesture in the config wins; say so instead of failing silently
+        HyprlandAPI::addNotification(PHANDLE, "[silky-gestures] four-finger overview not registered: " + RES.error(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 8000);
+}
+
+static void removeOverviewGesture() {
+    if (g_overviewAdded)
+        (void)g_pTrackpadGestures->removeGesture(OVERVIEW_FINGERS, TRACKPAD_GESTURE_DIR_VERTICAL, Input::HL_MODIFIER_NONE, 1.F, false);
+    g_overviewAdded = false;
+}
+
 static bool ownsSwipe() {
     return g_touch.session && g_pUnifiedWorkspaceSwipe->isGestureInProgress() && g_pUnifiedWorkspaceSwipe->sessionID() == g_touch.session;
 }
@@ -674,6 +744,21 @@ static void endWindowDrag() {
 // A single finger came down: is it on a floating window's title area, edge, or body?
 static bool grabFloatingWindow(const ITouch::SDownEvent& e, PHLMONITOR monitor) {
     const Vector2D P{g_touch.fingers.back().x, g_touch.fingers.back().y};
+
+    // A shell layer above the windows (MacShell's Applications / Spotlight overlay, the bar, a menu) takes this touch:
+    // the window hit test below ignores layers, so without this a finger on the overlay dragged the window behind it.
+    {
+        const auto& HIT = Desktop::viewState()->hitTest();
+        PHLLS       layer;
+        Vector2D    local;
+        if (HIT.layerPopupSurfaceAt(P, monitor, &local, &layer))
+            return false;
+        for (const auto L : {3 /* overlay */, 2 /* top */}) {
+            if (HIT.layerSurfaceAt(P, &monitor->m_layerSurfaceLayers[L], &local, &layer))
+                return false;
+        }
+    }
+
     const auto     WINDOW = Desktop::viewState()->hitTest().windowAt(
         P, Desktop::View::RESERVED_EXTENTS | Desktop::View::INPUT_EXTENTS | Desktop::View::ALLOW_FLOATING);
     if (!WINDOW || !WINDOW->mapped() || WINDOW->isHidden() || !WINDOW->isFloating() || !WINDOW->layoutTarget())
@@ -1018,11 +1103,20 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     g_listeners.emplace_back(events.input.touch.motion.listen(onTouchMotion));
     g_listeners.emplace_back(events.input.touch.up.listen([](const ITouch::SUpEvent& e, Event::SCallbackInfo& info) { liftFinger(e.touchID, false, info); }));
     g_listeners.emplace_back(events.input.touch.cancel.listen([](const ITouch::SCancelEvent& e, Event::SCallbackInfo& info) { liftFinger(e.touchID, true, info); }));
+    // the table is cleared between these two; the plugin itself is loaded while a config is being read, after the
+    // clear, so the first reloaded must not add it a second time
+    g_listeners.emplace_back(events.config.preReload.listen([] { g_overviewAdded = false; }));
+    g_listeners.emplace_back(events.config.reloaded.listen([] {
+        if (!g_overviewAdded)
+            addOverviewGesture();
+    }));
+    addOverviewGesture();
 
-    return {"silky-gestures", "Touch-screen workspace swipes and Launchpad pinch, rubber band, raising / moving / resizing floating windows, kept below the menu bar", "sqlsec", "0.6.1"};
+    return {"silky-gestures", "Touch-screen workspace swipes, Launchpad pinch and four-finger window overview, rubber band, raising / moving / resizing floating windows, kept below the menu bar", "sqlsec", "0.7.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
+    removeOverviewGesture();
     endWindowDrag();
     // fingers still held back would reach apps unpaired once this is gone: tell the apps to drop every touch first
     if (!g_touch.swallowed.empty() || !g_touch.fingers.empty())

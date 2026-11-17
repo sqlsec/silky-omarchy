@@ -23,6 +23,7 @@
 ```bash
 ./scripts/install-macshell-optimizations.sh   # 02：MacShell 补丁（需要先装好 MacShell 0.5.1）
 ./scripts/install-silky-gestures.sh           # 03：工作区手势插件
+python3 scripts/install-macshell-overview.py  # 13：四指上滑 / 下滑窗口总览（需要 02、03）
 ./scripts/install-macos-theme.sh              # 04：macOS Tahoe 主题
 omarchy theme set macos-tahoe-dark
 ./scripts/install-voice-overlay.sh            # 05：语音浮条
@@ -143,6 +144,14 @@ omarchy theme set macos-tahoe-dark
 - **关键词**：Omarchy `Commons/Color.qml` 的 `menu.*` 键（`background-alpha`、`scrim-alpha`、`selected-background`…）；用户级 `shell.toml` 优先于主题且 `watchChanges: true`；图层 `omarchy-menu` / `omarchy-clipboard` / `omarchy-emojis`；`gsettings monitor org.gnome.desktop.interface color-scheme`
 - **坑**：原地写文件（改名会丢监听）；`ignore_alpha` 避免透明全屏点击层被模糊；字体变量要 `hl.env` 后 `omarchy-restart-shell`
 - **验证**：`./scripts/silky-doctor.sh`；`omarchy-menu toggle system`；切 `color-scheme` 看菜单变色
+
+## 13 窗口总览（四指上滑 / 下滑）
+
+- **效果**：触控板四指上滑显示当前工作区所有窗口，四指下滑显示当前应用所有窗口（含其他工作区），反向滑动回到桌面；进度线性跟手，松手后匀速走完，动画中再按住可打断、反向；点击窗口聚焦过去
+- **文件**：`plugins/silky-gestures/main.cpp`（`CSilkyOverviewGesture`）、`config/macshell/overview/SilkyOverview.qml`、`scripts/install-macshell-overview.py`
+- **关键词**：`g_pTrackpadGestures->addGesture(…, 4, TRACKPAD_GESTURE_DIR_VERTICAL, …)`、`ITrackpadGesture::begin/update/end`、`events.config.preReload / reloaded`（重载会清空手势表）、`removeGesture`（卸载前必须删）、socket2 `silkyoverview>>begin,up|down / update,<位移> / end[,cancel]`、Quickshell `Hyprland.rawEvent`、`SafeCapture`（`want` / `wantLive`）、`FrameAnimation` 恒速推进、`WlrLayer.Overlay`、`qs -c MacShell ipc call overview …`
+- **坑**：插件在读配置期间加载，第一次 `reloaded` 不能重复注册（用 `preReload` 标记）；总览窗口不能在手势开始时才创建（Vulkan 表面 + 管线约 0.5 秒没有帧），要常驻并停在屏幕外（margins 移出 + 空输入区域 + `no_anim` 图层规则），启动时预画一次编译着色器；手势中只用单帧捕获，停稳后再实时；缩略图固定大小 + `ShaderEffectSource` + 圆角着色器 `silkyround.frag`，不要每个窗口一个随尺寸变化的 layer/MultiEffect；不要全屏实时模糊；总览的捕获不能跟 Dock 的“实时窗口捕获”开关走；捕获拿到第一帧前不要盖壁纸，但等待期间的手指行程不能丢；层叠顺序要和 Hyprland 一致；Dock 在总览图层下面，要留洞淡出
+- **验证**：`qs -c MacShell ipc call overview begin up` → `update 120` → `state`（`p` 为 0.5）→ `end`；`socat … .socket2.sock | grep silkyoverview` 看真实手势事件
 
 ## 杂项
 
