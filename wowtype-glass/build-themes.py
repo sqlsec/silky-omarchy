@@ -12,8 +12,12 @@ import pathlib
 import subprocess
 import sys
 
-R = 12  # panel corner radius (logical px), close to macOS menus and popovers
-HR = 7  # highlight pill radius
+HR = 9   # highlight radius (logical px)
+PAD = 0  # gap between the panel edge and the highlight ([InputPanel/ContentMargin])
+# The highlight fills the bar edge to edge: on the first (or last) candidate it lies exactly over the panel's
+# rounded end, so the two corners are one curve. R = HR + PAD keeps that true if PAD is ever raised again
+# (then the corners stay concentric instead).
+R = HR + PAD
 
 SKINS = {
     "silky-glass-dark": {
@@ -97,16 +101,16 @@ PageButtonAlignment=Last Candidate
 Spacing=2
 
 [InputPanel/ContentMargin]
-Left=7
-Right=7
-Top=7
-Bottom=7
+Left={PAD}
+Right={PAD}
+Top={PAD}
+Bottom={PAD}
 
 [InputPanel/TextMargin]
-Left=9
-Right=9
-Top=5
-Bottom=5
+Left=11
+Right=11
+Top=6
+Bottom=6
 
 [InputPanel/Background]
 Image=panel.png

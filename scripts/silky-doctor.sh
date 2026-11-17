@@ -56,6 +56,13 @@ else
 fi
 qs -c SilkyKeys ipc show >/dev/null 2>&1 && ok "Super+K shortcut panel is running" || bad "Silky Keys panel not running" "qs -c SilkyKeys -d"
 
+systemctl --user is-active -q silky-menu-glass && ok "Omarchy menus follow light / dark as glass" \
+  || bad "silky-menu-glass is not running" "./scripts/install-menu-glass.sh"
+mode=$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null)
+want='#f7f7f9'; [[ $mode == *dark* ]] && want='#1c1c1e'
+grep -q "^background *= \"$want\"" ~/.config/omarchy/shell.toml 2>/dev/null && ok "menu glass matches the current appearance" \
+  || bad "menu glass does not match $mode" "systemctl --user restart silky-menu-glass"
+
 crashes=$(find ~/.cache/quickshell/crashes -mindepth 1 -maxdepth 1 -newermt "$(uptime -s)" 2>/dev/null | wc -l)
 [[ $crashes -eq 0 ]] && ok "no Quickshell crashes since boot" || bad "$crashes Quickshell crash report(s) since boot" "see ~/.cache/quickshell/crashes/*/report.txt"
 

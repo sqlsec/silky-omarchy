@@ -1,0 +1,13 @@
+[Unit]
+Description=Omarchy menus in macOS glass, light / dark with the system (Silky Omarchy)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/silky-menu-glass --watch
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

@@ -30,10 +30,11 @@ Hyprland 默认给弹出层做淡入淡出（`fadePopups` 继承 `fade`），旧
 | `silky-glass-dark` | 74% 不透明深灰 + 细亮边 | macOS 蓝 `#0A84FF` 圆角胶囊 |
 | `silky-glass-light` | 84% 不透明近白 + 细暗边 | macOS 蓝 `#007AFF` 圆角胶囊 |
 
-- 圆角（12px）和半透明画在 PNG 九宫格里：微信内置的 fcitx5-qt 只认图片、纯色和边距，不认模糊、深色主题、强调色等键。
+- 高亮贴边：外框和高亮之间不留间距（`PAD = 0`），外框圆角等于高亮圆角（都是 9px，`R = HR + PAD`）。选中第一个候选时，蓝色高亮正好盖住外框左端的圆角，两者是同一条弧线；高度由文字上下边距 6px 撑开。圆角和半透明画在 PNG 九宫格里：微信内置的 fcitx5-qt 只认图片、纯色和边距，不认模糊、深色主题、强调色等键。
 - 磨砂由 Hyprland 提供：`decoration.blur.input_methods`（fcitx5 自己的候选框）和 `decoration.blur.popups`（微信的候选条），
   `ignorealpha = 0.1` 让透明圆角外侧不被模糊。
 - 想改颜色、圆角：改 `build-themes.py` 顶部的 `R`、`HR` 和 `SKINS`，重新运行安装脚本。
+- 比例：fcitx5 默认字体 `Sans 10` 配原来 7+5 px 的上下边距，候选条显得又高字又小。现在字体是 `Inter 12`（和 Omarchy 菜单同款，中文自动回退；没装 Inter 就用 `Sans 12`），高亮贴边、文字上下边距 6，整条更紧凑、字更大。字体由 `silky-ime-theme` 写进 `classicui.conf` 的 `Font=`，只在你没自己设置 `Font=` 时才写；想换字号直接改那一行即可，之后不会被覆盖。
 
 ## 深色 / 浅色自动切换
 

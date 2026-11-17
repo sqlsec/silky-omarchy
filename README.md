@@ -17,6 +17,7 @@
 | 07 | 锁屏与开机界面 | 🧪 开机界面待重启验证 | 快捷键、菜单、闲置、合盖都改用 MacLock；开机磁盘解锁界面做成 macOS FileVault 风格 |
 | 09 | 候选框毛玻璃 | 🧪 微信内待重启验证 | WowType 候选框圆角毛玻璃皮肤，跟随深色/浅色自动切换；修复微信里候选条重影 |
 | 10 | 快捷键 | ✅ | MacShell 与 Omarchy 冲突的键只留 MacShell，Omarchy 的动作挪到空闲键；Super+K 换成可搜索、可直接执行的 macOS 27 风格快捷键面板 |
+| 11 | 菜单玻璃 | ✅ | Omarchy 自带菜单（Super+Esc、Super+Ctrl+M、剪贴板、表情）改成 macOS 27 毛玻璃，跟随日间 / 暗色实时切换 |
 
 ## 快速开始
 
@@ -32,6 +33,7 @@
 ./scripts/install-boot-screen.sh
 ./scripts/install-wowtype-glass.sh
 ./scripts/install-shortcuts.sh
+./scripts/install-menu-glass.sh
 ```
 
 每个脚本都会先备份要修改的文件。装完或升级后可以跑一遍自检，逐项确认菜单栏、Dock、插件、锁屏、语音浮条等都处于预期状态，有问题会给出修复命令：
@@ -82,3 +84,4 @@ docs/             逐项说明
 - [07 · 统一 MacLock 锁屏与 macOS 风格开机界面](docs/07-lock-and-boot.md)
 - [09 · WowType 候选框：圆角毛玻璃与微信重影修复](docs/09-wowtype-glass.md)
 - [10 · 快捷键：MacShell 优先，Super+K 可搜索面板](docs/10-shortcuts.md)
+- [11 · Omarchy 自带菜单：macOS 27 玻璃，跟随日间 / 暗色](docs/11-menu-glass.md)

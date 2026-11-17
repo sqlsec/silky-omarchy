@@ -26,6 +26,7 @@ omarchy theme set macos-tahoe-dark
 ./scripts/install-maclock.sh                  # 07：所有锁屏改用 MacLock
 ./scripts/install-boot-screen.sh              # 07：macOS 风格开机解锁界面
 ./scripts/install-shortcuts.sh                # 10：快捷键冲突 + Super+K 面板
+./scripts/install-menu-glass.sh               # 11：Omarchy 菜单玻璃 + 深浅色
 ```
 
 01 是手动合并的配置片段，没有脚本。
@@ -113,6 +114,14 @@ omarchy theme set macos-tahoe-dark
 - **关键词**：Hyprland 一个键多个 bind 会全部执行；包装 `hl.bind`/`hl.unbind` 记录 dispatcher；`hyprctl dispatch 'function() silky_keys.run(n) end'`（与配置同一 Lua 状态）；Omarchy 翻译表 `default/i18n/<lang>/keybindings.json`；`IpcHandler { target: "keys" }`；图层 `silky-keys` 模糊
 - **坑**：Omarchy 的 keybindings 缓存在 Hyprland 0.57 下只剩编号，无法执行；`wtype` 注入的按键不触发 Hyprland 绑定；`hl.unbind` 清掉该键全部绑定，所以 silky-shortcuts 必须在 hypr.macshell 之后；`pkill -f 'qs -c SilkyKeys'` 会杀掉执行它的 shell
 - **验证**：`./scripts/silky-doctor.sh`（冲突检查 + 面板在跑）；`qs -c SilkyKeys ipc call keys search 截图`
+
+## 11 Omarchy 菜单玻璃
+
+- **效果**：Super+Esc / Super+Ctrl+M 等 Omarchy 菜单（含剪贴板、表情）变成半透明模糊卡片，不压暗背景，选中行强调色填充，Inter 字体；随 `color-scheme` 实时切换暗色烟灰 / 浅色磨砂
+- **文件**：`bin/silky-menu-glass`（写 `~/.config/omarchy/shell.toml` 的标记区块）、`config/systemd/silky-menu-glass.service`、`config/hypr/silky-menu-glass.lua`（图层模糊 + `OMARCHY_MENU_FONT`）
+- **关键词**：Omarchy `Commons/Color.qml` 的 `menu.*` 键（`background-alpha`、`scrim-alpha`、`selected-background`…）；用户级 `shell.toml` 优先于主题且 `watchChanges: true`；图层 `omarchy-menu` / `omarchy-clipboard` / `omarchy-emojis`；`gsettings monitor org.gnome.desktop.interface color-scheme`
+- **坑**：原地写文件（改名会丢监听）；`ignore_alpha` 避免透明全屏点击层被模糊；字体变量要 `hl.env` 后 `omarchy-restart-shell`
+- **验证**：`./scripts/silky-doctor.sh`；`omarchy-menu toggle system`；切 `color-scheme` 看菜单变色
 
 ## 杂项
 

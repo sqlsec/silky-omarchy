@@ -37,6 +37,12 @@ apply() {
   [[ $mode == dark ]] && theme=$dark || theme=$light
   mkdir -p "${conf%/*}"
   [[ -f $conf ]] || : > "$conf"
+  # fcitx5's default Sans 10 is too small for the skin's margins; use the menus' face at 12 unless you set your own.
+  if ! grep -qE '^Font=' "$conf"; then
+    local face=Sans
+    fc-list : family 2>/dev/null | grep -qx Inter && face=Inter
+    set_key Font "\"$face 12\""
+  fi
   if ! grep -qx "Theme=$theme" "$conf" || ! grep -qx 'UseDarkTheme=False' "$conf"; then
     set_key Theme "$theme"
     set_key DarkTheme "$dark"
