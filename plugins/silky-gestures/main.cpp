@@ -14,8 +14,9 @@
 //    Every touch reaches the app at once, as without this plugin; only when it becomes one of these is the app sent a
 //    touch cancel and the window taken over. Taps, scrolling and presses therefore behave exactly as before.
 //  * any drag of a floating window, mouse or touch                    -> it never slides under the menu bar
-//  * touchpad, four fingers up / down                                 -> MacShell's window overview (all windows of the
-//    workspace / of the focused app), following the fingers: streamed as socket2 events (see CSilkyOverviewGesture)
+//  * touchpad or touch screen, four fingers up / down                 -> MacShell's window overview (all windows of the
+//    workspace / of the focused app), following the fingers: streamed as socket2 events (see CSilkyOverviewGesture and
+//    checkTouchOverview)
 //
 // Everything is done from event listeners: Hyprland's function hooks only exist on x86_64 and this targets aarch64 too.
 
@@ -78,6 +79,9 @@ static constexpr int    HOLD_MS          = 400;
 static constexpr size_t PINCH_FINGERS    = 4;     // this many fingers (or more) can pinch instead of swiping
 static constexpr double PINCH_START      = 0.06;  // the touch screen spread changing by this fraction makes it a pinch rather than a swipe
 static constexpr double PINCH_SWIPE_PX   = 28.0;  // with that many fingers a swipe needs this much sideways travel, more than the spread changed
+static constexpr double OVERVIEW_START_PX = 28.0; // four touch-screen fingers moving this far up / down (more than sideways) open the overview
+static constexpr double OVERVIEW_SPAN     = 0.22; // ...and this fraction of the screen height is a full open, like ~20 mm on the touchpad
+static constexpr double OVERVIEW_PAD_UNITS = 240.0; // MacShell's SilkyOverview `distance`: touchpad units for a full open
 static constexpr double TOP_GAP_PX       = 4.0;   // breathing room kept between the menu bar and a floating window   // hold still this long anywhere else in a floating window to pick it up
 
 using Clock = std::chrono::steady_clock;
@@ -293,6 +297,9 @@ static struct {
     PHLWORKSPACEREF      workspace;
     SNeighbours          around;
     double               refX    = 0; // where the tracked point was when the swipe began
+    double               refY    = 0; // the fingers' centre height when the swipe began (four-finger overview)
+    bool                 overviewing = false; // a four-finger vertical swipe is being streamed to the window overview
+    uint32_t             motionMs    = 0;     // libinput time of the touch motion being handled
     bool                 started = false;
     double               delta   = 0; // swipe units, negative = towards the left workspace
     double               rubber  = 0; // != 0 while past an end
@@ -385,6 +392,15 @@ static double trackedX() {
     return sum / g_touch.fingers.size();
 }
 
+static double trackedY() {
+    if (g_touch.fingers.empty())
+        return g_touch.refY;
+    double sum = 0;
+    for (const auto& f : g_touch.fingers)
+        sum += f.y;
+    return sum / g_touch.fingers.size();
+}
+
 // average distance of the fingers from their centre: shrinks on a pinch in, grows on a spread
 static double fingerSpread() {
     if (g_touch.fingers.size() < 2)
@@ -427,6 +443,9 @@ static bool checkPinch() {
         return false;
     const double RATIO = fingerSpread() / g_touch.pinchRef;
     if (std::abs(RATIO - 1.0) < PINCH_START)
+        return false;
+    // four fingers sliding together drift apart a little too: only a spread change that outweighs the hand's travel is a pinch
+    if (std::abs(fingerSpread() - g_touch.pinchRef) * 2.0 < std::hypot(trackedX() - g_touch.refX, trackedY() - g_touch.refY))
         return false;
     g_touch.pinching = true;
     postLaunchpad("begin");
@@ -477,11 +496,27 @@ static void onPinchEnd(const IPointer::SPinchEndEvent& e, Event::SCallbackInfo& 
 // Registered with Hyprland's own trackpad gesture table, next to the four-finger horizontal workspace gesture: Hyprland
 // decides from the first few units of travel whether a swipe is horizontal (workspaces) or vertical (this), so the two
 // never fight. hl.gesture's Lua actions cannot be used: they would have to start a process for every update.
-// socket2 lines "silkyoverview>>begin,up|down", "silkyoverview>>update,<travel>", "silkyoverview>>end[,cancel]";
+// socket2 lines "silkyoverview>>begin,up|down", "silkyoverview>>update,<travel>,<wall ms>", "silkyoverview>>end[,cancel]";
 // travel = touchpad units moved since the gesture began, positive = up. MacShell turns that into progress, so the
 // overview follows the fingers both ways; the direction the gesture started in picks what it shows.
 static void postOverview(const std::string& data) {
     IPC::Socket2::sock()->postEvent({.event = "silkyoverview", .data = data});
+}
+
+// When the fingers really were there, as wall-clock ms (what Date.now() in MacShell reads). socket2 hands the updates to
+// MacShell in bursts (half of them arrive within 1 ms of each other, then nothing for 30 ms), so MacShell cannot use the
+// arrival time; with this it samples the fingers at each frame's own time and the overview moves in even steps.
+// libinput's timeMs is CLOCK_MONOTONIC in ms, cut to 32 bits; steady_clock is CLOCK_MONOTONIC on Linux.
+static double eventWallMs(uint32_t timeMs) {
+    using namespace std::chrono;
+    const double   WALL = duration<double, std::milli>(system_clock::now().time_since_epoch()).count();
+    const uint32_t MONO = (uint32_t)duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+    const uint32_t AGE  = MONO - timeMs; // wraps correctly
+    return (timeMs == 0 || AGE > 1000) ? WALL : WALL - AGE;
+}
+
+static void postOverviewTravel(double travel, uint32_t timeMs) {
+    postOverview(std::format("update,{:.2f},{:.1f}", travel, eventWallMs(timeMs)));
 }
 
 class CSilkyOverviewGesture : public ITrackpadGesture {
@@ -498,7 +533,7 @@ class CSilkyOverviewGesture : public ITrackpadGesture {
         if (!m_active || !e.swipe)
             return;
         m_travel -= e.swipe->delta.y * m_scale; // libinput: negative y is up
-        postOverview(std::format("update,{:.2f}", m_travel));
+        postOverviewTravel(m_travel, e.swipe->timeMs);
     }
 
     void end(const STrackpadGestureEnd& e) override {
@@ -540,6 +575,37 @@ static void removeOverviewGesture() {
     g_overviewAdded = false;
 }
 
+// touch screen: four fingers (and only four, five pinch) moving up / down together, before anything else started → the same
+// socket2 stream as the touchpad, with the travel converted to touchpad units so MacShell needs no second tuning.
+static bool checkTouchOverview(PHLMONITOR monitor) {
+    const double SPAN = std::max(1.0, monitor->m_size.y * OVERVIEW_SPAN);
+    if (g_touch.overviewing) {
+        postOverviewTravel((g_touch.refY - trackedY()) / SPAN * OVERVIEW_PAD_UNITS, g_touch.motionMs);
+        return true;
+    }
+    if (g_touch.started || g_touch.finished || g_touch.pinching || g_touch.fingers.size() != OVERVIEW_FINGERS ||
+        g_pSessionLockManager->isSessionLocked())
+        return false;
+    const double DY = trackedY() - g_touch.refY;
+    const double DX = trackedX() - g_touch.refX;
+    if (std::abs(DY) < OVERVIEW_START_PX || std::abs(DY) <= std::abs(DX) * 1.2 ||
+        (g_touch.pinchRef > 0 && std::abs(fingerSpread() - g_touch.pinchRef) > std::abs(DY)))
+        return false;
+    g_touch.overviewing = true;
+    g_touch.refY += DY < 0 ? -OVERVIEW_START_PX : OVERVIEW_START_PX; // no jump when it engages
+    postOverview(DY < 0 ? "begin,up" : "begin,down");
+    postOverviewTravel((g_touch.refY - trackedY()) / SPAN * OVERVIEW_PAD_UNITS, g_touch.motionMs);
+    return true;
+}
+
+static void endTouchOverview(bool cancelled) {
+    if (!g_touch.overviewing)
+        return;
+    g_touch.overviewing = false;
+    g_touch.finished    = true; // the rest of this touch is swallowed
+    postOverview(cancelled ? "end,cancel" : "end");
+}
+
 static bool ownsSwipe() {
     return g_touch.session && g_pUnifiedWorkspaceSwipe->isGestureInProgress() && g_pUnifiedWorkspaceSwipe->sessionID() == g_touch.session;
 }
@@ -551,6 +617,8 @@ static void beginTouchSwipe(eTouchMode mode, PHLMONITOR monitor) {
     g_touch.workspace = monitor->m_activeWorkspace;
     g_touch.around    = neighbours(monitor, monitor->m_activeWorkspace);
     g_touch.refX      = trackedX();
+    g_touch.refY      = trackedY();
+    g_touch.overviewing = false;
     g_touch.started   = false;
     g_touch.delta     = 0;
     g_touch.rubber    = 0;
@@ -577,7 +645,8 @@ static void driveTouchSwipe() {
             return;
         // enough fingers to pinch: only a clearly sideways movement is a swipe
         if (g_touch.pinchRef > 0 && g_touch.fingers.size() >= PINCH_FINGERS &&
-            (std::abs(dx) < PINCH_SWIPE_PX || std::abs(fingerSpread() - g_touch.pinchRef) > std::abs(dx)))
+            (std::abs(dx) < PINCH_SWIPE_PX || std::abs(fingerSpread() - g_touch.pinchRef) > std::abs(dx) ||
+             std::abs(trackedY() - g_touch.refY) > std::abs(dx))) // up / down is the overview's
             return;
         g_touch.started = true;
         g_touch.refX += dx < 0 ? -START_PX : START_PX; // no jump when the swipe engages
@@ -665,6 +734,7 @@ static void resetTouch() {
     g_touch.trail.clear();
     g_touch.pinchRef = 0;
     g_touch.pinching = false;
+    g_touch.overviewing = false;
     g_touch.edgeDown = {};
     if (g_touch.holdTimer) {
         g_touch.holdTimer->cancel();
@@ -846,7 +916,8 @@ static void onTouchDownImpl(const ITouch::SDownEvent& e, Event::SCallbackInfo& i
     }
 
     std::erase_if(g_touch.fingers, [&e](const auto& f) { return f.id == e.touchID; });
-    const double BEFORE = trackedX();
+    const double BEFORE   = trackedX();
+    const double BEFORE_Y = trackedY();
     g_touch.fingers.emplace_back(SFinger{
         .id = e.touchID,
         .x  = MONITOR->m_position.x + e.pos.x * MONITOR->m_size.x,
@@ -863,6 +934,7 @@ static void onTouchDownImpl(const ITouch::SDownEvent& e, Event::SCallbackInfo& i
         info.cancelled = true;
         if (g_touch.mode == TOUCH_MULTI) {
             g_touch.refX += trackedX() - BEFORE; // another finger must not move the workspaces
+            g_touch.refY += trackedY() - BEFORE_Y; // ...nor the overview
             if (!g_touch.pinching)
                 resetPinch();                     // the pinch is measured from the full set of fingers
         }
@@ -895,6 +967,7 @@ static void onTouchDownImpl(const ITouch::SDownEvent& e, Event::SCallbackInfo& i
 }
 
 static void onTouchMotionImpl(const ITouch::SMotionEvent& e, Event::SCallbackInfo& info) {
+    g_touch.motionMs = e.timeMs;
     // positions are tracked for every finger, so a swipe that starts with the third finger starts from where they are now
     const auto MONITOR = g_touch.mode != TOUCH_NONE ? g_touch.monitor.lock() : Desktop::focusState()->monitor();
     if (MONITOR) {
@@ -946,6 +1019,8 @@ static void onTouchMotionImpl(const ITouch::SMotionEvent& e, Event::SCallbackInf
 
     if (g_touch.mode == TOUCH_MULTI && checkPinch())
         return;
+    if (g_touch.mode == TOUCH_MULTI && checkTouchOverview(MONITOR))
+        return;
     if (g_touch.mode == TOUCH_MULTI || e.touchID == g_touch.edgeFinger)
         driveTouchSwipe();
 }
@@ -958,7 +1033,8 @@ static void raiseTappedWindow(const PHLWINDOW& window) {
 }
 
 static void liftFingerImpl(int32_t id, bool cancelled, Event::SCallbackInfo& info) {
-    const double BEFORE = trackedX();
+    const double BEFORE   = trackedX();
+    const double BEFORE_Y = trackedY();
     const bool   KNOWN  = std::erase_if(g_touch.fingers, [id](const auto& f) { return f.id == id; }) > 0;
     if (g_touch.mode == TOUCH_NONE)
         return;
@@ -999,6 +1075,13 @@ static void liftFingerImpl(int32_t id, bool cancelled, Event::SCallbackInfo& inf
         return;
     }
 
+    if (g_touch.overviewing) { // the first finger off ends it, like the pinch: the hand is leaving
+        endTouchOverview(cancelled);
+        if (g_touch.fingers.empty())
+            resetTouch();
+        return;
+    }
+
     if (g_touch.mode == TOUCH_EDGE && id == g_touch.edgeFinger)
         finishTouchSwipe(cancelled);
     else if (g_touch.mode == TOUCH_MULTI) {
@@ -1006,6 +1089,7 @@ static void liftFingerImpl(int32_t id, bool cancelled, Event::SCallbackInfo& inf
             finishTouchSwipe(cancelled);
         else {
             g_touch.refX += trackedX() - BEFORE;
+            g_touch.refY += trackedY() - BEFORE_Y;
             resetPinch();
         }
     }
@@ -1112,7 +1196,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     }));
     addOverviewGesture();
 
-    return {"silky-gestures", "Touch-screen workspace swipes, Launchpad pinch and four-finger window overview, rubber band, raising / moving / resizing floating windows, kept below the menu bar", "sqlsec", "0.7.0"};
+    return {"silky-gestures", "Touch-screen workspace swipes, Launchpad pinch and four-finger window overview (touchpad and touch screen), rubber band, raising / moving / resizing floating windows, kept below the menu bar", "sqlsec", "0.8.1"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
@@ -1124,6 +1208,8 @@ APICALL EXPORT void PLUGIN_EXIT() {
     g_touch.swallowed.clear();
     if (g_touch.pinching || g_padPinch.active)
         postLaunchpad("end,cancel");
+    if (g_touch.overviewing)
+        postOverview("end,cancel");
     g_padPinch = {};
     g_listeners.clear();
     g_touch.fingers.clear();

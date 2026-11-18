@@ -7,7 +7,7 @@
 - Two-finger scrolling: macOS-style natural scrolling, the content follows your fingers
 - Three-finger move: drag windows, files, selected text and sliders like macOS "three-finger drag"
 - Four-finger horizontal swipe: switch workspaces on the current monitor with a full-page animation that tracks your fingers
-- Four fingers up / down: window overview (every window of the workspace / of the current app), done by the silky-gestures plugin and MacShell, see [13](13-window-overview.md)
+- Four fingers up / down: window overview (every window of the workspace / of the current app), also with four fingers on the touch screen, done by the silky-gestures plugin and MacShell, see [13](13-window-overview.md)
 - Rubber-band at the first / last workspace instead of creating a new empty one
 
 ## Why this split

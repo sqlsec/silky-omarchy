@@ -23,7 +23,7 @@ To see every interface and interaction change grouped by where you feel it (menu
 | 09 | Frosted candidate window | ✅ | Rounded frosted WowType candidate skin that follows dark/light mode; fixes the ghosting candidate bar in WeChat |
 | 10 | Shortcuts | ✅ | Keys MacShell and Omarchy both use go to MacShell only, Omarchy's actions move to free keys; Super+K becomes a searchable macOS 27-style shortcut panel that runs what you pick |
 | 11 | Menu glass | ✅ | Omarchy's own menus (Super+Esc, Super+Ctrl+M, clipboard, emoji) become macOS 27 frosted glass that switches light / dark live |
-| 13 | Window overview | ✅ | Four fingers up on the touchpad shows every window of the workspace, four fingers down every window of the current app; linear, follows the fingers, interruptible and reversible (plugin + MacShell component) |
+| 13 | Window overview | ✅ | Four fingers up on the touchpad or touch screen shows every window of the workspace, four fingers down every window of the current app; linear, follows the fingers, interruptible and reversible (plugin + MacShell component) |
 | 14 | [Logitech mouse](docs/en/14-omalogi.md) | ✅ | Standalone Omalogi window with a Chinese UI, G604 button diagrams, onboard profiles, a manual key picker, Super+K system shortcuts, and an ARM source build |
 | 15 | [Obsidian](docs/en/15-obsidian.md) | ✅ | macOS 27 theme: glass menus and floating sidebars, follows light / dark, Finder blue folders and per-extension file icons, gliding caret and typing fade-in (input methods included), Terminal-window code blocks |
 

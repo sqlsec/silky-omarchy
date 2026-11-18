@@ -8,8 +8,8 @@ The same as macOS:
 
 | Gesture | Effect |
 | --- | --- |
-| Four fingers up on the touchpad | Every window of the current workspace (Mission Control) |
-| Four fingers down on the touchpad | Every window of the current app (App Exposé), including its windows on other workspaces |
+| Four fingers up on the touchpad or touch screen | Every window of the current workspace (Mission Control) |
+| Four fingers down on the touchpad or touch screen | Every window of the current app (App Exposé), including its windows on other workspaces |
 | The opposite swipe once open | Back to the desktop |
 
 Animation requirements:
@@ -41,7 +41,7 @@ Events sent by the plugin:
 
 ```text
 silkyoverview>>begin,up       four fingers started, first moving up (down for down)
-silkyoverview>>update,<travel> total travel since the start, in touchpad units, up is positive
+silkyoverview>>update,<travel>,<time> total travel since the start, in touchpad units, up is positive; time = when the fingers were there, wall-clock ms (since 0.8.1)
 silkyoverview>>end            fingers lifted (end,cancel: the gesture was cancelled)
 ```
 
@@ -52,17 +52,31 @@ Notes:
 - If the config already has a four-finger `vertical` / `up` / `down` / `swipe` gesture, registering fails and the plugin shows a notification saying why
 - Nothing happens while the session is locked
 
+### Plugin: four fingers up / down on the touch screen
+
+A touch screen has no libinput gestures, so the plugin tracks the touch points itself (the same code as the three-finger workspace swipe and the four-finger pinch, see `checkTouchOverview`):
+
+- Exactly four fingers whose centre moves up or down more than `OVERVIEW_START_PX` (28 px), with the vertical travel more than 1.2× the sideways travel and more than the change in finger spread, is the overview gesture; those 28 px are taken off the start so the picture does not jump
+- The travel is converted to touchpad units and sent as the same `silkyoverview` events: `OVERVIEW_SPAN` (22 %) of the screen height = 240 units = fully open, so MacShell needs no second tuning
+- The first finger to lift ends it (as with the pinch); adding or removing a finger mid-way does not make the picture jump
+- The four-finger pinch still comes first, but only a spread change larger than half the distance the fingers' centre moved counts as a pinch, so fingers drifting apart a little while sliding up together are not taken for one; the four-finger workspace swipe likewise needs more sideways than vertical travel
+- Once the overview is open, tap a window with one finger to pick it; swipe four fingers the other way to close
+
 ### MacShell: one number drives everything
 
 `SilkyOverview.qml` has a single progress value `p` (0 = desktop, 1 = overview):
 
 - With fingers down: `p = starting progress ± travel / distance`; up opens the workspace overview, down opens the app's windows; clamped to 0–1
-- Every window is a window capture (MacShell's own `SafeCapture`, which never releases a capture while a frame is in flight, so the Wayland connection cannot die), and its rectangle is `lerp(real rect, grid rect, p)`. The picture keeps the window's own fixed size: a new frame is only copied into a texture (`ShaderEffectSource`, no effect pass), and a small shader, [`silkyround.frag`](../../config/macshell/overview/silkyround.frag), draws it with anti-aliased rounded corners at the current size, so moving and scaling cost nothing extra. During the gesture only the frame taken at the start is used; the live stream starts once the overview has settled open
+- Every window is a window capture (MacShell's own `SafeCapture`, which never releases a capture while a frame is in flight, so the Wayland connection cannot die), and its rectangle is `lerp(real rect, grid rect, p)`. The picture keeps the window's own fixed size: a new frame is only copied into a texture (`ShaderEffectSource`, no effect pass), and a small shader, [`silkyround.frag`](../../config/macshell/overview/silkyround.frag), draws it with anti-aliased rounded corners at the current size, so moving and scaling cost nothing extra. Every window gets one fresh frame, all in one batch, when a gesture begins; after that (also while the overview stands open) nothing is refreshed or streamed; why is under "Smoothness" below
 - In app mode the workspace's other windows stay where they are with opacity `1 − p`; the app's windows on other workspaces grow linearly in their grid places from 88 % size and opacity 0 to 100 %
 - The background is the current wallpaper (the same image and crop as the desktop) under a `0.22·p` dim, with no blur: a full-screen blur recomputed every frame took longer than a 90 Hz frame on this GPU; the menu bar's reserved strip is left uncovered, so the menu bar stays as it is
 - Each thumbnail has a Hyprland-like shadow from the first frame on
 - On release: the fingers' speed over the last ~90 ms projects where `p` would be 0.12 s later; past half opens, otherwise closes. It then moves to the end at a **constant speed** of `max(finger speed, minSpeed)`
 - Four fingers down again mid-animation: the animation stops and the fingers carry on from the current `p`
+- **Solid all the way back**: opening cross-fades the overview in over the first 12 % of the progress; once it has been fully opaque, the thumbnails stay opaque on the way back until they sit exactly on the real windows (same places and stacking, the picked one on top, no dim left), and only then does the whole layer fade out over 80 ms (`outroMs`). The only thing that changes then is what a capture does not have: Hyprland's borders, title bars and shadows. Earlier versions cross-faded on the way back too: the half-transparent overview over the real desktop made a double image, and after a fast swipe the fade started as early as p = 0.5, so the windows went see-through half-way back and the picked one turned solid again at the end
+- **The fingers are sampled by time**: the plugin adds to every `update` the time the fingers were really there (libinput's event time as wall-clock ms). socket2 delivers the events to MacShell in bursts (more than half arrive within 1 ms of each other, then nothing for 30 ms or more), so setting the progress on arrival moved the picture in jumps although every frame was on time. Now each frame reads the progress off the timestamped finger track at its own time minus `lagMs` (10 ms), extrapolating at the fingers' speed for at most `extrapMs` (16 ms) past the newest sample, so every step matches the fingers' real speed. The release speed uses these times too
+- **By the clock**: the constant-speed animation after release computes its position from the clock, not by adding up the last frame's duration: a late frame used to make the next one take a double step, a visible hitch. A stall longer than 50 ms does not make it jump; it carries on from where it stopped
+- **The layer fades as one picture**: while the overview is on screen it has `layer.enabled`, so it is flattened first and its opacity applied to the result. QML's `opacity` is otherwise applied to every child on its own: each thumbnail turned half-transparent and the windows stacked under it showed through (Firefox and Claude through Chrome), so the two or three frames of the fade were a mix of every window, seen as a flash at the very end. Flattened, the fading picture is exactly the real desktop underneath and nothing shows through. In a frame-by-frame screen recording, the brightness change between frames dropped from 10–20 to about 1
 
 Details that make the start seamless:
 
@@ -75,16 +89,24 @@ Details that make the start seamless:
 Once open:
 
 - Hovering a window: blue outline, title below it
-- Clicking a window (or Enter while hovering): focuses it and closes the overview, the clicked window on top as it flies back; if it is on another workspace, that workspace is switched to and the overview fades out as a whole
+- Clicking / tapping a window (or Enter while hovering): focuses it and closes the overview, flying back a little faster than a plain close (`pickSpeed`: about 0.3 s from fully open, about 0.4 s from click to done; it was about 0.75 s), the clicked window on top as it flies back; if it is on another workspace, that workspace is switched to and the overview fades out as a whole. The open overview holds exclusive keyboard focus, and while a layer does Hyprland refuses to focus any window: earlier versions lost the focus command and the old window stayed on top. Now the overview closes first (releasing the keyboard) and the focus command follows 40 ms later
 - Clicking empty space or Esc: closes
 - Windows opening, closing or moving lay the grid out again
 
 Grid layout: windows keep their relative sizes (one uniform scale, at most 0.88), are split into rows by their centres top to bottom and left to right; every row count is tried and the one with the largest scale wins.
 
+### Smoothness
+
+No frame may be late, so nothing extra is asked of Hyprland or the apps during the motion. All of this was measured on this machine (`ipc call overview debug true` logs every frame; a second script asks Hyprland's socket every 4 ms to see whether its main loop stalls):
+
+- **The keyboard goes back only after landing**: the overview takes the keyboard as soon as it appears and keeps it until the windows have flown back. An app that has keyboard focus keeps redrawing (a blinking caret, a focus ring), and every redraw makes Hyprland composite every window under the full-screen overview again: as long as an app had focus, about one frame in six was missed. Handing the keyboard back when closing began missed ~18 % of the closing frames; now it is ~5 %. In the last 20 % of the way back (`handoverAt`, about the last 60 ms) the keyboard goes back and the picked window is focused (the keyboard release is double-buffered Wayland state that only takes effect with the overview's next commit, so the focus is re-sent every 50 ms until the window is active). By the landing it is normally active and raised already and the fade starts at once; otherwise it waits at most 200 ms. Earlier versions handed over only at the landing, which measured a 230 ms standstill before the fade, so picking a window felt slow
+- **No live streaming**: every request for a new window picture stalls Hyprland's main loop for tens of ms (every app, the mouse pointer and the overview with it). A batch stalls it once, so all windows are requested together when a gesture begins, while the overview is waiting for its first frames anyway. After that nothing streams: all 16 windows streaming live stalled Hyprland for 45–70 ms about once a second, and even the hovered window alone did whenever it redrew; with no stream, an open overview never stalled Hyprland. Spreading the refreshes out (one every 10 ms, or one every 150 ms in rotation while open) was tried and was worse: every request stalled on its own
+- Result: about 5 % missed frames (frame gap > 16 ms) both opening and closing. Hyprland still stalls for 40–70 ms now and then; how often varies a lot with what the apps are doing at the time, with no clear link to the overview
+
 ## Install
 
 ```bash
-./scripts/install-silky-gestures.sh                 # the plugin (four fingers up / down since 0.7.0)
+./scripts/install-silky-gestures.sh                 # the plugin (touchpad four fingers up / down since 0.7.0, touch screen since 0.8.0, timestamped events since 0.8.1)
 python3 scripts/install-macshell-overview.py        # copies SilkyOverview.qml into MacShell, adds one line to shell.qml
 qs -c MacShell ipc call macshell reload
 ```

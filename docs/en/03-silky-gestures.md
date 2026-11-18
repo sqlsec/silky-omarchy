@@ -30,7 +30,7 @@ So this is done by a small Hyprland plugin: [`plugins/silky-gestures/main.cpp`](
 | Either touchscreen swipe past the end | Resistance, spring back on release |
 | Four- or five-finger pinch on touchpad / touchscreen | Opens MacShell's Applications panel (Launchpad) |
 | Four- or five-finger spread on touchpad / touchscreen | Closes the Applications panel |
-| Four fingers up / down on the touchpad | MacShell window overview: every window of the workspace / of the current app, following the fingers (see [13](13-window-overview.md)) |
+| Four fingers up / down on the touchpad or touch screen | MacShell window overview: every window of the workspace / of the current app, following the fingers (see [13](13-window-overview.md)) |
 | Rapid clicks without moving the pointer, where each click changes which layer takes input (the Dock's Applications icon) | Every click takes effect |
 
 Details:
@@ -40,7 +40,7 @@ Details:
 - The rubber-band uses the `workspaces` animation's curve and speed
 - Inactive while the screen is locked
 - Four- / five-finger pinch tracks your fingers: the plugin sends the progress to MacShell as socket2 events `silkylaunchpad>>begin`, `update,<amount>`, `end[,cancel]`. "amount" is `1 − scale` (positive when pinching, negative when spreading). On the touchpad it uses libinput's pinch gesture (two- and three-finger pinches are not intercepted); on the touchscreen it uses the average distance of the fingers to their centre, and a change of more than 6% counts as a pinch
-- On the touchscreen with four or more fingers, it counts as a workspace switch only if the horizontal movement exceeds 28 px and is larger than the change in finger spacing
+- On the touchscreen with four or more fingers, it counts as a workspace switch only if the horizontal movement exceeds 28 px and is larger than both the change in finger spacing and the vertical movement; exactly four fingers moving up or down more than 28 px open the window overview (see [13](13-window-overview.md))
 - `hl.gesture`'s pinch is not used: its function actions run only after the fingers lift, so they cannot track the fingers
 - Troubleshooting: every touchpad pinch emits `silkypinch>>finger count`. If a four-finger pinch does nothing, run `socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock | grep silky`, pinch again, and see how many fingers libinput reported
 

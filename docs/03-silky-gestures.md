@@ -30,7 +30,7 @@ Hyprland 0.57.2 自带的只有触控板手势和 `gestures.workspace_swipe_touc
 | 触控屏上述滑动到头 | 阻尼跟随，松手回弹 |
 | 触控板 / 触控屏四指或五指捏合 | 打开 MacShell 应用程序面板（Launchpad） |
 | 触控板 / 触控屏四指或五指张开 | 关闭应用程序面板 |
-| 触控板四指上滑 / 下滑 | MacShell 窗口总览：当前工作区 / 当前应用的所有窗口，跟手（见 [13](13-window-overview.md)） |
+| 触控板 / 触控屏四指上滑 / 下滑 | MacShell 窗口总览：当前工作区 / 当前应用的所有窗口，跟手（见 [13](13-window-overview.md)） |
 | 指针不动、连续点击会改变输入区域的图层（Dock 的“应用程序”图标） | 每次点击都生效 |
 
 细节：
@@ -40,7 +40,7 @@ Hyprland 0.57.2 自带的只有触控板手势和 `gestures.workspace_swipe_touc
 - 回弹使用 `workspaces` 动画的曲线和速度
 - 锁屏时不响应
 - 四指 / 五指捏合跟手：插件把进度通过 socket2 事件 `silkylaunchpad>>begin`、`update,<量>`、`end[,cancel]` 发给 MacShell。“量”是 `1 − 缩放比例`（捏合为正，张开为负）。触控板用 libinput 的 pinch 手势（两指、三指捏合不拦截）；触控屏用手指到中心的平均距离，变化超过 6% 就算捏合
-- 触控屏四指及以上时，只有横向移动超过 28 px 且大于间距变化，才当作切换工作区
+- 触控屏四指及以上时，只有横向移动超过 28 px、大于间距变化且大于竖向移动，才当作切换工作区；正好四指上下移动超过 28 px 打开窗口总览（见 [13](13-window-overview.md)）
 - 不用 `hl.gesture` 的 pinch：它的函数动作要等抬手才执行，无法跟手
 - 排查：每次触控板捏合都会发出 `silkypinch>>手指数`。如果四指捏合没反应，运行 `socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock | grep silky` 后再捏一次，看 libinput 报告了几根手指
 
