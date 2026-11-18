@@ -29,7 +29,17 @@
 
 ## 快速开始
 
-前提：Omarchy 4.x（Hyprland 0.57，Lua 配置），并已安装 MacShell 0.5.1。按需运行：
+前提：Omarchy 4.x（Hyprland 0.57，Lua 配置）和 MacShell。
+
+| 组件 | 当前验证的版本 | 说明 |
+| --- | --- | --- |
+| Omarchy | 4.5.0 | Lua 配置的 4.x 都适用 |
+| Hyprland | 0.57.2 | 插件必须针对正在运行的版本编译，更新后重跑 `install-silky-gestures.sh` |
+| MacShell | 0.5.2 | 02 支持全新及已应用 Silky 的 **0.5.2**（见 [02 · 版本](docs/02-macshell.md#版本)） |
+| Quickshell / Qt | 0.3.2 / 6.12 | |
+| libinput | 1.32.0 | 03 的捏合补丁针对 1.32.0 |
+
+按需运行：
 
 ```bash
 ./scripts/install-macshell-optimizations.sh
@@ -63,7 +73,7 @@ config/hypr/      Hyprland Lua 配置片段（触控板、动画、显示器、�
 config/macshell/  MacShell 玻璃参数、GPU 环境变量、窗口总览组件
 config/zsh/       ~/.zshrc
 config/obsidian/  Obsidian 主题 Silky macOS、打字淡入插件 silky-typing、图标生成脚本
-patches/          MacShell 0.5.1 + MacLock 的补丁
+patches/          MacShell 0.5.1 / 0.5.2 + MacLock + Omalogi 汉化的补丁
 plugins/          Hyprland C++ 插件 silky-gestures
 themes/           Omarchy 主题 macos-tahoe-dark / macos-tahoe-light
 hooks/            Omarchy theme-set 钩子

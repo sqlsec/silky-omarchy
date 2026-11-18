@@ -4,7 +4,7 @@
 
 ## 目标
 
-- 为 MacShell 0.5.1 增加简体中文，并补齐菜单、设置和系统操作中的遗漏文本
+- 为 MacShell 增加简体中文，并补齐菜单、设置和系统操作中的遗漏文本
 - 将“关于本机”调整为接近 macOS 的紧凑布局，正确识别 Snapdragon X Elite、Adreno X1-85、内存频率和 Omarchy 完整版本号
 - 优化触控屏命中区域、滑动和滚动体验
 - 使用真实窗口内容生成实时玻璃，而不是用壁纸或纯色伪装
@@ -13,7 +13,7 @@
 
 ## 实现方式
 
-补丁基于官方 [0-ss/MacShell 0.5.1](https://github.com/0-ss/MacShell/tree/0.5.1)，只包含相对上游发生变化的文件：
+补丁分别针对 MacShell 0.5.1 和 0.5.2，只包含相对上游发生变化的文件：
 
 - `I18n.js` 与 `lang/zh-CN.js`：中文语言注册与完整翻译
 - `AboutApp.qml`、`assets/about-info.sh`：关于页布局及硬件识别
@@ -27,9 +27,22 @@
 
 实时玻璃仍需要 CPU 完成 Wayland 窗口枚举和捕获调度，无法做到 100% 零 CPU；实际的 Qt Quick 场景图、模糊、折射和合成通过 Vulkan 在 GPU 上执行。GPU 保持 `simple_ondemand` 动态升频，不强制锁定最高频率。
 
+## 版本
+
+本仓库最初基于 MacShell 0.5.1 开发，本机现在运行的是 **MacShell 0.5.2**（Omarchy 4.5.0、Hyprland 0.57.2、Quickshell 0.3.2），0.5.1 补丁里的所有改动都已带到这台机器的 0.5.2 上。各部分对版本的支持：
+
+| 内容 | 0.5.1 | 已带 Silky 改动的 0.5.2 | 全新的 0.5.2 |
+| --- | --- | --- | --- |
+| `install-macshell-optimizations.sh`（汉化、触控、实时玻璃等完整补丁） | 支持 | 支持（只更新各项调整，不再打补丁） | 支持（使用 0.5.2 专用补丁） |
+| `tune-*.py`、`configure-macshell-reload.py` | 支持 | 支持 | 作为安装流程的一部分验证 |
+| `install-macshell-status.py`（顶栏监控） | 支持 | 支持 | 支持 |
+| `install-macshell-overview.py`（[13 窗口总览](13-window-overview.md)） | 未验证 | 支持 | 未验证 |
+
+0.5.2 补丁基于上游标签 `0.5.2`（提交 `5d17abadd5de192919416990ad2ecf7f31b38b51`）。现有上游 0.5.1 标签与旧补丁基线不同，全新安装建议使用 0.5.2。`--check` 会在临时目录试跑补丁和全部调优步骤。
+
 ## 安装
 
-先安装 MacShell 0.5.1，再从本仓库执行：
+先安装 MacShell 0.5.2，再从本仓库执行：
 
 ```bash
 ./scripts/install-macshell-optimizations.sh --check
@@ -43,6 +56,8 @@
 ```
 
 完成后，从 MacShell 设置的“工具”页面重新启动 MacShell。
+
+Dock 的「智能」隐藏模式只在当前屏幕的可见窗口与 Dock 重叠时收起，浮动窗口和平铺窗口都适用。窗口移开后 Dock 会自动恢复；收起时，把鼠标移到屏幕底边可以临时唤出。
 
 ### 应用 QML 更新
 

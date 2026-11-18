@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Apply the Applications panel interaction tuning to a Silky MacBar.qml."""
 import pathlib
+import re
 import sys
 
 path = pathlib.Path(sys.argv[1])
@@ -69,7 +70,7 @@ replace('''                                if (!pad) {
                                     if (mode !== 1) target = appsFlick.contentY;''')
 
 # MouseArea delegates receive wheel events before the Flickable's handler.
-if 'scrollGestureEnabled: false\n                                                        onWheel: event => { appsScroller.wheel(event);' not in s:
+if not re.search(r"scrollGestureEnabled: false\s+onWheel: event => \{ appsScroller\.wheel\(event\);", s):
     replace('''                                                        id: cma
                                                         anchors.fill: parent
                                                         onClicked:''', '''                                                        id: cma

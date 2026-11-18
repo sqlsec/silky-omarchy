@@ -91,6 +91,7 @@ hyprctl configerrors
 
 ## Tested on
 
-- Omarchy Linux
+- Omarchy 4.5.0
 - Hyprland 0.57.2
+- libinput 1.32.0
 - Built-in HID-over-I2C touchpad

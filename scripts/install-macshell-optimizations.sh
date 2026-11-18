@@ -16,7 +16,7 @@ usage() {
 Usage: scripts/install-macshell-optimizations.sh [--check]
 
 Applies the Silky Omarchy localization, touch and real-time glass patch to an
-installed MacShell 0.5.1. Existing files are backed up before any change.
+installed MacShell 0.5.1 or 0.5.2. Existing files are backed up before any change.
 
   --check  Verify compatibility without changing files.
 EOF
@@ -42,10 +42,11 @@ done
 }
 
 version=$(tr -d '[:space:]' < "$shell_dir/VERSION")
-[[ "$version" == "0.5.1" ]] || {
-  printf 'This patch targets MacShell 0.5.1; installed version is %s.\n' "$version" >&2
-  exit 1
-}
+case "$version" in
+  0.5.1) ;;
+  0.5.2) patch_file="$repo_root/patches/macshell-0.5.2-silky.patch" ;;
+  *) printf 'This installer supports MacShell 0.5.1 and 0.5.2; found %s.\n' "$version" >&2; exit 1 ;;
+esac
 
 patch_state=unknown
 if patch --dry-run --silent --forward -p1 -d "$quickshell_dir" < "$patch_file" >/dev/null 2>&1; then
@@ -53,69 +54,127 @@ if patch --dry-run --silent --forward -p1 -d "$quickshell_dir" < "$patch_file" >
 elif grep -q 'function minimizeAddress' "$shell_dir/MacDock.qml" \
     && grep -q 'function restoreAddress' "$shell_dir/MacDock.qml" \
     && grep -q 'MinimizeFx { id: minimizeFx' "$shell_dir/shell.qml" \
-    && grep -q 'WindowBar { id: windowBar' "$shell_dir/shell.qml" \
-    && grep -q 'function restoreAddress' "$shell_dir/MacDock.qml"; then
+    && grep -q 'WindowBar { id: windowBar' "$shell_dir/shell.qml"; then
   # Other Silky modules may add independent hunks to the same large QML files (for example Launchpad gestures).
   # Recognize this feature by its complete runtime markers instead of demanding byte-for-byte patch reversal.
   patch_state=applied
 elif patch --dry-run --silent --reverse -p1 -d "$quickshell_dir" < "$patch_file" >/dev/null 2>&1; then
   patch_state=applied
-elif grep -q 'function isMinimized' "$shell_dir/MacDock.qml" \
+elif [[ "$version" == "0.5.1" ]] && grep -q 'function isMinimized' "$shell_dir/MacDock.qml" \
     && ! grep -q 'function minimizeAddress' "$shell_dir/MacDock.qml" \
     && patch --dry-run --silent --forward -p1 -d "$quickshell_dir" < "$minimize_upgrade" >/dev/null 2>&1; then
   patch_state=upgrade
 else
-  printf 'The installed MacShell differs from both pristine 0.5.1 and the Silky patch.\n' >&2
-  printf 'Reinstall MacShell 0.5.1 or merge the patch manually. No files were changed.\n' >&2
+  printf 'MacShell %s does not match the Silky patch or a supported installed baseline. No files were changed.\n' "$version" >&2
   exit 1
 fi
 
 printf 'MacShell %s; patch state: %s\n' "$version" "$patch_state"
-$check_only && exit 0
+staging=$(mktemp -d)
+trap 'rm -rf -- "$staging"' EXIT
+staged_shell="$staging/MacShell"
 
-stamp=$(date +%Y%m%d-%H%M%S)
-backup_dir="$HOME/.local/state/macshell/silky-backup-$stamp"
-mkdir -p "$backup_dir/MacShell/assets" "$backup_dir/MacShell/lang" "$backup_dir/MacLock" "$backup_dir/settings"
-
-for relative_path in I18n.js AboutApp.qml ClockApp.qml Installer.qml MacBar.qml MacDock.qml WindowBar.qml shell.qml; do
-  cp -a "$shell_dir/$relative_path" "$backup_dir/MacShell/$relative_path"
+# Stage exactly the files that the patches and tuners can change. Dereference
+# source symlinks so even a linked installation stays untouched during preflight.
+mapfile -t managed_files < <(
+  awk '/^\+\+\+ [^ ]+\// { sub(/^\+\+\+ [^/]+\//, ""); print $1 }' "$patch_file" "$minimize_upgrade" | sort -u
+)
+calendar_files=(ChinaLunarDates.js ChinaCalendar.js ChinaCalendarDay.qml)
+calendar_paths=()
+for file in "${calendar_files[@]}"; do
+  calendar_paths+=("MacShell/$file")
 done
-[[ ! -f "$quickshell_dir/MacLock/shell.qml" ]] || cp -a "$quickshell_dir/MacLock/shell.qml" "$backup_dir/MacLock/shell.qml"
-cp -a "$shell_dir/assets/about-info.sh" "$backup_dir/MacShell/assets/about-info.sh"
-[[ ! -f "$shell_dir/lang/zh-CN.js" ]] || cp -a "$shell_dir/lang/zh-CN.js" "$backup_dir/MacShell/lang/zh-CN.js"
-[[ ! -f "$shell_dir/TouchWindowMove.qml" ]] || cp -a "$shell_dir/TouchWindowMove.qml" "$backup_dir/MacShell/TouchWindowMove.qml"
-[[ ! -f "$shell_dir/assets/tone-wall.sh" ]] || cp -a "$shell_dir/assets/tone-wall.sh" "$backup_dir/MacShell/assets/tone-wall.sh"
-[[ ! -f "$bar_settings" ]] || cp -a "$bar_settings" "$backup_dir/settings/macbar.json"
-[[ ! -f "$dock_settings" ]] || cp -a "$dock_settings" "$backup_dir/settings/macdock.json"
-[[ ! -f "$env_file" ]] || cp -a "$env_file" "$backup_dir/settings/macshell.env"
+managed_files=("${calendar_paths[@]}" MacShell/DockGlassPanel.qml "${managed_files[@]}")
+for display_asset in "$repo_root/config/macshell/displays/"{*.js,*.qml}; do
+  managed_files+=("MacShell/${display_asset##*/}")
+done
+for relative_path in "${managed_files[@]}"; do
+  case "$relative_path" in
+    MacShell/*) source_path="$shell_dir/${relative_path#MacShell/}" ;;
+    MacLock/*) source_path="$quickshell_dir/$relative_path" ;;
+  esac
+  if [[ -f "$source_path" ]]; then
+    mkdir -p "$staging/$(dirname -- "$relative_path")"
+    cp -pL -- "$source_path" "$staging/$relative_path"
+  fi
+done
+mkdir -p "$staged_shell/assets" "$staged_shell/lang" "$staging/MacLock"
 
 if [[ "$patch_state" == clean ]]; then
-  patch --silent --forward -p1 -d "$quickshell_dir" < "$patch_file"
+  patch --silent --forward -p1 -d "$staging" < "$patch_file"
 elif [[ "$patch_state" == upgrade ]]; then
-  patch --silent --forward -p1 -d "$quickshell_dir" < "$minimize_upgrade"
+  patch --silent --forward -p1 -d "$staging" < "$minimize_upgrade"
 fi
 
 # Upgrade the old bottom-anchored icon scaling on already-patched installations.
-python3 "$repo_root/scripts/tune-dock-icons.py" "$shell_dir/MacDock.qml"
+python3 "$repo_root/scripts/tune-dock-icons.py" "$staged_shell/MacDock.qml"
 # Use the wallpaper when a Dock window capture has no frame.
-sed -i '/^\([[:space:]]*\)placeholder: (root\.bar ? root\.bar\.darkMode : true) ? "#1e1e20" : "#f2f2f7"$/c\                                    // Use the wallpaper when a window has no captured frame.\n                                    placeholder: "transparent"' "$shell_dir/MacDock.qml"
+sed -i '/^\([[:space:]]*\)placeholder: (root\.bar ? root\.bar\.darkMode : true) ? "#1e1e20" : "#f2f2f7"$/c\                                    // Use the wallpaper when a window has no captured frame.\n                                    placeholder: "transparent"' "$staged_shell/MacDock.qml"
 # After a click the icon's hover label stays away until the pointer moves (no glass bubble built mid-animation).
-python3 "$repo_root/scripts/tune-dock-hover-label.py" "$shell_dir/MacDock.qml"
+python3 "$repo_root/scripts/tune-dock-hover-label.py" "$staged_shell/MacDock.qml"
+python3 "$repo_root/scripts/tune-dock-smart-hide.py" "$staged_shell/MacDock.qml"
+# The right-click menu uses the same see-through glass as the Dock (tint / blur follow the Dock's glass settings).
+python3 "$repo_root/scripts/tune-dock-menu-glass.py" "$staged_shell"
 
 # Keep the Applications panel interaction tuning current on existing installations too.
-python3 "$repo_root/scripts/tune-apps-panel.py" "$shell_dir/MacBar.qml"
-python3 "$repo_root/scripts/tune-control-center-glass.py" "$shell_dir/MacBar.qml"
-python3 "$repo_root/scripts/tune-display-controls.py" "$shell_dir/MacBar.qml"
+python3 "$repo_root/scripts/tune-apps-panel.py" "$staged_shell/MacBar.qml"
+python3 "$repo_root/scripts/tune-control-center-glass.py" "$staged_shell/MacBar.qml"
+for file in "${calendar_files[@]}"; do
+  install -m 644 "$repo_root/config/macshell/calendar/$file" "$staged_shell/$file"
+done
+python3 "$repo_root/scripts/tune-calendar.py" "$staged_shell/MacBar.qml"
+python3 "$repo_root/scripts/tune-display-controls.py" "$staged_shell/MacBar.qml"
+python3 "$repo_root/scripts/tune-display-settings.py" "$staged_shell"
+# Volume sliders play a tap at the level they set.
+python3 "$repo_root/scripts/tune-volume-feedback.py" "$staged_shell/MacBar.qml"
+# Live microphone level under the input slider on the Sound page.
+python3 "$repo_root/scripts/tune-mic-meter.py" "$staged_shell/MacBar.qml"
 # Keep glass window stacking in sync when focus changes without a geometry change.
-python3 "$repo_root/scripts/tune-glass-stacking.py" "$shell_dir/shell.qml"
-python3 "$repo_root/scripts/configure-macshell-reload.py" "$shell_dir/shell.qml"
-python3 "$repo_root/scripts/tune-settings-scroll.py" "$shell_dir/MacDock.qml"
+python3 "$repo_root/scripts/tune-glass-stacking.py" "$staged_shell/shell.qml"
+python3 "$repo_root/scripts/configure-macshell-reload.py" "$staged_shell/shell.qml"
+python3 "$repo_root/scripts/tune-settings-scroll.py" "$staged_shell/MacDock.qml"
+
+python3 "$repo_root/scripts/tune-macshell-performance.py" "$staged_shell"
 
 # Remove minimize entry points while retaining restore support for previously parked windows.
-python3 "$repo_root/scripts/disable-minimize.py" "$shell_dir"
+python3 "$repo_root/scripts/disable-minimize.py" "$staged_shell"
 
 # Also update existing Silky installations: keep application-provided window controls visible.
-sed -i 's/readonly property bool enabled: true/readonly property bool enabled: false/' "$shell_dir/WindowBar.qml"
+sed -i 's/readonly property bool enabled: true/readonly property bool enabled: false/' "$staged_shell/WindowBar.qml"
+
+# Parse settings during preflight too, since the installer rewrites them below.
+for settings in "$bar_settings" "$dock_settings"; do
+  [[ ! -f "$settings" ]] || jq empty "$settings"
+done
+if $check_only; then
+  printf 'MacShell patch and tuners passed preflight.\n'
+  exit 0
+fi
+
+stamp=$(date +%Y%m%d-%H%M%S)
+mkdir -p "$HOME/.local/state/macshell"
+backup_dir=$(mktemp -d "$HOME/.local/state/macshell/silky-backup-$stamp.XXXXXX")
+mkdir -p "$backup_dir/settings"
+for relative_path in "${managed_files[@]}"; do
+  case "$relative_path" in
+    MacShell/*) destination="$shell_dir/${relative_path#MacShell/}" ;;
+    MacLock/*) destination="$quickshell_dir/$relative_path" ;;
+  esac
+  source_path="$staging/$relative_path"
+  [[ -f "$source_path" ]] || continue
+  cmp -s "$source_path" "$destination" && continue
+  if [[ -f "$destination" ]]; then
+    mkdir -p "$backup_dir/$(dirname -- "$relative_path")"
+    cp -a -- "$destination" "$backup_dir/$relative_path"
+  fi
+  mkdir -p "$(dirname -- "$destination")"
+  temporary=$(mktemp "${destination}.silky.XXXXXX")
+  cp -p -- "$source_path" "$temporary"
+  mv -fT -- "$temporary" "$destination"
+done
+[[ ! -f "$bar_settings" ]] || cp -a "$bar_settings" "$backup_dir/settings/macbar.json"
+[[ ! -f "$dock_settings" ]] || cp -a "$dock_settings" "$backup_dir/settings/macdock.json"
+[[ ! -f "$env_file" ]] || cp -a "$env_file" "$backup_dir/settings/macshell.env"
 
 update_json() {
   local path=$1 filter=$2 temporary

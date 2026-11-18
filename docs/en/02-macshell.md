@@ -4,7 +4,7 @@
 
 ## Goals
 
-- Add Simplified Chinese to MacShell 0.5.1 and fill in the untranslated text in menus, settings and system actions
+- Add Simplified Chinese to MacShell and fill in the untranslated text in menus, settings and system actions
 - Give "About This Mac" a compact, macOS-like layout that correctly identifies the Snapdragon X Elite, Adreno X1-85, memory speed and Omarchy's full version
 - Better touchscreen hit areas, swiping and scrolling
 - Build the live glass from real window content instead of faking it with the wallpaper or a flat colour
@@ -13,7 +13,7 @@
 
 ## How it is done
 
-The patch is based on the official [0-ss/MacShell 0.5.1](https://github.com/0-ss/MacShell/tree/0.5.1) and only contains files that differ from upstream:
+The MacShell 0.5.1 and 0.5.2 patches only contain files that differ from their upstream versions:
 
 - `I18n.js` and `lang/zh-CN.js`: Chinese language registration and the full translation
 - `AboutApp.qml`, `assets/about-info.sh`: the About layout and hardware detection
@@ -27,9 +27,22 @@ The patch is based on the official [0-ss/MacShell 0.5.1](https://github.com/0-ss
 
 Live glass still needs the CPU to enumerate Wayland windows and schedule captures, so it cannot be 100% CPU-free; the Qt Quick scene graph, blur, refraction and compositing run on the GPU through Vulkan. The GPU keeps `simple_ondemand` dynamic frequency scaling and is not locked at its top clock.
 
+## Versions
+
+This repository started on MacShell 0.5.1; this machine now runs **MacShell 0.5.2** (Omarchy 4.5.0, Hyprland 0.57.2, Quickshell 0.3.2), with every change from the 0.5.1 patch carried over to it. What supports which version:
+
+| Part | 0.5.1 | 0.5.2 already carrying the Silky changes | Fresh 0.5.2 |
+| --- | --- | --- | --- |
+| `install-macshell-optimizations.sh` (the full patch: localization, touch, live glass, …) | Yes | Yes (only keeps the tuning current, no patching) | Yes (version-specific patch) |
+| `tune-*.py`, `configure-macshell-reload.py` | Yes | Yes | Verified as part of the installer |
+| `install-macshell-status.py` (menu-bar monitors) | Yes | Yes | Yes |
+| `install-macshell-overview.py` ([13 window overview](13-window-overview.md)) | Not verified | Yes | Not verified |
+
+The 0.5.2 patch targets upstream tag `0.5.2` (commit `5d17abadd5de192919416990ad2ecf7f31b38b51`). The current upstream 0.5.1 tag differs from the original patch baseline, so use 0.5.2 for clean installations. `--check` applies the patch and runs all tuners in a temporary directory.
+
 ## Install
 
-Install MacShell 0.5.1 first, then from this repository run:
+Install MacShell 0.5.2 first, then from this repository run:
 
 ```bash
 ./scripts/install-macshell-optimizations.sh --check
@@ -43,6 +56,8 @@ The script first checks that the patch applies cleanly, then backs up the origin
 ```
 
 When it is done, restart MacShell from the "Tools" page of MacShell's settings.
+
+In Smart mode, the Dock hides when a visible window on its screen overlaps it, whether the window is floating or tiled. It returns when the window moves away. Move the pointer to the bottom edge to reveal it temporarily.
 
 ### Applying QML updates
 

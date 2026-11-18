@@ -29,7 +29,17 @@ To see every interface and interaction change grouped by where you feel it (menu
 
 ## Quick start
 
-Requirements: Omarchy 4.x (Hyprland 0.57, Lua config) with MacShell 0.5.1 installed. Run what you need:
+Requirements: Omarchy 4.x (Hyprland 0.57, Lua config) and MacShell.
+
+| Component | Version currently tested | Notes |
+| --- | --- | --- |
+| Omarchy | 4.5.0 | Any 4.x with the Lua config |
+| Hyprland | 0.57.2 | The plugin must be built for the running version; re-run `install-silky-gestures.sh` after updates |
+| MacShell | 0.5.2 | Module 02 supports fresh and already patched **0.5.2** installations (see [02 · Versions](docs/en/02-macshell.md#versions)) |
+| Quickshell / Qt | 0.3.2 / 6.12 | |
+| libinput | 1.32.0 | The 03 pinch patch targets 1.32.0 |
+
+Run what you need:
 
 ```bash
 ./scripts/install-macshell-optimizations.sh
@@ -63,7 +73,7 @@ config/hypr/      Hyprland Lua snippets (touchpad, animations, monitors, screens
 config/macshell/  MacShell glass settings, GPU environment variables, window overview component
 config/zsh/       ~/.zshrc
 config/obsidian/  Obsidian theme Silky macOS, typing-fade plugin silky-typing, icon generator
-patches/          Patches for MacShell 0.5.1 and MacLock
+patches/          Patches for MacShell 0.5.1 / 0.5.2, MacLock and the Omalogi translation
 plugins/          Hyprland C++ plugin silky-gestures
 themes/           Omarchy themes macos-tahoe-dark / macos-tahoe-light
 hooks/            Omarchy theme-set hook

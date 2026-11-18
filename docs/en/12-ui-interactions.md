@@ -34,6 +34,8 @@ The Control Center's new "Display" page has an Appearance switch, so you can swi
 
 - The grouped Control Center uses the same glass material as the menu-bar dropdowns, and is light in the light appearance (MacShell 0.5.2 forced it dark) ([02 · Control Center](02-macshell.md#control-center))
 - A new "Display" page: brightness slider, Night Shift switch and light/dark Appearance switch, working like the "Sound" page ([02 · Control Center](02-macshell.md#control-center))
+- Dragging a volume slider (Control Center, the menu-bar volume popover, scrolling on the menu bar) plays a tap at the level being set, and one more where you let go. Turning off UI sounds silences it
+- The Sound page shows a live microphone level under the input slider: a few segments in a quiet room, jumping when you speak, red when close to clipping. It listens only while that page is open and the mic is not muted
 
 ## Dock and Applications panel
 

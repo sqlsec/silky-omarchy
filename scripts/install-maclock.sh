@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Silky Omarchy: use MacLock for every lock (keys, menu, idle, suspend) instead of Omarchy's lock screen.
-# See docs/07-lock-and-boot.md. MacShell 0.5.1 with MacLock must already be installed.
+# See docs/07-lock-and-boot.md. MacShell (0.5.1 or 0.5.2) with MacLock must already be installed.
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 stamp=$(date +%Y%m%d-%H%M%S)
 

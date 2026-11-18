@@ -8,9 +8,10 @@
 
 ## 环境前提
 
-- 发行版：Omarchy 4.x（Arch Linux + Hyprland 0.57.x，**Lua 配置**：`~/.config/hypr/*.lua`，`hl.config` / `hl.bind` / `hl.window_rule` / `hl.layer_rule`）
+- 发行版：Omarchy 4.x，本机 4.5.0（Arch Linux + Hyprland 0.57.2，**Lua 配置**：`~/.config/hypr/*.lua`，`hl.config` / `hl.bind` / `hl.window_rule` / `hl.layer_rule`）
 - 测试机器：Lenovo Yoga Slim 7 14Q8X9，Snapdragon X Elite，Adreno X1-85，aarch64，2944×1840@90Hz，缩放 2
-- 桌面外壳：MacShell 0.5.1（Quickshell / QML），锁屏 MacLock
+- 桌面外壳：MacShell 0.5.2（Quickshell 0.3.2 / Qt 6.12 / QML），锁屏 MacLock；02 支持全新及已应用 Silky 的 0.5.2（见 [02 · 版本](02-macshell.md#版本)）
+- libinput 1.32.0（03 的补丁版本 1.32.0-1.2），内核 7.3
 - 输入法：fcitx5 + WowType（拼音 + 离线语音）
 - 规则：永远不改 `/usr/share/omarchy/`，只改 `~/.config`、`~/.local`；改 Hyprland 配置后执行 `hyprctl configerrors`
 
@@ -21,7 +22,7 @@
 ## 安装顺序
 
 ```bash
-./scripts/install-macshell-optimizations.sh   # 02：MacShell 补丁（需要先装好 MacShell 0.5.1）
+./scripts/install-macshell-optimizations.sh   # 02：MacShell 补丁（建议使用 MacShell 0.5.2）
 ./scripts/install-silky-gestures.sh           # 03：工作区手势插件
 python3 scripts/install-macshell-overview.py  # 13：四指上滑 / 下滑窗口总览（需要 02、03）
 ./scripts/install-macos-theme.sh              # 04：macOS Tahoe 主题
@@ -52,7 +53,7 @@ omarchy theme set macos-tahoe-dark
 ## 02 MacShell 优化
 
 - **效果**：简体中文；紧凑版“关于本机”（正确识别 Snapdragon / Adreno）；触控屏拖窗口；实时玻璃走 Vulkan；消除鼠标周期性卡顿；锁屏显示壁纸；电池图标去 `%`；不显示桌面图标；截图只用一个工具
-- **文件**：`patches/macshell-0.5.1-silky.patch`（对 `~/.config/quickshell/{MacShell,MacLock}` 的统一 diff）、`scripts/install-macshell-optimizations.sh`
+- **文件**：`patches/macshell-0.5.1-silky.patch`、`patches/macshell-0.5.2-silky.patch`（对 `~/.config/quickshell/{MacShell,MacLock}` 的统一 diff）、`scripts/install-macshell-optimizations.sh`
 - **关键词**：
   - 渲染：`QSG_RHI_BACKEND=vulkan`、`QSG_RENDER_LOOP=threaded`（写在 `~/.config/macshell/env`）
   - 卡顿：MacShell “自动对比度”用 `grim` 定时截屏 → 每次让 Hyprland 主线程停 60–110 ms；改成事件驱动，并用 `assets/tone-wall.sh` 直接读壁纸算亮度
@@ -61,7 +62,7 @@ omarchy theme set macos-tahoe-dark
   - 锁屏壁纸：MacLock 读 `~/.local/state/omarchy/current/background`
   - 主题联动：新增 IPC `qs -c MacShell ipc call appearance set dark|light`
   - 截图冲突：Omarchy 和 MacShell 同时绑定 `PRINT` → 删掉 `macshell.lua` 里的绑定
-- **坑**：MacShell 靠 `~/.config/hypr/macshell.lua` + `hyprland.lua` 里的 `-- >>> MacShell (added by install.sh) >>>` 块开机自启，丢了会导致重启后菜单栏、Dock 消失、滚轮方向反了；重新生成补丁时必须基于纯净的 0.5.1 源码
+- **坑**：MacShell 靠 `~/.config/hypr/macshell.lua` + `hyprland.lua` 里的 `-- >>> MacShell (added by install.sh) >>>` 块开机自启，丢了会导致重启后菜单栏、Dock 消失、滚轮方向反了；重新生成补丁时必须基于纯净的 0.5.1 源码（GitHub 上现在的 0.5.1 标签已和生成补丁时的不同，有 3 个 hunk 打不上）；0.5.2 使用单独的版本补丁
 - **验证**：`./scripts/install-macshell-optimizations.sh --check` 显示 `patch state: applied`；`pgrep -af '^qs -c MacShell'`；`qs -c MacShell ipc show`
 
 ## 03 工作区手势插件

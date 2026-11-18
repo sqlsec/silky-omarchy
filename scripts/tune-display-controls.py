@@ -16,12 +16,20 @@ source = path.read_text()
 if "                        id: ccDisplayPage\n" in source:
     raise SystemExit(0)
 
-source = replace_once(
-    source,
-    '                           : (ui.ccPage === "bt" ? ccBtPage.height : ccSoundPage.height))',
-    '''                           : (ui.ccPage === "bt" ? ccBtPage.height
-                           : (ui.ccPage === "display" ? ccDisplayPage.height : ccSoundPage.height)))''',
-)
+if 'id: ccSoundPage' in source:
+    source = replace_once(
+        source,
+        '                           : (ui.ccPage === "bt" ? ccBtPage.height : ccSoundPage.height))',
+        """                           : (ui.ccPage === "bt" ? ccBtPage.height
+                           : (ui.ccPage === "display" ? ccDisplayPage.height : ccSoundPage.height)))""",
+    )
+else:
+    source = replace_once(
+        source,
+        'height: ui.ccPage === "" ? ccCol.height : (ui.ccPage === "wifi" ? ccWifiPage.height : ccBtPage.height)',
+        'height: ui.ccPage === "" ? ccCol.height : (ui.ccPage === "wifi" ? ccWifiPage.height\n'
+        '                           : (ui.ccPage === "display" ? ccDisplayPage.height : ccBtPage.height))',
+    )
 
 # Match the Sound tile's separate navigation and slider hit areas.
 navigation = '''                            Item {
@@ -50,20 +58,41 @@ title_start = source.index("                            Text {\n", display_start
 title_end = source.index("                            HoverHandler { id: tileHovDisplay }\n", title_start)
 source = source[:title_start] + navigation + source[title_end:]
 
-# Reuse the Sound page's glass fallback, back arrow and title layout.
-sound_start = source.index("                        id: ccSoundPage\n")
-page_start = source.rindex("                    Item {\n", 0, sound_start)
-body_start = source.index("                        Flickable {\n", sound_start)
-page = source[page_start:body_start]
-page = page.replace("ccSoundPage", "ccDisplayPage").replace("ccSoundHeader", "ccDisplayHeader")
-page = replace_once(page, 'ui.ccPage === "sound"', 'ui.ccPage === "display"')
-page = replace_once(
-    page,
-    "height: Math.min(520, Math.max(240, ccSoundCol.height + 70))",
-    "height: ccDisplayCol.y + ccDisplayCol.height + 12\n                        enabled: shown",
-)
-page = replace_once(page, 'I18n.tr("Sound")', 'I18n.tr("Display")')
-page += '''                        Column {
+# Insert beside the other Control Center pages, which differ by MacShell version.
+anchor = "ccSoundPage" if "id: ccSoundPage" in source else "ccBtPage"
+page_start = source.rindex("                    Item {\n", 0, source.index(f"                        id: {anchor}\n"))
+page = '''                    Item {
+                        id: ccDisplayPage
+                        readonly property bool shown: ui.ccPage === "display"
+                        width: parent.width
+                        height: ccDisplayCol.y + ccDisplayCol.height + 12
+                        enabled: shown
+                        opacity: shown ? 1 : 0
+                        visible: opacity > 0.01
+                        Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                        GGlass { visible: root.ccStyle !== "macos"; anchors.fill: parent; gx: ccg; cornerR: 26; thickness: 22; shadowAmt: 0.45 }
+                        CornerBorder { visible: root.ccStyle !== "macos"; z: 2; anchors.fill: parent; cornerR: 26; dark: ccg.dark; tint: ccg.borderTint; amount: ccg.borderAmount; lineW: 0.8 }
+                        MouseArea { anchors.fill: parent }
+
+                        Item {
+                            id: ccDisplayHeader
+                            x: 12; y: 10; width: parent.width - 24; height: 36
+                            Item {
+                                width: 36; height: 36
+                                Text {
+                                    anchors.centerIn: parent; text: "‹"; color: ccPal.fg
+                                    font.family: root.fontForWeight(Font.DemiBold, ccPal.fam); font.pixelSize: 25; font.weight: Font.DemiBold
+                                }
+                                MouseArea { anchors.fill: parent; onClicked: ui.ccPage = "" }
+                            }
+                            Text {
+                                anchors.centerIn: parent
+                                text: I18n.tr("Display"); color: ccPal.fg
+                                font.family: Fonts.forWeight(Font.DemiBold, root.boldFontFamily); font.pixelSize: 14; font.weight: Font.DemiBold
+                            }
+                        }
+
+                        Column {
                             id: ccDisplayCol
                             x: 12; y: 50
                             width: parent.width - 24

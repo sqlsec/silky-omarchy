@@ -91,7 +91,8 @@ hyprctl configerrors
 
 ## 已验证环境
 
-- Omarchy Linux
+- Omarchy 4.5.0
 - Hyprland 0.57.2
+- libinput 1.32.0
 - 内置 HID-over-I2C 触控板
 

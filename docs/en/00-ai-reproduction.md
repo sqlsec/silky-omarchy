@@ -8,9 +8,10 @@ Hand this file and the repository URL to an AI coding assistant such as Claude C
 
 ## Prerequisites
 
-- Distribution: Omarchy 4.x (Arch Linux + Hyprland 0.57.x, **Lua config**: `~/.config/hypr/*.lua`, `hl.config` / `hl.bind` / `hl.window_rule` / `hl.layer_rule`)
+- Distribution: Omarchy 4.x, 4.5.0 here (Arch Linux + Hyprland 0.57.2, **Lua config**: `~/.config/hypr/*.lua`, `hl.config` / `hl.bind` / `hl.window_rule` / `hl.layer_rule`)
 - Test machine: Lenovo Yoga Slim 7 14Q8X9, Snapdragon X Elite, Adreno X1-85, aarch64, 2944×1840@90Hz, scale 2
-- Desktop shell: MacShell 0.5.1 (Quickshell / QML), lock screen MacLock
+- Desktop shell: MacShell 0.5.2 (Quickshell 0.3.2 / Qt 6.12 / QML), lock screen MacLock; module 02 supports fresh and already patched 0.5.2 installations (see [02 · Versions](02-macshell.md#versions))
+- libinput 1.32.0 (03's patched build 1.32.0-1.2), kernel 7.3
 - Input method: fcitx5 + WowType (pinyin + offline voice)
 - Rules: never change `/usr/share/omarchy/`, only `~/.config` and `~/.local`; run `hyprctl configerrors` after changing the Hyprland config
 
@@ -21,7 +22,7 @@ A general prompt for the AI:
 ## Install order
 
 ```bash
-./scripts/install-macshell-optimizations.sh   # 02: MacShell patch (MacShell 0.5.1 must be installed first)
+./scripts/install-macshell-optimizations.sh   # 02: MacShell patch (MacShell 0.5.2 recommended)
 ./scripts/install-silky-gestures.sh           # 03: workspace gesture plugin
 python3 scripts/install-macshell-overview.py  # 13: four fingers up / down window overview (needs 02, 03)
 ./scripts/install-macos-theme.sh              # 04: macOS Tahoe theme
@@ -52,7 +53,7 @@ omarchy theme set macos-tahoe-dark
 ## 02 MacShell refinements
 
 - **Effect**: Simplified Chinese; a compact "About This Mac" (correctly identifying Snapdragon / Adreno); dragging windows by touch; live glass on Vulkan; no periodic pointer stutter; wallpaper on the lock screen; battery icon without `%`; no desktop icons; only one screenshot tool
-- **Files**: `patches/macshell-0.5.1-silky.patch` (a unified diff against `~/.config/quickshell/{MacShell,MacLock}`), `scripts/install-macshell-optimizations.sh`
+- **Files**: `patches/macshell-0.5.1-silky.patch` and `patches/macshell-0.5.2-silky.patch` (unified diffs against `~/.config/quickshell/{MacShell,MacLock}`), `scripts/install-macshell-optimizations.sh`
 - **Keywords**:
   - Rendering: `QSG_RHI_BACKEND=vulkan`, `QSG_RENDER_LOOP=threaded` (in `~/.config/macshell/env`)
   - Stutter: MacShell's "auto contrast" took timed screenshots with `grim`, each stalling Hyprland's main thread for 60–110 ms; made event-driven, with `assets/tone-wall.sh` computing the brightness straight from the wallpaper
@@ -61,7 +62,7 @@ omarchy theme set macos-tahoe-dark
   - Lock wallpaper: MacLock reads `~/.local/state/omarchy/current/background`
   - Theme sync: new IPC `qs -c MacShell ipc call appearance set dark|light`
   - Screenshot clash: Omarchy and MacShell both bound `PRINT` → remove the bind from `macshell.lua`
-- **Pitfalls**: MacShell autostarts through `~/.config/hypr/macshell.lua` plus the `-- >>> MacShell (added by install.sh) >>>` block in `hyprland.lua`; losing them means no menu bar or Dock after a reboot and a reversed wheel direction. Regenerate the patch only against pristine 0.5.1 sources
+- **Pitfalls**: MacShell autostarts through `~/.config/hypr/macshell.lua` plus the `-- >>> MacShell (added by install.sh) >>>` block in `hyprland.lua`; losing them means no menu bar or Dock after a reboot and a reversed wheel direction. Regenerate the patch only against pristine 0.5.1 sources (the 0.5.1 tag on GitHub today differs from the one the patch was made from: 3 hunks fail); 0.5.2 uses its own patch
 - **Verify**: `./scripts/install-macshell-optimizations.sh --check` shows `patch state: applied`; `pgrep -af '^qs -c MacShell'`; `qs -c MacShell ipc show`
 
 ## 03 Workspace gesture plugin
