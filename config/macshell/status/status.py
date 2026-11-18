@@ -239,6 +239,51 @@ def app_rates(current, previous, seconds):
     return sorted(totals.items(), key=lambda item: (-sum(item[1]), item[0]))[:6]
 
 
+HEALTH_LOG = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "silky/battery-health.csv"
+HEALTH_LOG_HEADER = "time,battery,model,full_wh,design_wh,health_pct,cycles"
+_health_logged = None
+
+
+def log_battery_health():
+    """Append a row per internal battery once a day, and whenever the gauge's full capacity changes."""
+    global _health_logged
+    if _health_logged is None:
+        _health_logged = {}
+        try:
+            for line in HEALTH_LOG.read_text().splitlines()[1:]:
+                fields = line.split(",")
+                if len(fields) == 7:
+                    _health_logged[fields[1]] = (fields[0][:10], fields[3])
+        except OSError:
+            pass
+    rows = []
+    now = time.strftime("%Y-%m-%dT%H:%M:%S")
+    for device in sorted((SYS / "power_supply").glob("*")):
+        if not internal_battery(device):
+            continue
+        full = number(device / "energy_full", 1e6) or number(device / "charge_full", 1e6)
+        design = (number(device / "energy_full_design", 1e6) if number(device / "energy_full", 1e6)
+                  else number(device / "charge_full_design", 1e6))
+        if not full or not design:
+            continue
+        full_text = f"{full:.3f}"
+        if _health_logged.get(device.name) == (now[:10], full_text):
+            continue
+        cycles = read(device / "cycle_count")
+        rows.append(f"{now},{device.name},{read(device / 'model_name').replace(',', ' ')},"
+                    f"{full_text},{design:.3f},{100 * full / design:.2f},{cycles}")
+        _health_logged[device.name] = (now[:10], full_text)
+    if not rows:
+        return
+    try:
+        HEALTH_LOG.parent.mkdir(parents=True, exist_ok=True)
+        new = not HEALTH_LOG.exists()
+        with HEALTH_LOG.open("a") as log:
+            log.write((HEALTH_LOG_HEADER + "\n" if new else "") + "\n".join(rows) + "\n")
+    except OSError:
+        pass
+
+
 def internal_battery(device):
     return (read(device / "type") == "Battery" and read(device / "scope") != "Device"
             and read(device / "present") != "0")
@@ -251,17 +296,24 @@ def battery_watts(device, voltage, current):
     return abs(watts) if watts is not None else None
 
 
+def external_power_online():
+    return any(read(device / "online") == "1" for device in (SYS / "power_supply").glob("*")
+               if read(device / "type") != "Battery")
+
+
 def battery_power_sample():
+    """(status, battery watts, on battery). On battery, the discharge rate is the whole system's draw."""
     for device in sorted((SYS / "power_supply").glob("*")):
         if not internal_battery(device):
             continue
         status = read(device / "status")
+        on_battery = not external_power_online()
         if status in {"Charging", "Discharging"}:
             watts = battery_watts(device, number(device / "voltage_now", 1e6),
                                   number(device / "current_now", 1e6))
-            return (status, watts) if watts is not None else None
+            return (status, watts, on_battery) if watts is not None else None
         if status in {"Not charging", "Full"}:
-            return ("Idle", 0)
+            return ("Idle", 0, on_battery)
     return None
 
 def charge_threshold(device, end):
@@ -380,6 +432,8 @@ def stream(mode):
                     missing = min(battery_power_history.maxlen, max(0, round((boot_time - battery_sample_at) / 3) - 1))
                     battery_power_history.extend([None] * missing)
                 battery_power_history.append(battery_power_sample())
+                if battery_sample_at is None or int(boot_time // 600) != int(battery_sample_at // 600):
+                    log_battery_health()
                 battery_sample_at = boot_time
             sample["batteryPowerHistory"] = list(battery_power_history)
             previous = counters

@@ -108,6 +108,18 @@ Canvas {
             ctx.beginPath();          // the final stroke below has nothing left to draw
             break;
         }
+        case "netease-cloud-music":
+            ctx.moveTo(6.1, 5.7);
+            ctx.bezierCurveTo(3.7, 6.7, 2.3, 9, 2.3, 11.4);
+            ctx.bezierCurveTo(2.3, 15.4, 5.6, 18.1, 9.5, 18.1);
+            ctx.bezierCurveTo(14.3, 18.1, 17.4, 15.2, 17.4, 11.9);
+            ctx.bezierCurveTo(17.4, 9, 15.2, 7.3, 12.3, 7.3);
+            ctx.bezierCurveTo(9.4, 7.3, 7.4, 8.9, 7.4, 11.2);
+            ctx.bezierCurveTo(7.4, 12.9, 8.5, 14, 9.9, 14);
+            ctx.bezierCurveTo(11.5, 14, 12.4, 12.7, 12.1, 11.2);
+            ctx.lineTo(10.6, 5.8);
+            ctx.bezierCurveTo(9.7, 2.4, 12.4, 1.2, 15, 3.6);
+            break;
         case "remmina":
             ctx.roundedRect(2.5, 3.5, 15, 10.5, 2.2, 2.2);
             line([10, 14, 10, 16.7]);

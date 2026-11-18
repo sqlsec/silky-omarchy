@@ -106,7 +106,7 @@ TRAY_KIND_V2 = """                                readonly property string silky
                                 }
 """
 
-TRAY_KIND = """                                readonly property string silkyIconKind: {
+TRAY_KIND_V3 = """                                readonly property string silkyIconKind: {
                                     const item = tray.modelData;
                                     if (item.status === Status.NeedsAttention)
                                         return "";
@@ -127,6 +127,12 @@ TRAY_KIND = """                                readonly property string silkyIco
                                 }
 """
 
+TRAY_KIND = TRAY_KIND_V3.replace(
+    '                                    case "wechat": return "wechat";\n',
+    '                                    case "wechat": return "wechat";\n'
+    '                                    case "netease-cloud-music-gtk4": return "netease-cloud-music";\n',
+)
+
 TRAY_ICON_STYLED = TRAY_KIND + """                                SilkyStatusIcon {
                                     anchors.centerIn: parent
                                     width: 17; height: 17
@@ -142,10 +148,27 @@ TRAY_ICON_STYLED = TRAY_KIND + """                                SilkyStatusIco
 """
 
 
-BATTERY_INDICATOR = '''                            readonly property color indicatorColor: root.batPct < 25
+BATTERY_INDICATOR_V1 = '''                            readonly property color indicatorColor: root.batPct < 25
                                 ? (bpal.dark ? "#ff6057" : "#b72a2a")
                                 : UPower.onBattery ? (bpal.dark ? "#ffae42" : "#a95100")
                                                     : (bpal.dark ? "#30d158" : "#187b45")
+'''
+
+BATTERY_INDICATOR_V2 = '''                            readonly property color indicatorColor: root.bat.state === UPowerDeviceState.Charging
+                                ? (bpal.dark ? "#30d158" : "#187b45")
+                                : root.batPct < 25 ? (bpal.dark ? "#ff6057" : "#b72a2a")
+                                : UPower.onBattery ? (bpal.dark ? "#ff9f0a" : "#b4530f")
+                                                    : (bpal.dark ? "#ffd60a" : "#8a6a00")
+'''
+
+# Same four states as the status panel. Only noteworthy states get a color: charging green, external power
+# without charging (held at the charge limit) blue, low battery (< 20%, macOS's threshold) red. On battery is
+# the everyday state and stays neutral like macOS. Charging wins over low.
+BATTERY_INDICATOR = '''                            readonly property color indicatorColor: root.bat.state === UPowerDeviceState.Charging
+                                ? (bpal.dark ? "#30d158" : "#187b45")
+                                : root.batPct < 20 ? (bpal.dark ? "#ff6057" : "#b72a2a")
+                                : UPower.onBattery ? bpal.fg
+                                                    : (bpal.dark ? "#5eb4ff" : "#0a64d6")
 '''
 
 # A shorter battery pill (28 -> 24 px body): the number inside is two digits most of the time, and macOS keeps
@@ -162,7 +185,10 @@ def integrate(text):
     previous_color_placement = "                            id: silkyBatteryButton\n" + BATTERY_INDICATOR
     if previous_color_placement in text:
         text = text.replace(previous_color_placement, "                            id: silkyBatteryButton\n", 1)
-    for old_kind in (TRAY_KIND_V1, TRAY_KIND_V2):
+    for old_indicator in (BATTERY_INDICATOR_V1, BATTERY_INDICATOR_V2):
+        if old_indicator in text:
+            text = text.replace(old_indicator, BATTERY_INDICATOR, 1)
+    for old_kind in (TRAY_KIND_V1, TRAY_KIND_V2, TRAY_KIND_V3):
         if old_kind in text:
             text = text.replace(old_kind, TRAY_KIND, 1)
     if STATUS_OPEN not in text:
@@ -252,8 +278,8 @@ def main():
     root = args.shell_dir
     bar = root / "MacBar.qml"
     try:
-        if (root / "VERSION").read_text().strip() not in {"0.5.1", "0.5.2"}:
-            raise ValueError("This integration targets MacShell 0.5.1 and 0.5.2.")
+        if (root / "VERSION").read_text().strip() not in {"0.5.1", "0.5.2", "0.5.3"}:
+            raise ValueError("This integration targets MacShell 0.5.1 to 0.5.3.")
         original = bar.read_text()
         updated = integrate(original)
     except (OSError, ValueError) as error:

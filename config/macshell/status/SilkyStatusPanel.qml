@@ -39,10 +39,23 @@ Item {
     readonly property color uploadColor: palette.dark ? "#bba4ff" : "#6743a5"
     readonly property color thermalColor: palette.dark ? "#ffb36d" : "#a8551a"
     readonly property bool batteryPowered: power.sample?.onBattery ?? UPower.onBattery
-    readonly property color dischargeColor: palette.dark ? "#ffb36d" : "#a8551a"
+    // Four power states, shared with the menu-bar battery. Color marks only what is worth noticing: charging green,
+    // external power without charging (e.g. held at the charge limit) a calm blue, on battery neutral like macOS,
+    // low battery red. Charging wins over low so a plugged-in low battery shows it is recovering.
+    readonly property color batteryColor: palette.dark ? "#e6e8ef" : "#3b4252"
     readonly property color chargingColor: palette.dark ? "#72e5a7" : "#167748"
-    readonly property color powerColor: charge < 25 ? (palette.dark ? "#ff8279" : "#a62b25")
-        : batteryPowered ? dischargeColor : chargingColor
+    readonly property color externalColor: palette.dark ? "#6cb8ff" : "#0b62c4"
+    readonly property color lowColor: palette.dark ? "#ff8279" : "#a62b25"
+    // the power chart is data, not state: its own hue so it never reads as a warning
+    readonly property color powerPlotColor: palette.dark ? "#b9a6ff" : "#5f43b2"
+    readonly property bool batteryCharging: primaryBattery ? primaryBattery.status === "Charging"
+                                                           : battery?.state === UPowerDeviceState.Charging
+    readonly property string powerState: batteryCharging ? "charging" : charge < 20 ? "low"
+                                         : batteryPowered ? "battery" : "external"
+    readonly property color powerColor: powerState === "charging" ? chargingColor : powerState === "low" ? lowColor
+                                        : powerState === "battery" ? batteryColor : externalColor
+    readonly property string powerStateText: powerState === "charging" ? "Charging"
+                                             : batteryPowered ? "On battery" : "External power"
     readonly property color panelTint: palette.dark ? "#14151b" : "#f2f4f9"
     readonly property color surface: palette.dark ? Qt.rgba(0.09, 0.10, 0.13, 0.45)
                                                   : Qt.rgba(1, 1, 1, 0.46)
@@ -54,7 +67,6 @@ Item {
     readonly property color accent: mode === "network" ? downloadColor : mode === "thermal" ? thermalColor : powerColor
     readonly property string iconKind: mode === "network" ? "network" : mode === "thermal" ? "thermal" : mode === "profiles" ? "power" : "battery"
     readonly property var primaryBattery: power.sample?.batteries[0]
-    readonly property string primaryFlow: batteryFlow(primaryBattery)
 
     function batteryFlow(device) {
         if (device?.status === "Charging")
@@ -64,16 +76,13 @@ Item {
         return "";
     }
     readonly property var chargeLimit: primaryBattery?.limit
-    readonly property bool showDischarge: primaryBattery?.status !== "Charging"
-                                         && (batteryPowered || primaryBattery?.status === "Discharging")
-    readonly property color powerPlotColor: showDischarge ? dischargeColor : chargingColor
-    readonly property var powerHistory: (summary?.batteryPowerHistory || []).map(sample => {
-        if (!sample)
-            return null;
-        const matches = showDischarge ? sample[0] === "Discharging" : sample[0] !== "Discharging";
-        return matches ? sample[1] : null;
-    })
+    // Whole-system power. Only measurable on battery: the discharge rate is everything the laptop draws. On external
+    // power (Snapdragon X battmgr at least) neither the adapter input nor the system load is reported, so leave a gap.
+    readonly property var powerHistory: (summary?.batteryPowerHistory || []).map(sample =>
+        sample && sample[0] === "Discharging" && sample[2] !== false ? sample[1] : null)
     readonly property var powerSamples: powerHistory.filter(Number.isFinite)
+    readonly property var systemPower: batteryPowered && primaryBattery?.status === "Discharging"
+                                       ? primaryBattery.power_now : null
     property int draftLimit: 80
     property bool limitEdited: false
     property int pendingLimit: 0
@@ -210,7 +219,7 @@ Item {
         var fields = [
             ["Health", data.health, "%", 1],
             ["Cycle count", data.cycle_count, "", 0],
-            [flow, flow ? data.power_now : null, "W", 1],
+            [flow || "Battery power", data.power_now, "W", 1],
             ["Voltage", data.voltage_now, "V", 2],
             ["Current", data.current_now, "A", 2],
             ["Temperature", data.temp, "°C", 1],
@@ -235,7 +244,10 @@ Item {
             return metric(Status.tr(source.label), values.filter(Boolean).join(" · ") || Status.tr("Online"));
         });
         var supply = metric(Status.tr("Power source"), Status.tr(batteryPowered ? "On battery" : "External power"));
-        var groups = [{ "title": Status.tr("Power source"), "icon": "power", "rows": [supply].concat(sources) }];
+        var draw = metric(Status.tr("System power"), batteryPowered ? Status.quantity(systemPower, "W", 1)
+                                                                    : Status.tr("Unavailable on external power"));
+        var rows = [supply].concat(draw.value ? [draw] : [], sources);
+        var groups = [{ "title": Status.tr("Power source"), "icon": "power", "rows": rows }];
         if (data.profile)
             groups[0].rows.push(metric(Status.tr("Power mode"), Status.tr(data.profile)));
         return groups.concat(data.batteries.map(item => ({
@@ -420,12 +432,10 @@ Item {
                             foreground: root.tinted(root.palette.fg, root.powerColor, 0.56, 1)
                             muted: root.muted
                             fontFamily: root.palette.fam
-                            label: Status.tr(root.primaryFlow || "Power source")
+                            label: Status.tr("Power source")
                             symbol: "power"
                             ink: root.powerColor
-                            value: root.primaryFlow
-                                ? Status.quantity(root.primaryBattery.power_now, "W", 1) || "—"
-                                : Status.tr(root.batteryPowered ? "On battery" : "External power")
+                            value: Status.tr(root.batteryPowered ? "On battery" : "External power")
                         }
                         LabelText {
                             visible: root.mode === "power" && !!text
@@ -492,12 +502,12 @@ Item {
                         SilkyStatusIcon {
                             Layout.preferredWidth: 15
                             Layout.preferredHeight: 15
-                            kind: "power"
+                            kind: "activity"
                             ink: root.powerPlotColor
                         }
                         LabelText {
                             Layout.fillWidth: true
-                            text: Status.tr(root.showDischarge ? "Battery power" : "Charging power")
+                            text: Status.tr("System power")
                             font.weight: Font.DemiBold
                         }
                         LabelText {
@@ -519,7 +529,10 @@ Item {
                     }
                     LabelText {
                         width: parent.width
-                        text: Status.tr(root.powerSamples.length > 0 ? "Last 5 minutes" : "Waiting for power data…")
+                        text: Status.tr(root.powerSamples.length > 0 ? "Last 5 minutes · on battery"
+                                        : root.batteryPowered ? "Waiting for power data…"
+                                        : "Not reported on external power")
+                        wrapMode: Text.Wrap
                         horizontalAlignment: root.powerSamples.length > 0 ? Text.AlignRight : Text.AlignLeft
                         color: root.muted
                         font.pixelSize: 10

@@ -89,7 +89,7 @@ hyprctl monitors
 
 ## 顶栏系统监控
 
-MacShell 0.5.1 和 0.5.2 可单独安装网速、CPU 温度和电池面板。
+MacShell 0.5.1–0.5.3 可单独安装网速、CPU 温度和电池面板。
 
 ```bash
 python3 scripts/install-macshell-status.py --check
@@ -98,7 +98,7 @@ python3 scripts/install-macshell-status.py
 
 网速和温度每 1.5 秒采样，面板显示最近约 1 分钟的趋势。点击网速可查看应用流量排行和本机 IPv4 / IPv6，点击地址可复制。应用排行使用当前用户可见、采样时仍存在的 TCP 套接字，UDP 和 QUIC 不计入。代理转发的流量可能显示在代理进程名下。
 
-点击温度可查看实时 CPU 占用最高的 10 个进程，以及显卡、固态硬盘、无线网卡和风扇等硬件概览。硬件概览下方显示整机 CPU、内存和系统盘（`/`）的占用率。进程占用按相邻两次采样的 CPU 时间增量计算，100% 表示占满一个逻辑核心。点击电池图标可查看供电来源、功率、电压、电量、容量、循环次数和健康度，内容随硬件暴露的字段变化。MacShell 运行时每 3 秒记录电池的充放电功率，保留最近约 5 分钟。关闭面板后继续采样，图表按当前充电或电池供电状态切换。Yoga Slim 7 14Q8X9 可在电池面板拖动滑条设置 55%–100% 的充电上限，点「应用」后通过系统授权写入并校验内核回读。右键电池图标可以切换系统提供的电源模式，所选模式由 Omarchy 按外接电源和电池供电分别记忆。右键面板底部还有「显示电量百分比」开关，关掉后电池里只显示电量条，不显示数字；它就是 MacShell 设置里的 `showBatteryPercent`，会保存到 `~/.config/macbar/settings.json`。
+点击温度可查看实时 CPU 占用最高的 10 个进程，以及显卡、固态硬盘、无线网卡和风扇等硬件概览。硬件概览下方显示整机 CPU、内存和系统盘（`/`）的占用率。进程占用按相邻两次采样的 CPU 时间增量计算，100% 表示占满一个逻辑核心。点击电池图标可查看供电来源、功率、电压、电量、容量、循环次数和健康度，内容随硬件暴露的字段变化。MacShell 运行时每 3 秒采样一次，面板中部的「整机功耗」曲线保留最近约 5 分钟，关闭面板后继续采样。只有电池供电时才能测到整机功耗：此时电池放电功率就是整机的耗电。接上电源后，Yoga Slim 7x（Snapdragon X，`qcom-battmgr`）既不报告适配器输入功率（USB-C 端口 `voltage_now` 为 0，`2.00 A` 只是 PD 协商值），也不报告整机负载（不充电时电池 `power_now` 为 0），所以接电源期间曲线留空，「供电来源」里的「整机功耗」显示「接电源时不可读」。充电或放电功率改为数值，放在「电池」分组的「充电功率 / 放电功率 / 电池功率」一行。健康度是电池计量芯片给出的满充容量 `energy_full` 除以设计容量 `energy_full_design`。芯片会不定期重新校准满充容量，健康度可能一次跳几个百分点；长期开着充电上限时校准更少、跳得更明显。为了能回看变化，顶栏每 10 分钟检查一次，每天和满充容量变化时向 `~/.local/state/silky/battery-health.csv` 追加一行（时间、型号、满充/设计容量、健康度、循环次数）。Yoga Slim 7 14Q8X9 可在电池面板拖动滑条设置 55%–100% 的充电上限，点「应用」后通过系统授权写入并校验内核回读。右键电池图标可以切换系统提供的电源模式，所选模式由 Omarchy 按外接电源和电池供电分别记忆。右键面板底部还有「显示电量百分比」开关，关掉后电池里只显示电量条，不显示数字；它就是 MacShell 设置里的 `showBatteryPercent`，会保存到 `~/.config/macbar/settings.json`。
 
 托盘图标统一成和菜单栏其他图标一样的单色线条（跟随深浅色）：按托盘项的 id 换成 `SilkyStatusIcon` 里手绘的图标，目前覆盖 Chrome、ChatGPT、Clippy、Netcatty、Remmina、Clash Verge 和微信（id `wechat`，两个叠在一起的对话气泡）。其他应用保持原图标；需要提醒（`NeedsAttention`）时也显示原图标。查托盘 id：`busctl --user get-property <服务> /StatusNotifierItem org.kde.StatusNotifierItem Id`。装完后执行 `qs -c MacShell ipc call macshell reload` 让 MacShell 重新加载。
 
@@ -220,6 +220,17 @@ Omarchy 把 `PRINT` 绑定到 omasnap，MacShell 的 `macshell.lua` 又把同一
 ## 电池图标
 
 菜单栏电池改成 macOS 26 的样式：更窄的胶囊（电池本体 24 px，按钮 32 px），里面只有数字，没有 `%`。数字通常只有两位，所以不需要更长。右键电池可以开关数字（见上方「顶栏系统监控」）。
+
+电池图标和电池面板用同一套颜色区分供电状态。只有值得注意的状态才上色；最常见的电池供电保持中性色，和 macOS 一致。黄色和橙色都带“警告”含义，在 14 px 的图标上也难以区分，所以不再使用：
+
+| 状态 | 颜色 | 判断条件 |
+| --- | --- | --- |
+| 正在充电 | 绿色 | 电池状态为 `Charging` |
+| 外接电源直接供电（未充电，如已到充电上限） | 蓝色，表示“已连接、稳定” | 接着电源但电池不在充电 |
+| 电池供电 | 中性色（深色模式白色，浅色模式深灰） | 没有外接电源 |
+| 低电量 | 红色 | 电量低于 20%（与 macOS 相同）且不在充电 |
+
+充电优先于低电量：电量低但正在充电时显示绿色。面板的「整机功耗」曲线是数据而非状态，固定用紫色。颜色由 [`scripts/install-macshell-status.py`](../scripts/install-macshell-status.py) 写进 `MacBar.qml`（`indicatorColor`），面板颜色在 [`SilkyStatusPanel.qml`](../config/macshell/status/SilkyStatusPanel.qml) 的 `powerState`。重新运行安装脚本会把旧的三色版本替换掉；改动后需重启 MacShell，旧的后台采样进程才会换成新版脚本。验证：插着电源且电池到达充电上限时，图标应为蓝色；拔掉电源后变回中性色。只改了 QML 时可用 `qs ipc -c MacShell call macshell reload` 重载。回滚：恢复安装脚本打印的 `MacBar.qml.bak.silky-status-*` 备份并重启 MacShell。
 
 ## 桌面不显示图标
 
