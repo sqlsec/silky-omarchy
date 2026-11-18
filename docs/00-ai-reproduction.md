@@ -171,7 +171,7 @@ omarchy theme set macos-tahoe-dark
 - **效果**：Obsidian 主题 Silky macOS：菜单、命令面板、弹窗、悬浮预览、侧栏都是玻璃材质，侧栏是浮动圆角面板；外观「跟随系统」，随 `color-scheme` 实时切换；文件树是 Finder 蓝色文件夹，不同后缀有各自的图标；光标平滑滑动、柔和闪烁；插件 Silky Typing 让新输入的字淡入（含输入法上屏）；代码块是带红黄绿三个点的深色终端窗口，用 Xcode 深色配色
 - **文件**：`config/obsidian/themes/Silky macOS/{manifest.json,theme.css}`、`config/obsidian/build-icons.py`（生成 SVG 图标块）、`config/obsidian/plugins/silky-typing/{manifest.json,main.js,styles.css}`、`scripts/install-obsidian-theme.sh`、`docs/15-obsidian.md`
 - **关键词**：`appearance.json` 的 `cssTheme` / `theme: "system"`、`community-plugins.json`、`.nav-file-title[data-path$=".pdf" i]`、`.nav-file-title-content::before`、`.cm-cursor` 的 `left/top` 过渡、`.cm-cursorLayer` 的 `cm-blink`、`registerEditorExtension`、`StateField` + `Decoration.mark`、`isUserEvent("input.type.compose")`、`compositionend`、`view.composing`
-- **坑**：Obsidian 的半透明窗口只在 macOS 生效，玻璃只能模糊应用内部；安全模式开关存在 localStorage，脚本不改，要用户手动关；相邻 mark 会被 CodeMirror 合并，导致动画重播，所以每个 mark 要带唯一属性；组字期间不能改 DOM，否则会打断输入法；Obsidian 默认不显示未知后缀的文件，要开「检测所有类型文件」；DevTools 测试别用 9333 端口（本机已被占用）
+- **坑**：Obsidian 的半透明窗口只在 macOS 生效，玻璃只能模糊应用内部；安全模式开关存在 localStorage，脚本不改，要用户手动关；相邻 mark 会被 CodeMirror 合并，导致动画重播，所以每个 mark 要带唯一属性；组字期间不能改 DOM，否则会打断输入法；Obsidian 默认不显示未知后缀的文件，要开「检测所有类型文件」；DevTools 测试别用 9333 端口（本机已被占用）；软件包的 `obsidian.desktop` 写的是 `StartupWMClass=obsidian`，但 Wayland 窗口的 app id 是 `md.obsidian.Obsidian`，Dock 认不出窗口，点图标会一直跳，所以脚本要写一份用户级入口来修正
 - **验证**：独立实例 `obsidian --user-data-dir=<临时目录> --remote-debugging-port=<端口>` 打开测试库，检查 `app.customCss.theme`、`.silky-typed` 的数量，用 `Input.insertText` / `Input.imeSetComposition` 模拟输入；切换 `color-scheme` 看 Obsidian 是否跟着变
 
 ## 杂项

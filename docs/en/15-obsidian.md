@@ -30,6 +30,7 @@ Run it from the repository root. It needs `python3`. For each vault the script:
 | Copies the plugin | `<vault>/.obsidian/plugins/silky-typing/` (from [`config/obsidian/plugins/silky-typing/`](../../config/obsidian/plugins/silky-typing/)) |
 | Enables the theme and follows the system | `<vault>/.obsidian/appearance.json`: `"cssTheme": "Silky macOS"`, `"theme": "system"`; other keys are kept |
 | Registers the plugin | adds `silky-typing` to `<vault>/.obsidian/community-plugins.json` |
+| Fixes the launcher entry | `~/.local/share/applications/obsidian.desktop`: a copy of the system `obsidian.desktop` with only `StartupWMClass` changed to `md.obsidian.Obsidian`. An existing user-level entry is first backed up to `~/.local/state/silky-omarchy/obsidian/obsidian.desktop.backup` |
 | Backs up on the first run | the original `appearance.json` and `community-plugins.json` go to `~/.local/state/silky-omarchy/obsidian/<vault-path-hash>/` |
 
 It is safe to run again. Later runs only update the theme and plugin files and keep the first backup.
@@ -63,6 +64,7 @@ Known limitations:
 
 - Code blocks in Reading view don't expose the language name, so their title bar only shows the dots. The Live Preview title bar shows the language.
 - **Window button placement.** Obsidian reserves room for the window buttons with `--frame-right-space` on Linux / Windows and `--frame-left-space` on macOS. The theme swaps them (84 px on the left, 0 on the right) and moves `.titlebar-button-container.mod-right` to the left, offset by the ribbon width `--frame-ribbon-left`. `:has(.mod-left-split.is-sidedock-collapsed)` decides the vertical position depending on whether the sidebar is collapsed. The stock glyphs are Windows-style (maximise shows a "restore down" double square), and the 8 px SVG sat low and to the left inside the 12 px circle, so the SVG is hidden and centred background images draw macOS glyphs instead. Right-to-left (RTL) systems are left unchanged.
+- **The Dock icon keeps bouncing and the window doesn't open.** Obsidian 1.15's native Wayland window has the app id `md.obsidian.Obsidian`, but the packaged `obsidian.desktop` says `StartupWMClass=obsidian`. MacShell's Dock therefore doesn't recognise the open window and shows no running dot under the icon. Clicking the icon starts another process, which hands the request to the running Obsidian and exits, while the Dock keeps waiting for a new window, so the icon keeps bouncing. If the existing window is hidden behind other windows, it looks as if Obsidian won't open. The user-level entry written by the install script corrects `StartupWMClass`, so Quickshell's `DesktopEntries.heuristicLookup` can match the window to the icon. The entry carries an `X-Silky-Omarchy=obsidian-wmclass` line, and rollback only deletes a file with that marker.
 - On this machine, `~/.config/obsidian/user-flags.conf` contains `-disable-gpu`, so Obsidian composites in software. Blur is only used on menus, the command palette, the sidebars and similar areas, and its CPU cost has not been measured. Without that flag the GPU handles the blur, which uses less CPU.
 - In Live Preview, the first and last lines of a code block are the ```` ``` ```` fence lines. They appear below the terminal title bar when the cursor is inside the block.
 
@@ -98,6 +100,6 @@ Not yet verified: blur cost across monitors with different scales (2× and 2.5×
 ./scripts/install-obsidian-theme.sh --remove ~/Notes   # the given vaults
 ```
 
-The script deletes `themes/Silky macOS/` and `plugins/silky-typing/`, then restores `appearance.json` and `community-plugins.json` from the backup in `~/.local/state/silky-omarchy/obsidian/<hash>/`. If those files didn't exist before, it deletes them. Obsidian switches back to the previous theme on its own. To return to the default look but keep the files, pick "Default" under **Settings → Appearance → Themes**.
+The script deletes `themes/Silky macOS/` and `plugins/silky-typing/`, deletes the marked `~/.local/share/applications/obsidian.desktop` (restoring the backup if there was a user-level entry before), then restores `appearance.json` and `community-plugins.json` from the backup in `~/.local/state/silky-omarchy/obsidian/<hash>/`. If those files didn't exist before, it deletes them. Obsidian switches back to the previous theme on its own. To return to the default look but keep the files, pick "Default" under **Settings → Appearance → Themes**.
 
 Note: `--remove` restores those two files to how they were before the first install, so any other appearance changes made since then (font size, for example) are undone too.

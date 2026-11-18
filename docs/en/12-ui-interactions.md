@@ -101,6 +101,7 @@ The Control Center's new "Display" page has an Appearance switch, so you can swi
 
 - Obsidian gets a macOS 27 look: menus, the command palette and modals are glass, and the sidebars are floating rounded glass panels. Folders are Finder blue folders, each extension has its own icon, and code blocks are Terminal windows with red / yellow / green dots. The caret glides and new characters fade in, including Pinyin commits. See [15 · Obsidian](15-obsidian.md).
 - Obsidian's close, minimise and zoom buttons sit in the top-left corner as traffic lights, as on macOS, with glyphs on hover. See [15 · Obsidian](15-obsidian.md#what-it-does).
+- Clicking Obsidian in the Dock switches to the window that is already open, with a running dot under the icon, instead of bouncing forever. See [15 · Obsidian](15-obsidian.md#implementation).
 
 ## Check that everything is still in place
 

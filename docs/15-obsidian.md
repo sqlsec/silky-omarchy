@@ -30,6 +30,7 @@
 | 复制插件 | `<库>/.obsidian/plugins/silky-typing/`（来自 [`config/obsidian/plugins/silky-typing/`](../config/obsidian/plugins/silky-typing/)） |
 | 启用主题并跟随系统 | `<库>/.obsidian/appearance.json`：`"cssTheme": "Silky macOS"`、`"theme": "system"`，其他键保留 |
 | 登记插件 | `<库>/.obsidian/community-plugins.json` 加上 `silky-typing` |
+| 修正启动入口 | `~/.local/share/applications/obsidian.desktop`：复制系统的 `obsidian.desktop`，只把 `StartupWMClass` 改成 `md.obsidian.Obsidian`。如果原来已有用户级入口，会先备份到 `~/.local/state/silky-omarchy/obsidian/obsidian.desktop.backup` |
 | 首次运行时备份 | 原来的 `appearance.json`、`community-plugins.json` 存到 `~/.local/state/silky-omarchy/obsidian/<库路径哈希>/` |
 
 可以重复运行。之后再运行只会更新主题和插件文件，第一次的备份保持不变。
@@ -63,6 +64,7 @@
 
 - 阅读视图里的代码块拿不到语言名，标题栏只显示红黄绿三个点；实时预览模式的标题栏会显示语言。
 - **窗口按钮的位置**：Obsidian 在 Linux / Windows 上用 `--frame-right-space` 给窗口按钮在右侧留位置，在 macOS 上用 `--frame-left-space` 在左侧留位置。主题把两者对调（左侧 84 px，右侧 0），再把 `.titlebar-button-container.mod-right` 移到左边，偏移量是功能区宽度 `--frame-ribbon-left`。侧栏是否收起用 `:has(.mod-left-split.is-sidedock-collapsed)` 判断，决定按钮的垂直位置。原来的按钮图标是 Windows 样式（最大化显示“向下还原”的双方框），而且 8 px 的 SVG 在 12 px 圆点里偏左偏下，所以隐藏 SVG，改用居中的背景图画 macOS 符号。从右到左书写（RTL）的系统不做调整。
+- **Dock 图标一直跳、窗口打不开**：Obsidian 1.15 的原生 Wayland 窗口的 app id 是 `md.obsidian.Obsidian`，而软件包自带的 `obsidian.desktop` 写的是 `StartupWMClass=obsidian`。MacShell 的 Dock 因此认不出已经打开的窗口，图标下也没有运行圆点。点 Dock 图标时会再启动一个进程，这个进程把请求交给已经在运行的 Obsidian 后就退出，Dock 却一直等新窗口出现，图标就一直跳。如果原来的窗口被别的窗口挡住，看起来就像打不开。安装脚本生成的用户级入口改正了 `StartupWMClass`，Quickshell 的 `DesktopEntries.heuristicLookup` 就能把窗口对上图标；入口里带一行 `X-Silky-Omarchy=obsidian-wmclass`，回滚时只删带这个标记的文件。
 - 本机的 `~/.config/obsidian/user-flags.conf` 里有 `-disable-gpu`，Obsidian 用软件合成。模糊只用在菜单、命令面板、侧栏等区域，还没有专门测过 CPU 开销。去掉这个参数后，模糊交给 GPU 处理，会更省 CPU。
 - 实时预览里代码块的首行和末行是 ```` ``` ```` 围栏行，光标移进代码块时能看到它们，位置在终端标题栏下方。
 
@@ -98,6 +100,6 @@ gsettings set org.gnome.desktop.interface color-scheme prefer-light       # Obsi
 ./scripts/install-obsidian-theme.sh --remove ~/Notes   # 指定的库
 ```
 
-脚本会删除 `themes/Silky macOS/` 和 `plugins/silky-typing/`，再用 `~/.local/state/silky-omarchy/obsidian/<哈希>/` 里的备份恢复 `appearance.json` 和 `community-plugins.json`。如果原来没有这两个文件，就直接删掉。恢复后 Obsidian 会自动切回原来的主题。如果只想换回默认外观、保留文件，在 **设置 → 外观 → 主题** 里选「默认」即可。
+脚本会删除 `themes/Silky macOS/` 和 `plugins/silky-typing/`，删除带标记的 `~/.local/share/applications/obsidian.desktop`（原来有用户级入口时恢复备份），再用 `~/.local/state/silky-omarchy/obsidian/<哈希>/` 里的备份恢复 `appearance.json` 和 `community-plugins.json`。如果原来没有这两个文件，就直接删掉。恢复后 Obsidian 会自动切回原来的主题。如果只想换回默认外观、保留文件，在 **设置 → 外观 → 主题** 里选「默认」即可。
 
 注意：`--remove` 会把这两个文件恢复成第一次安装前的样子，安装之后在外观设置里做的其他修改（比如字号）也会一起撤销。

@@ -10,6 +10,9 @@
 # sets "cssTheme" and "theme": "system" (follow light / dark) in appearance.json and lists the plugin in
 # community-plugins.json. The original appearance.json and community-plugins.json are saved once to
 # ~/.local/state/silky-omarchy/obsidian/<vault-hash>/ and restored by --remove. Safe to run again.
+#
+# It also writes ~/.local/share/applications/obsidian.desktop, a copy of the packaged entry with
+# StartupWMClass=md.obsidian.Obsidian, so the Dock recognises the open window instead of bouncing.
 set -euo pipefail
 
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -126,6 +129,45 @@ for vault in "${vaults[@]}"; do
     echo "removed $vault"
   fi
 done
+
+# Obsidian's native Wayland window has the app id md.obsidian.Obsidian, but the packaged entry says
+# StartupWMClass=obsidian. The Dock then never links the open window to its icon: every click starts a
+# second process that hands over to the running one and exits, and the icon bounces waiting for a window.
+# A user-level copy of the entry with the right class fixes it; nothing under /usr/share is touched.
+apps_dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+desktop_user="$apps_dir/obsidian.desktop"
+desktop_backup="$state_root/obsidian.desktop.backup"
+desktop_marker="X-Silky-Omarchy=obsidian-wmclass"
+desktop_system=""
+for dir in /usr/share/applications /usr/local/share/applications; do
+  [[ -f $dir/obsidian.desktop ]] && { desktop_system="$dir/obsidian.desktop"; break; }
+done
+if [[ $mode == install ]]; then
+  if [[ -z $desktop_system ]]; then
+    echo "skip  desktop entry (no obsidian.desktop under /usr/share/applications)" >&2
+  else
+    mkdir -p "$apps_dir" "$state_root"
+    if [[ -f $desktop_user ]] && ! grep -qx "$desktop_marker" "$desktop_user" && [[ ! -f $desktop_backup ]]; then
+      cp -p -- "$desktop_user" "$desktop_backup"
+    fi
+    awk -v marker="$desktop_marker" '
+      /^\[/ { in_entry = ($0 == "[Desktop Entry]") }
+      in_entry && /^StartupWMClass=/ { next }
+      { print }
+      $0 == "[Desktop Entry]" { print "StartupWMClass=md.obsidian.Obsidian"; print marker }
+    ' "$desktop_system" > "$desktop_user.silky-tmp"
+    mv -f -- "$desktop_user.silky-tmp" "$desktop_user"
+    command -v update-desktop-database >/dev/null && update-desktop-database -q "$apps_dir" || true
+    echo "ok    $desktop_user (StartupWMClass=md.obsidian.Obsidian)"
+  fi
+else
+  if [[ -f $desktop_user ]] && grep -qx "$desktop_marker" "$desktop_user"; then
+    rm -f -- "$desktop_user"
+    [[ -f $desktop_backup ]] && mv -f -- "$desktop_backup" "$desktop_user"
+    command -v update-desktop-database >/dev/null && update-desktop-database -q "$apps_dir" || true
+    echo "removed $desktop_user"
+  fi
+fi
 
 if [[ $mode == install ]]; then
   cat <<'EOF'
