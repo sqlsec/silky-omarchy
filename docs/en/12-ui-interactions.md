@@ -92,6 +92,7 @@ The Control Center's new "Display" page has an Appearance switch, so you can swi
 
 - Nautilus looks like Finder, with Space for Quick Look ([04](04-macos-theme.md)); its context menu has "Copy Path", "Open in Terminal" and "Extract Here" ([08](08-nautilus-actions.md))
 - The optional Simplified Chinese setup localizes menus, dates and common sidebar bookmarks. See [Simplified Chinese interface](08-nautilus-actions.md#simplified-chinese-interface).
+- Right-click a single image in Nautilus and choose Set as Background to preview and apply it to the Omarchy desktop. See [Set the desktop background](08-nautilus-actions.md#set-the-desktop-background).
 - The terminal runs zsh + Oh My Zsh: history suggestions, syntax highlighting, richer completion ([06](06-terminal.md))
 
 ## Obsidian notes

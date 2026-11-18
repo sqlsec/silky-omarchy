@@ -53,6 +53,8 @@ python3 scripts/install-macshell-overview.py
 ./scripts/install-nautilus-actions.sh
 # Optional: switch the Nautilus file manager to Simplified Chinese
 ./scripts/install-nautilus-zh-cn.py
+# Optional: enable Nautilus’s Set as Background action
+./scripts/install-nautilus-wallpaper.py
 ./scripts/install-wowtype-glass.sh
 ./scripts/install-shortcuts.sh
 ./scripts/install-menu-glass.sh

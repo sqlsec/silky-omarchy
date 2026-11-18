@@ -33,6 +33,7 @@ omarchy theme set macos-tahoe-dark
 ./scripts/install-boot-screen.sh              # 07: macOS-style boot unlock screen
 ./scripts/install-nautilus-actions.sh         # 08: Nautilus context menu
 ./scripts/install-nautilus-zh-cn.py            # 08: Optional Simplified Chinese UI for Nautilus
+./scripts/install-nautilus-wallpaper.py        # 08: Optional Set as Background action for Nautilus
 ./scripts/install-wowtype-glass.sh            # 09: WowType candidate skin
 ./scripts/install-shortcuts.sh                # 10: shortcut clashes + Super+K panel
 ./scripts/install-menu-glass.sh               # 11: Omarchy menu glass + light/dark

@@ -53,6 +53,8 @@ python3 scripts/install-macshell-overview.py
 ./scripts/install-nautilus-actions.sh
 # 可选：将 Nautilus 文件管理器切换为简体中文
 ./scripts/install-nautilus-zh-cn.py
+# 可选：启用 Nautilus 的「设置为背景…」
+./scripts/install-nautilus-wallpaper.py
 ./scripts/install-wowtype-glass.sh
 ./scripts/install-shortcuts.sh
 ./scripts/install-menu-glass.sh

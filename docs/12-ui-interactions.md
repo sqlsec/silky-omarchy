@@ -92,6 +92,7 @@
 
 - Nautilus 是 Finder 外观，空格键快速预览（[04](04-macos-theme.md)）；右键菜单有「复制路径」「在终端打开」「解压到此处」（[08](08-nautilus-actions.md)）
 - 启用简体中文后，Nautilus 的菜单、日期和常用侧栏书签会显示中文。见[文件管理器简体中文界面](08-nautilus-actions.md#简体中文界面)。
+- 在 Nautilus 右键单张图片，选择「设置为背景…」，即可预览并应用到 Omarchy 桌面。见[右键设置桌面背景](08-nautilus-actions.md#右键设置桌面背景)。
 - 终端用 zsh + Oh My Zsh：历史建议、语法高亮、增强补全（[06](06-terminal.md)）
 
 ## Obsidian 笔记
