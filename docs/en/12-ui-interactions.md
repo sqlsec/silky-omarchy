@@ -17,6 +17,7 @@ The signal is `org.gnome.desktop.interface color-scheme`. Both MacShell's Appear
 | Omarchy's own menus (Super+Esc, Super+Ctrl+M, clipboard, emoji) | [11](11-menu-glass.md) |
 | WowType candidate skin (including WeChat's candidate bar) | [09](09-wowtype-glass.md) |
 | The Super+K shortcut panel | [10](10-shortcuts.md) |
+| Obsidian notes (theme set to "Adapt to system") | [15](15-obsidian.md) |
 
 The Control Center's new "Display" page has an Appearance switch, so you can switch right there.
 
@@ -87,6 +88,10 @@ The Control Center's new "Display" page has an Appearance switch, so you can swi
 
 - Nautilus looks like Finder, with Space for Quick Look ([04](04-macos-theme.md)); its context menu has "Copy Path", "Open in Terminal" and "Extract Here" ([08](08-nautilus-actions.md))
 - The terminal runs zsh + Oh My Zsh: history suggestions, syntax highlighting, richer completion ([06](06-terminal.md))
+
+## Obsidian notes
+
+- Obsidian gets a macOS 27 look: menus, the command palette and modals are glass, and the sidebars are floating rounded glass panels. Folders are Finder blue folders, each extension has its own icon, and code blocks are Terminal windows with red / yellow / green dots. The caret glides and new characters fade in, including Pinyin commits. See [15 · Obsidian](15-obsidian.md).
 
 ## Check that everything is still in place
 

@@ -1,0 +1,17 @@
+/* Fallback animation for when the Silky macOS theme is not active; the theme defines the same rule. */
+.silky-typed {
+  animation: silky-typing-fade 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes silky-typing-fade {
+  from {
+    opacity: 0;
+    filter: blur(2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .silky-typed {
+    animation: none;
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "id": "silky-typing",
+  "name": "Silky Typing",
+  "version": "1.0.0",
+  "minAppVersion": "1.6.0",
+  "description": "Characters you type fade in softly, including text committed by an input method (Pinyin etc.).",
+  "author": "Silky Omarchy",
+  "authorUrl": "https://github.com/sqlsec/silky-omarchy",
+  "isDesktopOnly": false
+}

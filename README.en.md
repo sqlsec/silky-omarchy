@@ -25,6 +25,7 @@ To see every interface and interaction change grouped by where you feel it (menu
 | 11 | Menu glass | ✅ | Omarchy's own menus (Super+Esc, Super+Ctrl+M, clipboard, emoji) become macOS 27 frosted glass that switches light / dark live |
 | 13 | Window overview | ✅ | Four fingers up on the touchpad shows every window of the workspace, four fingers down every window of the current app; linear, follows the fingers, interruptible and reversible (plugin + MacShell component) |
 | 14 | [Logitech mouse](docs/en/14-omalogi.md) | ✅ | Standalone Omalogi window with a Chinese UI, G604 button diagrams, onboard profiles, a manual key picker, Super+K system shortcuts, and an ARM source build |
+| 15 | [Obsidian](docs/en/15-obsidian.md) | ✅ | macOS 27 theme: glass menus and floating sidebars, follows light / dark, Finder blue folders and per-extension file icons, gliding caret and typing fade-in (input methods included), Terminal-window code blocks |
 
 ## Quick start
 
@@ -44,6 +45,7 @@ python3 scripts/install-macshell-overview.py
 ./scripts/install-shortcuts.sh
 ./scripts/install-menu-glass.sh
 ./scripts/install-omalogi.sh
+./scripts/install-obsidian-theme.sh
 ```
 
 Every script backs up the files it changes first. After installing or upgrading, run the self-check: it confirms item by item that the menu bar, Dock, plugins, lock screen, voice overlay and so on are in the expected state, and prints the fix for anything that is not:
@@ -60,6 +62,7 @@ Every script backs up the files it changes first. After installing or upgrading,
 config/hypr/      Hyprland Lua snippets (touchpad, animations, monitors, screenshot key, plugin loading, voice overlay, shortcuts)
 config/macshell/  MacShell glass settings, GPU environment variables, window overview component
 config/zsh/       ~/.zshrc
+config/obsidian/  Obsidian theme Silky macOS, typing-fade plugin silky-typing, icon generator
 patches/          Patches for MacShell 0.5.1 and MacLock
 plugins/          Hyprland C++ plugin silky-gestures
 themes/           Omarchy themes macos-tahoe-dark / macos-tahoe-light
@@ -101,3 +104,4 @@ docs/             One document per module (English in docs/en/)
 - [12 · UI interaction overview](docs/en/12-ui-interactions.md)
 - [13 · Four fingers up / down: window overview](docs/en/13-window-overview.md)
 - [14 · Omalogi: G604 buttons, onboard profiles, and system shortcuts](docs/en/14-omalogi.md)
+- [15 · Obsidian: macOS 27 theme, file icons and smooth typing](docs/en/15-obsidian.md)

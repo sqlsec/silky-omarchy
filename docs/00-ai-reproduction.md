@@ -34,6 +34,7 @@ omarchy theme set macos-tahoe-dark
 ./scripts/install-wowtype-glass.sh            # 09：WowType 候选框皮肤
 ./scripts/install-shortcuts.sh                # 10：快捷键冲突 + Super+K 面板
 ./scripts/install-menu-glass.sh               # 11：Omarchy 菜单玻璃 + 深浅色
+./scripts/install-obsidian-theme.sh           # 15：Obsidian 主题 + 打字淡入插件
 ```
 
 01 是手动合并的配置片段，没有脚本。
@@ -152,6 +153,23 @@ omarchy theme set macos-tahoe-dark
 - **关键词**：`g_pTrackpadGestures->addGesture(…, 4, TRACKPAD_GESTURE_DIR_VERTICAL, …)`、`ITrackpadGesture::begin/update/end`、`events.config.preReload / reloaded`（重载会清空手势表）、`removeGesture`（卸载前必须删）、socket2 `silkyoverview>>begin,up|down / update,<位移> / end[,cancel]`、Quickshell `Hyprland.rawEvent`、`SafeCapture`（`want` / `wantLive`）、`FrameAnimation` 恒速推进、`WlrLayer.Overlay`、`qs -c MacShell ipc call overview …`
 - **坑**：插件在读配置期间加载，第一次 `reloaded` 不能重复注册（用 `preReload` 标记）；总览窗口不能在手势开始时才创建（Vulkan 表面 + 管线约 0.5 秒没有帧），要常驻并停在屏幕外（margins 移出 + 空输入区域 + `no_anim` 图层规则），启动时预画一次编译着色器；手势中只用单帧捕获，停稳后再实时；缩略图固定大小 + `ShaderEffectSource` + 圆角着色器 `silkyround.frag`，不要每个窗口一个随尺寸变化的 layer/MultiEffect；不要全屏实时模糊；总览的捕获不能跟 Dock 的“实时窗口捕获”开关走；捕获拿到第一帧前不要盖壁纸，但等待期间的手指行程不能丢；层叠顺序要和 Hyprland 一致；Dock 在总览图层下面，要留洞淡出
 - **验证**：`qs -c MacShell ipc call overview begin up` → `update 120` → `state`（`p` 为 0.5）→ `end`；`socat … .socket2.sock | grep silkyoverview` 看真实手势事件
+
+## 14 Omalogi 罗技鼠标（汉化 + ARM）
+
+- **效果**：Omalogi 界面、动作库、提示、报错全部中文；在 aarch64 上从源码构建安装；作为普通窗口（自己的 app id）打开，可平铺 / 浮动、跟随工作区；有线和无线鼠标同时连着时可切换编辑哪一只
+- **文件**：`patches/omalogi-0.3.8-zh.patch`、`scripts/install-omalogi.sh`、`docs/14-omalogi.md`、`config/icons/omalogi.svg`、`config/applications/io.github.elberacasa.omalogi.desktop`、`omalogi-app/shell.qml`、`bin/silky-omalogi`、`config/hypr/silky-omalogi.lua`（图标走 `tune-app-icons.py` 的 `BRANDS`；入口 `Icon=` 用绝对路径，因为 Qt 会缓存“找不到图标”直到 MacShell 进程重启；ARM 上插件 `install.sh` 经 `~/.local/share/silky-omarchy/install-omalogi.sh` 软链接转交）
+- **关键词**：上游提交 `ff3d8c2`（v0.3.8）、`include_str!("../plugin/…")`（插件嵌在二进制里）、`omalogi setup`、`Model.zh / zhMessage / zhGroup / zhSource`、`problemKind`、`omarchy-shell shell toggle io.github.elberacasa.omalogi '{}'`
+- **坑**：插件由 `omalogi setup` 从二进制写出，改已安装的 QML 会被覆盖，必须构建前打补丁；Rust 侧的动作名和报错不能翻（CLI、Rust 测试、`problemKind` 都按英文判断），只在插件显示时翻；daemon 的 `source` 是 `rule N` / `default`；上游 `install.sh` 只认 x86_64；`node --test plugin/tests` 有 14 个断言英文原文的用例会失败，属预期
+- **坑（窗口）**：`PanelWindow`→`FloatingWindow`；Omarchy Shell 进程里的窗口 class 固定 `org.quickshell`，要单独进程 + `//@ pragma AppId`；Lua 版 Hyprland 的 `hyprctl dispatch` 收 Lua 表达式（`hl.dsp.focus({ window = "class:…" })`）；浮动工作区会把新窗口缩成 1100×760，需要自己的 float 规则；窗口要停在 Dock 上方（1280×700），压进 Dock 区域 Dock 会自动隐藏；窗口尺寸别用 `Style.space()`；G604 实测后在设备表标为 `verified`，否则一直显示「未测试」；无线鼠标的 `picture` 和刚启动的 `serve` 抢接收器，要重试；未验证型号的按键列表多行，原布局只留一行高度
+- **验证**：`file ~/.local/bin/omalogi`（aarch64）、`systemctl --user is-active omalogi.service`、打开窗口无鼠标时显示“请连接鼠标”、`hyprctl clients` 里有 class `io.github.elberacasa.omalogi` 的浮动窗口、`cargo test --release` 全过
+
+## 15 Obsidian 主题与丝滑打字
+
+- **效果**：Obsidian 主题 Silky macOS：菜单、命令面板、弹窗、悬浮预览、侧栏都是玻璃材质，侧栏是浮动圆角面板；外观「跟随系统」，随 `color-scheme` 实时切换；文件树是 Finder 蓝色文件夹，不同后缀有各自的图标；光标平滑滑动、柔和闪烁；插件 Silky Typing 让新输入的字淡入（含输入法上屏）；代码块是带红黄绿三个点的深色终端窗口，用 Xcode 深色配色
+- **文件**：`config/obsidian/themes/Silky macOS/{manifest.json,theme.css}`、`config/obsidian/build-icons.py`（生成 SVG 图标块）、`config/obsidian/plugins/silky-typing/{manifest.json,main.js,styles.css}`、`scripts/install-obsidian-theme.sh`、`docs/15-obsidian.md`
+- **关键词**：`appearance.json` 的 `cssTheme` / `theme: "system"`、`community-plugins.json`、`.nav-file-title[data-path$=".pdf" i]`、`.nav-file-title-content::before`、`.cm-cursor` 的 `left/top` 过渡、`.cm-cursorLayer` 的 `cm-blink`、`registerEditorExtension`、`StateField` + `Decoration.mark`、`isUserEvent("input.type.compose")`、`compositionend`、`view.composing`
+- **坑**：Obsidian 的半透明窗口只在 macOS 生效，玻璃只能模糊应用内部；安全模式开关存在 localStorage，脚本不改，要用户手动关；相邻 mark 会被 CodeMirror 合并，导致动画重播，所以每个 mark 要带唯一属性；组字期间不能改 DOM，否则会打断输入法；Obsidian 默认不显示未知后缀的文件，要开「检测所有类型文件」；DevTools 测试别用 9333 端口（本机已被占用）
+- **验证**：独立实例 `obsidian --user-data-dir=<临时目录> --remote-debugging-port=<端口>` 打开测试库，检查 `app.customCss.theme`、`.silky-typed` 的数量，用 `Input.insertText` / `Input.imeSetComposition` 模拟输入；切换 `color-scheme` 看 Obsidian 是否跟着变
 
 ## 杂项
 

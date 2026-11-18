@@ -17,6 +17,7 @@
 | Omarchy 自带菜单（Super+Esc、Super+Ctrl+M、剪贴板、表情） | [11](11-menu-glass.md) |
 | WowType 候选框皮肤（含微信内的候选条） | [09](09-wowtype-glass.md) |
 | Super+K 快捷键面板 | [10](10-shortcuts.md) |
+| Obsidian 笔记（主题「跟随系统」） | [15](15-obsidian.md) |
 
 控制中心「显示」页里新加了「外观」开关，可以直接在那里切换。
 
@@ -87,6 +88,10 @@
 
 - Nautilus 是 Finder 外观，空格键快速预览（[04](04-macos-theme.md)）；右键菜单有「复制路径」「在终端打开」「解压到此处」（[08](08-nautilus-actions.md)）
 - 终端用 zsh + Oh My Zsh：历史建议、语法高亮、增强补全（[06](06-terminal.md)）
+
+## Obsidian 笔记
+
+- Obsidian 换成 macOS 27 风格：菜单、命令面板、弹窗是玻璃，侧栏是浮动的圆角玻璃面板；文件夹是 Finder 蓝色文件夹，不同后缀有各自的图标；代码块是带红黄绿三个点的终端窗口。光标会平滑滑动，新输入的字淡入，拼音上屏也一样。见 [15 · Obsidian](15-obsidian.md)。
 
 ## 检查是否都还在
 

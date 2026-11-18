@@ -25,6 +25,7 @@
 | 11 | 菜单玻璃 | ✅ | Omarchy 自带菜单（Super+Esc、Super+Ctrl+M、剪贴板、表情）改成 macOS 27 毛玻璃，跟随日间 / 暗色实时切换 |
 | 13 | 窗口总览 | ✅ | 触控板四指上滑显示当前工作区所有窗口、四指下滑显示当前应用所有窗口；线性跟手、可打断回退（插件 + MacShell 组件） |
 | 14 | [罗技鼠标](docs/14-omalogi.md) | ✅ | Omalogi 简体中文独立窗口，支持 G604 正面与侧键标注、板载配置、手动组合键和 Super+K 系统快捷键，支持 ARM 源码构建 |
+| 15 | [Obsidian](docs/15-obsidian.md) | ✅ | macOS 27 风格主题：玻璃菜单与浮动侧栏、跟随日间 / 夜间、Finder 蓝色文件夹与按后缀区分的文件图标、光标滑动与打字淡入（含输入法上屏）、终端窗口样式的代码块 |
 
 ## 快速开始
 
@@ -44,6 +45,7 @@ python3 scripts/install-macshell-overview.py
 ./scripts/install-shortcuts.sh
 ./scripts/install-menu-glass.sh
 ./scripts/install-omalogi.sh
+./scripts/install-obsidian-theme.sh
 ```
 
 每个脚本都会先备份要修改的文件。装完或升级后可以跑一遍自检，逐项确认菜单栏、Dock、插件、锁屏、语音浮条等都处于预期状态，有问题会给出修复命令：
@@ -60,6 +62,7 @@ python3 scripts/install-macshell-overview.py
 config/hypr/      Hyprland Lua 配置片段（触控板、动画、显示器、截图键、插件加载、语音浮条、快捷键）
 config/macshell/  MacShell 玻璃参数、GPU 环境变量、窗口总览组件
 config/zsh/       ~/.zshrc
+config/obsidian/  Obsidian 主题 Silky macOS、打字淡入插件 silky-typing、图标生成脚本
 patches/          MacShell 0.5.1 + MacLock 的补丁
 plugins/          Hyprland C++ 插件 silky-gestures
 themes/           Omarchy 主题 macos-tahoe-dark / macos-tahoe-light
@@ -101,3 +104,4 @@ docs/             逐项说明（英文版在 docs/en/）
 - [12 · UI 交互优化总览](docs/12-ui-interactions.md)
 - [13 · 四指上滑 / 下滑：窗口总览](docs/13-window-overview.md)
 - [14 · Omalogi：G604 按键、板载配置与系统快捷键](docs/14-omalogi.md)
+- [15 · Obsidian：macOS 27 风格主题、文件图标与丝滑打字](docs/15-obsidian.md)
