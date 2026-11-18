@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Installs Silky Glass: rounded, frosted WowType candidate skins that follow light / dark mode,
-# and the Hyprland rules that stop WeChat's candidate bar from ghosting (see docs/09-wowtype-glass.md).
+# and the Hyprland rules for WeChat and WPS popups (see docs/09-wowtype-glass.md).
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 hypr_dir="$HOME/.config/hypr"
 themes_dir="${XDG_DATA_HOME:-$HOME/.local/share}/fcitx5/themes"
@@ -18,6 +18,7 @@ if [[ -f $classicui ]] && [[ ! -f $classicui.silky-backup ]]; then
   cp -a "$classicui" "$classicui.silky-backup"
 fi
 install -Dm 755 "$repo_root/wowtype-glass/silky-ime-theme" "$HOME/.local/bin/silky-ime-theme"
+install -Dm 755 "$repo_root/wowtype-glass/silky-xwayland-dpi" "$HOME/.local/bin/silky-xwayland-dpi"
 install -Dm 644 "$repo_root/config/systemd/silky-ime-theme.service" "$HOME/.config/systemd/user/silky-ime-theme.service"
 systemctl --user daemon-reload
 systemctl --user enable --now silky-ime-theme.service
@@ -29,6 +30,9 @@ if ! grep -q 'require("hypr.silky-ime")' "$hypr_dir/hyprland.lua"; then
   printf '\n-- Silky Omarchy: crisp, glassy WowType candidate window.\nrequire("hypr.silky-ime")\n' >> "$hypr_dir/hyprland.lua"
 fi
 hyprctl reload >/dev/null
+if ! "$HOME/.local/bin/silky-xwayland-dpi"; then
+  printf 'Could not set XWayland DPI in this session. Hyprland will retry at startup.\n' >&2
+fi
 
 printf 'Installed. Restart WeChat once so its built-in candidate bar loads the new skin.\n'
 printf 'Undo: systemctl --user disable --now silky-ime-theme; mv %s.silky-backup %s\n' "$classicui" "$classicui"

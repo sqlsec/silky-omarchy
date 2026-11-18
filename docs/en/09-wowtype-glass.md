@@ -40,6 +40,16 @@ The `QT_IM_MODULE=wayland` / `ibus` interfaces tried earlier only allow English 
 
 fcitx5's own "follow system dark mode" (`UseDarkTheme`) is not used: WeChat's copy of fcitx5-qt does not support it and only reads `Theme=`. Changing `Theme=` keeps WeChat and every other app on the same skin. The file is rewritten in place (same inode), so the client inside WeChat notices the change; if it ever misses one, restart WeChat.
 
+## WPS candidate bar, mini toolbar, and document fonts
+
+- WPS runs under XWayland. Fcitx5's X11 candidate window reads `Xft.dpi` from Xresources. When `xprop` is available (`xorg-xprop` on Arch), the installer and Hyprland startup set a missing value from the built-in display's scale, or from the first output on desktops without one. A 2× display yields 192 DPI. An existing value takes precedence, and other X11 applications that read Xresources can also use this setting. [Fcitx DPI documentation](https://fcitx-im.org/wiki/Theme_Customization#Classic_User_interface)
+- Omarchy's floating workspace mode gives new application windows a default size and a cascading position. The `o.window(..., { float = true })` rules let the `Fcitx5 Input Window` and the WPS Writer selection mini toolbar (class and title `wps`) supply their own geometry. The rules disable Hyprland blur and window animations on both popups, which avoids the large first-frame background, and disable the compositor shadow on the mini toolbar.
+- Place the caret in the WPS document body and press `Super+I` to select WowType. Type pinyin at different heights on a page and check that the candidate bar follows the caret. Drag across text and check that the mini toolbar opens at its compact size. Run `xprop -root RESOURCE_MANAGER` to inspect the DPI.
+
+If WPS reports missing fonts, copy the fonts Linux recognizes from your Windows `Windows/Fonts` directory into `~/.local/share/fonts/Windows/`, run `fc-cache -f`, save your documents, and fully quit and reopen WPS. Run `fc-match -f '%{family} %{file}\n' 'SimSun'` to check the actual family and file being used.
+
+Modern Windows supplies `simfang.ttf` under the family name `FangSong`. Older files may explicitly request `仿宋_GB2312`. Install a font whose embedded family is `FangSong_GB2312,仿宋_GB2312`, then verify it with `fc-match -f '%{family} %{file}\n' '仿宋_GB2312'`. The document can keep its original font name. [Anyang University font downloads](https://www.ayxy.edu.cn/xxh/contents/127/2224.html)
+
 ## Verify
 
 ```bash

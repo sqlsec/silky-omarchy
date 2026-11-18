@@ -17,3 +17,33 @@ hl.config({
     },
   },
 })
+
+-- Let Fcitx place and size its XWayland candidate popup at the text caret.
+-- o.window registers the class as self-floating in Omarchy, so the workspace
+-- does not apply its default window size or cascading position to the popup.
+o.window({
+  xwayland = true,
+  class = "^fcitx$",
+  initial_title = "^Fcitx5 Input Window$",
+}, {
+  name = "silky-fcitx-xwayland-candidate",
+  float = true,
+  no_blur = true,
+  no_anim = true,
+})
+
+-- Match Fcitx5's XWayland candidate panel to the primary display's scale.
+o.exec_on_start(os.getenv("HOME") .. "/.local/bin/silky-xwayland-dpi")
+
+-- WPS Writer supplies its own geometry for the selection mini toolbar.
+o.window({
+  xwayland = true,
+  initial_class = "^wps$",
+  title = "^wps$",
+}, {
+  name = "silky-wps-mini-toolbar",
+  float = true,
+  no_anim = true,
+  no_blur = true,
+  no_shadow = true,
+})

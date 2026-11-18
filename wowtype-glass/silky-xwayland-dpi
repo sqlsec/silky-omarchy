@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+"""Seed the XWayland font DPI from the internal display or the first output."""
+
+from ast import literal_eval
+import json
+import os
+import re
+import shutil
+import subprocess
+
+if not os.environ.get("DISPLAY") or not shutil.which("xprop"):
+    raise SystemExit(0)
+
+xprop = ["xprop", "-root"]
+property_name = "RESOURCE_MANAGER"
+result = subprocess.check_output(
+    [*xprop, "-notype", "-f", property_name, "8s", " $0\n", property_name],
+    text=True,
+)
+_, separator, value = result.partition(" = ")
+resources = literal_eval(value.strip()) if separator else ""
+if re.search(r"^[ \t]*Xft\.dpi[ \t]*:", resources, re.MULTILINE):
+    raise SystemExit(0)
+
+monitors = json.loads(subprocess.check_output(["hyprctl", "-j", "monitors"], text=True))
+if not monitors:
+    raise SystemExit(0)
+
+display = next(
+    (monitor for monitor in monitors if monitor["name"].startswith(("eDP-", "LVDS-", "DSI-"))),
+    monitors[0],
+)
+dpi = round(96 * display["scale"])
+if resources and not resources.endswith("\n"):
+    resources += "\n"
+subprocess.run(
+    [*xprop, "-f", property_name, "8s", "-set", property_name, resources + f"Xft.dpi:\t{dpi}\n"],
+    check=True,
+)

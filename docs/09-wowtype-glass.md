@@ -48,6 +48,16 @@ Hyprland 默认给弹出层做淡入淡出（`fadePopups` 继承 `fade`），旧
 没有用 fcitx5 自带的“跟随系统深色”（`UseDarkTheme`）：微信那份 fcitx5-qt 不支持，只读 `Theme=`。统一改 `Theme=`，
 微信和其他应用始终是同一套皮肤。文件是原地改写的（不换 inode），微信内的客户端能察觉到变化；若某次没跟上，重启微信即可。
 
+## WPS 的候选栏、迷你工具栏与字体
+
+- WPS 走 XWayland。Fcitx5 的 X11 候选栏从 Xresources 读取 `Xft.dpi`。有 `xprop`（Arch 的 `xorg-xprop`）时，安装脚本和 Hyprland 启动时会用内置屏幕的缩放补上这个值，无内置屏幕时使用第一个输出。例如 2× 对应 192 DPI。已经配置的 DPI 会优先使用。其他读取 Xresources 的 X11 应用也可能使用这个值。[Fcitx 的 DPI 说明](https://fcitx-im.org/wiki/Theme_Customization#Classic_User_interface)
+- Omarchy 的浮动工作区会给新窗口套用默认尺寸和层叠位置。Hyprland 规则通过 `o.window(..., { float = true })` 将 `Fcitx5 Input Window` 和 WPS 文字的划词迷你工具栏（类名和标题均为 `wps`）登记为自行浮动。这两种弹窗现在按应用给出的尺寸和位置显示。候选栏禁用 Hyprland 模糊和窗口动画，避免首帧出现大片背景。迷你工具栏同时关闭了 Hyprland 阴影。
+- 在 WPS 正文里点出光标，用 `Super+I` 切到 WowType。在同一页不同高度输入拼音，候选词应靠近光标；拖选文字时，迷你工具栏应以紧凑尺寸弹出。可用 `xprop -root RESOURCE_MANAGER` 检查 DPI。
+
+如果 WPS 报缺字体，可从自己的 Windows `Windows/Fonts` 将 Linux 能识别的字体复制到 `~/.local/share/fonts/Windows/`，运行 `fc-cache -f`，保存文档后完全退出并重新打开 WPS。用 `fc-match -f '%{family} %{file}\n' '宋体'` 检查实际匹配的字体，核对返回的家族名称和文件。
+
+新版 Windows 的 `simfang.ttf` 家族名是「仿宋」，旧文档可能明确要求 `仿宋_GB2312`。遇到这种情况，安装内嵌家族名为 `FangSong_GB2312,仿宋_GB2312` 的字体文件，然后用 `fc-match -f '%{family} %{file}\n' '仿宋_GB2312'` 再确认，不必在 WPS 里对文档点「永久转换」。[安阳学院字体下载页](https://www.ayxy.edu.cn/xxh/contents/127/2224.html)
+
 ## 验证
 
 ```bash
