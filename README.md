@@ -81,7 +81,7 @@ patches/          MacShell 0.5.1 / 0.5.2 + MacLock + Omalogi 汉化的补丁
 plugins/          Hyprland C++ 插件 silky-gestures
 themes/           Omarchy 主题 macos-tahoe-dark / macos-tahoe-light
 hooks/            Omarchy theme-set 钩子
-bin/              silky-lock、silky-sleep-lock（MacLock 锁屏入口）、silky-menu-glass
+bin/              silky-lock、silky-sleep-lock（MacLock 锁屏入口）、silky-menu-glass、silky-omalogi
 config/omarchy/   Omarchy shell 插件 silky.idle 与菜单覆盖
 config/systemd/   用户服务 silky-sleep-lock、silky-ime-theme、silky-menu-glass
 plymouth/         开机解锁界面主题与预览图

@@ -64,7 +64,12 @@ ChatGPT 之前做的图标调整已经整合进安装脚本：
 
 - 为 Omarchy 自带应用补上图标别名：`omacalc → calc`、`omawrite → text-editor`、`omarchy-discord → discord`
 - MacTahoe 把 ChatGPT 和 Claude 的图标重画了。脚本把这两个别名改名为 `*.mactahoe-backup`，让它们使用厂商自己的官方图标
-- 这两个官方图标的透明留白和 MacTahoe 不一致，MacShell 补丁中的 `dockIconScale()` 在 Dock 里对它们做了视觉校正（Claude 放大 8%，ChatGPT 缩小 4%）
+- ChatGPT 的官方图标透明留白和 MacTahoe 不一致，MacShell 补丁中的 `dockIconScale()` 在 Dock 里把它缩小 4%；Claude 已经重绘到标准圆角方块上，系数为 1.0
+- `scripts/tune-app-icons.py` 让启动器里其余应用也统一成 MacTahoe 风格，结果直接装进 `MacTahoe/apps/scalable`，应用程序面板、Dock 和 Spotlight 都会使用：
+  - 工具类和 Omarchy 自带应用链接到对应的 macOS 图标，例如 `imv → accessories-image-viewer`、`omacut → VideoTrimmer`、`hype → Keynote`、`gliff → remote-desktop`、`signed → PDF`、`monologue → Photo Booth`、`LimineSnapperSync → timeshift`、`wemeetapp → meeting`、`zoom → Zoom`
+  - 有品牌的应用（Claude、HEY、Superwhisper、WorkBuddy、协作、Basecamp、Netcatty、Clippy、WowType、Google Messages 等）保留自己的标志，重新放到 MacTahoe 同款的圆角方块上：512 画布中 442 px、圆角 100，阴影取自主题自带的 Zoom 图标；圆形或单独字形的标志放在浅色底板上
+  - 原来指向手工 PNG 的本地 `.desktop` 改为使用主题图标名
+  - 装好新应用后再运行一次 `python3 scripts/tune-app-icons.py` 即可；没有对应关系的新应用需要先加到脚本里的 `ALIASES` 或 `BRANDS`
 - MacShell 的 Dock 和 Spotlight 从 `~/.config/macshell/env` 中的 `QS_ICON_THEME` 读取图标主题
 
 ## 红绿灯标题栏

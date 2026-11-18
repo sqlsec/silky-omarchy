@@ -44,6 +44,7 @@ The Control Center's new "Display" page has an Appearance switch, so you can swi
 - After you click a Dock icon, its name label waits until the pointer moves 4 px before showing again (as on macOS), so repeated clicks no longer stall for 60–70 ms ([02](02-macshell.md#applications-panel-interaction))
 - Applications panel (Launchpad): 320 px per wheel notch, smooth deceleration after a touchpad / touchscreen flick; on open the whole panel scales from 114% to 100% and goes from blurred to sharp; it is warmed up beforehand so the first open no longer stalls for about 200 ms; repeated clicks on the Applications icon reverse the spring directly ([02](02-macshell.md#applications-panel-interaction))
 - No window-minimize entry points (title bars keep only close and maximize); windows that were already minimized can still be restored from the Dock ([02](02-macshell.md#window-minimizing))
+- "罗技鼠标" (Omalogi) is in the Applications panel and Spotlight with a bright blue tile matching MacTahoe; while running, the Dock shows its own icon ([14](14-omalogi.md#launcher-entry-and-icon))
 
 ## Glass and smoothness
 
@@ -60,6 +61,7 @@ The Control Center's new "Display" page has an Appearance switch, so you can swi
 - The Settings window's navigation list: 140 px smooth scrolling per wheel notch, native inertia on the touchpad ([02 · Settings window](02-macshell.md#dock-icons-and-the-settings-window))
 - Use `Super+T` for split tiling on the current workspace. Use `Super+Alt+T` for single-window tiling and press it again to return to floating and bring back the displaced windows. ([10 · Super+T](10-shortcuts.md#supert))
 - Switching back to floating with either shortcut keeps the window’s top edge below the menu bar. ([10 · Super+T](10-shortcuts.md#supert))
+- The Logitech mouse editor (Omalogi) is a normal window: centred floating 1280×700 (clear of the Dock), tiles / goes full screen, shows in Alt+Tab, and no longer stays on top across workspaces; opening it again only focuses it; with wired and wireless mice both connected, switch between them at the top right ([14 · A real window](14-omalogi.md#a-real-window))
 
 ## Gestures (touchpad / touchscreen)
 

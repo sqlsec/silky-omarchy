@@ -81,7 +81,7 @@ patches/          Patches for MacShell 0.5.1 / 0.5.2, MacLock and the Omalogi tr
 plugins/          Hyprland C++ plugin silky-gestures
 themes/           Omarchy themes macos-tahoe-dark / macos-tahoe-light
 hooks/            Omarchy theme-set hook
-bin/              silky-lock, silky-sleep-lock (MacLock entry points), silky-menu-glass
+bin/              silky-lock, silky-sleep-lock (MacLock entry points), silky-menu-glass, silky-omalogi
 config/omarchy/   Omarchy shell plugin silky.idle and menu overrides
 config/systemd/   User services silky-sleep-lock, silky-ime-theme, silky-menu-glass
 plymouth/         Boot unlock theme and preview image

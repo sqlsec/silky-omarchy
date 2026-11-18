@@ -90,6 +90,11 @@ ALIASES
     [[ -L $apps/$name ]] && mv -- "$apps/$name" "$apps/$name.mactahoe-backup"
   done
 
+  # Every other launcher app gets a MacTahoe-style icon too (aliases + logos redrawn on the MacTahoe tile).
+  if command -v magick >/dev/null; then
+    python3 -I "$repo_root/scripts/tune-app-icons.py" >/dev/null || printf 'App icon tuning failed; continuing.\n' >&2
+  fi
+
   if command -v gtk-update-icon-cache >/dev/null; then
     for name in MacTahoe MacTahoe-dark MacTahoe-light; do
       gtk-update-icon-cache -q -f "$icons_dir/$name" 2>/dev/null || true

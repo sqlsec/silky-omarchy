@@ -64,7 +64,12 @@ Icon tweaks made earlier with ChatGPT are folded into the installer:
 
 - Icon aliases for Omarchy's bundled apps: `omacalc → calc`, `omawrite → text-editor`, `omarchy-discord → discord`
 - MacTahoe redraws the ChatGPT and Claude icons. The script renames those two aliases to `*.mactahoe-backup` so the vendors' official icons are used
-- Those two official icons have different transparent padding from MacTahoe's, so `dockIconScale()` in the MacShell patch corrects them optically in the Dock (Claude 8% larger, ChatGPT 4% smaller)
+- ChatGPT's official icon has different transparent padding from MacTahoe's, so `dockIconScale()` in the MacShell patch draws it 4% smaller in the Dock; Claude is now redrawn on the standard tile, so its factor is 1.0
+- `scripts/tune-app-icons.py` brings every other launcher app into the MacTahoe style. Its output goes straight into `MacTahoe/apps/scalable`, so the Applications panel, Dock and Spotlight all use it:
+  - Utilities and Omarchy's own apps link to the matching macOS icon, e.g. `imv → accessories-image-viewer`, `omacut → VideoTrimmer`, `hype → Keynote`, `gliff → remote-desktop`, `signed → PDF`, `monologue → Photo Booth`, `LimineSnapperSync → timeshift`, `wemeetapp → meeting`, `zoom → Zoom`
+  - Branded apps (Claude, HEY, Superwhisper, WorkBuddy, xiezuo, Basecamp, Netcatty, Clippy, WowType, Google Messages, …) keep their logo, redrawn on MacTahoe's exact tile: 442 px on a 512 canvas, corner radius 100, with the shadow taken from the set's own Zoom icon. Round logos and bare glyphs sit on a light tile
+  - Local `.desktop` files that pointed at hand-made PNGs now use the theme icon name
+  - After installing a new app, run `python3 scripts/tune-app-icons.py` again. An app with no mapping yet needs an entry in the script's `ALIASES` or `BRANDS` first
 - MacShell's Dock and Spotlight read the icon theme from `QS_ICON_THEME` in `~/.config/macshell/env`
 
 ## Traffic-light title bar
