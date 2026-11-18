@@ -11,7 +11,7 @@
 - **Finder 风格文件树**：文件夹是 macOS 蓝色文件夹，展开时换成打开的样式。不同后缀有各自的图标，包括笔记、文本、Canvas、Base、PDF、Word / WPS、表格、演示、图片、SVG、音频、视频、压缩包、网页链接，以及 JS / TS / Python / Shell / JSON / CSS / HTML / Lua / YAML / Rust / Go / C 等代码文件。代码文件的图标是带红黄绿三个点的深色小终端。选中行用强调色填满，和 Finder 侧栏一样。
 - **丝滑打字**：光标在两个位置之间平滑滑过去，不再跳格；闪烁改成渐隐渐显。配套插件 Silky Typing 会让刚打出的字带一点模糊和强调色光晕淡入。拼音等输入法上屏的整段文字也会淡入。
 - **代码块像 macOS 终端窗口**：深色玻璃底，左上角有红黄绿三个点，标题栏居中显示语言名，语法高亮用 Xcode Default (Dark) 配色。深浅两种模式下代码块都是深色窗口，行内代码是跟随深浅色的浅色小胶囊。
-- **窗口按钮在左上角**：关闭、最小化、缩放三个按钮是 macOS 的红黄绿圆点，放在左上角，侧栏打开时在浮动侧栏面板的标题行里，侧栏收起时和标签栏对齐。显示功能区（ribbon）时，按钮排在功能区右边。悬停时显示 ×、−、缩放符号，右侧不再留出按钮的空位。
+- **窗口按钮在左上角**：关闭、最小化、缩放三个按钮是 macOS 的红黄绿圆点，放在左上角，侧栏打开时在浮动侧栏面板的标题行里，侧栏收起时和标签栏对齐。显示功能区（ribbon）时，按钮排在功能区右边。外观和行为与 Silky 给 Sublime Text 等应用画的标题栏一致（[`silky-macos.lua`](../config/hypr/silky-macos.lua)）：红色关闭窗口；黄色位置是灰色圆点，因为这套桌面没有最小化，点了没有反应；绿色切换「全宽」，和 `Super+Alt+F` 相同，再点一次恢复原来的大小和位置。悬停时红色显示 ×，绿色显示 +。右侧不再留出按钮的空位。绿色按钮需要启用 Silky Window Controls 插件。
 - 其他细节：Apple 系统色和字体栈（`-apple-system`、Inter、Noto Sans CJK SC，等宽字体用 SF Mono / JetBrainsMono Nerd Font）；开关是 iOS 样式；任务复选框是 Reminders 样式的圆形；滚动条只在悬停时出现；菜单和弹窗有轻微的弹出动画。开启系统的「减少动态效果」后，所有动画都会关闭。
 
 ## 安装
@@ -27,7 +27,7 @@
 | 动作 | 位置 |
 | --- | --- |
 | 复制主题 | `<库>/.obsidian/themes/Silky macOS/`（来自 [`config/obsidian/themes/Silky macOS/`](../config/obsidian/themes/Silky%20macOS/)） |
-| 复制插件 | `<库>/.obsidian/plugins/silky-typing/`（来自 [`config/obsidian/plugins/silky-typing/`](../config/obsidian/plugins/silky-typing/)） |
+| 复制插件 | `<库>/.obsidian/plugins/silky-typing/` 和 `<库>/.obsidian/plugins/silky-window-controls/`（来自 [`config/obsidian/plugins/`](../config/obsidian/plugins/)） |
 | 启用主题并跟随系统 | `<库>/.obsidian/appearance.json`：`"cssTheme": "Silky macOS"`、`"theme": "system"`，其他键保留 |
 | 登记插件 | `<库>/.obsidian/community-plugins.json` 加上 `silky-typing` |
 | 修正启动入口 | `~/.local/share/applications/obsidian.desktop`：复制系统的 `obsidian.desktop`，只把 `StartupWMClass` 改成 `md.obsidian.Obsidian`。如果原来已有用户级入口，会先备份到 `~/.local/state/silky-omarchy/obsidian/obsidian.desktop.backup` |
@@ -35,7 +35,7 @@
 
 可以重复运行。之后再运行只会更新主题和插件文件，第一次的备份保持不变。
 
-正在运行的 Obsidian 会自动加载主题，不需要重启。打字淡入插件需要每个库手动打开一次：**设置 → 第三方插件 → 关闭「安全模式」（Restricted mode），然后确认「Silky Typing」已开启**。这个开关存在 Obsidian 自己的 localStorage 里，属于安全设置，脚本不会替你改。不开插件时，光标滑动和柔和闪烁照样有效，因为它们只靠主题 CSS。
+正在运行的 Obsidian 会自动加载主题，不需要重启。两个插件需要每个库手动打开一次：**设置 → 第三方插件 → 关闭「安全模式」（Restricted mode），然后确认「Silky Typing」和「Silky Window Controls」已开启**。这个开关存在 Obsidian 自己的 localStorage 里，属于安全设置，脚本不会替你改。不开插件时，光标滑动、柔和闪烁和按钮外观照样有效，因为它们只靠主题 CSS，只是没有逐字淡入，绿色按钮也不会放大窗口。`--no-plugin` 只装主题，不装两个插件。
 
 可选设置：
 
@@ -50,6 +50,7 @@
 | [`build-icons.py`](../config/obsidian/build-icons.py) | 用 Python 直接画所有文件和文件夹图标（SVG，不用第三方素材），以 data URI 写进 `theme.css` 里 `@silky-icons-start` / `@silky-icons-end` 之间。改图标或加后缀后运行 `python3 config/obsidian/build-icons.py` |
 | [`silky-typing/main.js`](../config/obsidian/plugins/silky-typing/main.js) | CodeMirror 6 扩展：给刚输入的字符加一个 260 ms 后自动移除的 `silky-typed` 标记 |
 | [`silky-typing/styles.css`](../config/obsidian/plugins/silky-typing/styles.css) | 没有启用 Silky macOS 主题时的后备淡入动画 |
+| [`silky-window-controls/main.js`](../config/obsidian/plugins/silky-window-controls/main.js) | 在 Hyprland 下接管绿色和黄色按钮的点击：绿色对本窗口执行「全宽」切换，黄色什么都不做 |
 | [`install-obsidian-theme.sh`](../scripts/install-obsidian-theme.sh) | 安装、备份与 `--remove` 回滚 |
 
 几个关键点：
@@ -63,6 +64,7 @@
 已知限制：
 
 - 阅读视图里的代码块拿不到语言名，标题栏只显示红黄绿三个点；实时预览模式的标题栏会显示语言。
+- **绿色按钮为什么要插件**：Obsidian 的绿色按钮只是向窗口管理器发「最大化」请求，Omarchy 的默认规则（`default/hypr/windows.lua` 里的 `suppress_event = "maximize"`）会丢掉所有窗口的最大化请求。而且 Electron 自己记的「已最大化」状态和 Hyprland 不同步，再发也不会生效。实测加一条只对 Obsidian 的 `suppress_event` 规则也无法放行。所以插件在捕获阶段拦下点击，用 `hyprctl dispatch` 执行和 `Super+Alt+F` 相同的 `hl.dsp.window.fullscreen({ mode = "maximized", action = "toggle" })`。目标窗口按 Obsidian 主进程 PID 和窗口标题从 `hyprctl clients -j` 里找，用 `address:` 指定，不依赖当前焦点，所以不会误放大别的窗口。不在 Hyprland 下（没有 `HYPRLAND_INSTANCE_SIGNATURE`）时插件不做任何事。
 - **窗口按钮的位置**：Obsidian 在 Linux / Windows 上用 `--frame-right-space` 给窗口按钮在右侧留位置，在 macOS 上用 `--frame-left-space` 在左侧留位置。主题把两者对调（左侧 84 px，右侧 0），再把 `.titlebar-button-container.mod-right` 移到左边，偏移量是功能区宽度 `--frame-ribbon-left`。侧栏是否收起用 `:has(.mod-left-split.is-sidedock-collapsed)` 判断，决定按钮的垂直位置。原来的按钮图标是 Windows 样式（最大化显示“向下还原”的双方框），而且 8 px 的 SVG 在 12 px 圆点里偏左偏下，所以隐藏 SVG，改用居中的背景图画 macOS 符号。从右到左书写（RTL）的系统不做调整。
 - **Dock 图标一直跳、窗口打不开**：Obsidian 1.15 的原生 Wayland 窗口的 app id 是 `md.obsidian.Obsidian`，而软件包自带的 `obsidian.desktop` 写的是 `StartupWMClass=obsidian`。MacShell 的 Dock 因此认不出已经打开的窗口，图标下也没有运行圆点。点 Dock 图标时会再启动一个进程，这个进程把请求交给已经在运行的 Obsidian 后就退出，Dock 却一直等新窗口出现，图标就一直跳。如果原来的窗口被别的窗口挡住，看起来就像打不开。安装脚本生成的用户级入口改正了 `StartupWMClass`，Quickshell 的 `DesktopEntries.heuristicLookup` 就能把窗口对上图标；入口里带一行 `X-Silky-Omarchy=obsidian-wmclass`，回滚时只删带这个标记的文件。
 - 本机的 `~/.config/obsidian/user-flags.conf` 里有 `-disable-gpu`，Obsidian 用软件合成。模糊只用在菜单、命令面板、侧栏等区域，还没有专门测过 CPU 开销。去掉这个参数后，模糊交给 GPU 处理，会更省 CPU。
@@ -75,7 +77,7 @@
 - **隔离测试**：用 `--user-data-dir` 启动一个只打开临时测试库的独立 Obsidian 实例，通过 DevTools 协议检查：`cssTheme` 是 `Silky macOS`，深浅两种模式的截图正常；`.cm-cursor` 的 `transition` 包含 `left` / `top`；`.cm-cursorLayer` 的缓动是 `cubic-bezier(0.45, 0, 0.55, 1)`；模拟逐字输入时每个字各有一个 `.silky-typed`；模拟拼音组字 `ni`→`nihao` 期间没有新增标记，上屏的「你好」随后被标记；约 0.7 秒后标记全部清除，文本没有改动。
 - **实机**：在本机两个库上运行安装脚本后，正在运行的 Obsidian 不重启就换成了浮动玻璃侧栏。打字淡入要等关闭安全模式后才会生效，还需要在实机上确认。
 
-另在隔离实例里检查了窗口按钮：侧栏打开或收起、功能区显示或隐藏，四种布局下按钮都在左上角，不和侧栏按钮、标签页重叠；三个符号居中；`elementFromPoint` 命中关闭按钮，`app-region` 为 `no-drag`，可以点击；`--frame-right-space` 为 `0px`。
+另在隔离实例里检查了窗口按钮：侧栏打开或收起、功能区显示或隐藏，四种布局下按钮都在左上角，不和侧栏按钮、标签页重叠；三个符号居中；`elementFromPoint` 命中关闭按钮，`app-region` 为 `no-drag`，可以点击；`--frame-right-space` 为 `0px`。启用 Silky Window Controls 后，在隔离实例里模拟点击绿色按钮：窗口从 942×626 变成全宽 1470×895（Hyprland `fullscreen` 为 1，即 maximized），再点一次恢复到 942×626 和原来的位置；点灰色按钮没有变化。测试时焦点在另一个窗口（PuTTY）上，它没有受影响。
 
 自己检查：
 
@@ -100,6 +102,6 @@ gsettings set org.gnome.desktop.interface color-scheme prefer-light       # Obsi
 ./scripts/install-obsidian-theme.sh --remove ~/Notes   # 指定的库
 ```
 
-脚本会删除 `themes/Silky macOS/` 和 `plugins/silky-typing/`，删除带标记的 `~/.local/share/applications/obsidian.desktop`（原来有用户级入口时恢复备份），再用 `~/.local/state/silky-omarchy/obsidian/<哈希>/` 里的备份恢复 `appearance.json` 和 `community-plugins.json`。如果原来没有这两个文件，就直接删掉。恢复后 Obsidian 会自动切回原来的主题。如果只想换回默认外观、保留文件，在 **设置 → 外观 → 主题** 里选「默认」即可。
+脚本会删除 `themes/Silky macOS/`、`plugins/silky-typing/` 和 `plugins/silky-window-controls/`，删除带标记的 `~/.local/share/applications/obsidian.desktop`（原来有用户级入口时恢复备份），再用 `~/.local/state/silky-omarchy/obsidian/<哈希>/` 里的备份恢复 `appearance.json` 和 `community-plugins.json`。如果原来没有这两个文件，就直接删掉。恢复后 Obsidian 会自动切回原来的主题。如果只想换回默认外观、保留文件，在 **设置 → 外观 → 主题** 里选「默认」即可。
 
 注意：`--remove` 会把这两个文件恢复成第一次安装前的样子，安装之后在外观设置里做的其他修改（比如字号）也会一起撤销。

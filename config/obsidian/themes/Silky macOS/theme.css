@@ -336,29 +336,27 @@ body.is-hidden-frameless:has(.workspace-split.mod-left-split.is-sidedock-collaps
   display: none;
 }
 
+/* Same lights as Silky's hyprbars title bars (config/hypr/silky-macos.lua, e.g. Sublime Text): Hyprland has no
+ * minimise here, so that light is a disabled grey dot; green toggles "Full width" like Super+Alt+F (wired by the
+ * Silky Window Controls plugin). */
 .titlebar-button-container.mod-right .titlebar-button.mod-close { order: 1; background-color: #ff5f57; }
-.titlebar-button-container.mod-right .titlebar-button.mod-minimize { order: 2; background-color: #febc2e; }
+.titlebar-button-container.mod-right .titlebar-button.mod-minimize { order: 2; background-color: #4e4e50; pointer-events: none; }
 .titlebar-button-container.mod-right .titlebar-button.mod-maximize { order: 3; background-color: #28c840; }
+.theme-light .titlebar-button-container.mod-right .titlebar-button.mod-minimize { background-color: #d1d0d2; }
 
 .titlebar-button-container.mod-right:hover .titlebar-button.mod-close {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M1.5 1.5l5 5M6.5 1.5l-5 5' stroke='%234d0000' stroke-width='1.25' stroke-linecap='round'/%3E%3C/svg%3E");
-}
-
-.titlebar-button-container.mod-right:hover .titlebar-button.mod-minimize {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M1 4h6' stroke='%23985700' stroke-width='1.35' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M1.5 1.5l5 5M6.5 1.5l-5 5' stroke='%234d0000' stroke-opacity='.75' stroke-width='1.25' stroke-linecap='round'/%3E%3C/svg%3E");
 }
 
 .titlebar-button-container.mod-right:hover .titlebar-button.mod-maximize {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M1.2 2.7v4.1h4.1zM6.8 5.3V1.2H2.7z' fill='%23006500'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M4 1v6M1 4h6' stroke='%23004d00' stroke-opacity='.75' stroke-width='1.25' stroke-linecap='round'/%3E%3C/svg%3E");
 }
 
 .titlebar-button-container.mod-right .titlebar-button:hover {
-  background-color: unset;
   filter: brightness(0.94);
 }
 
 .titlebar-button-container.mod-right .titlebar-button.mod-close:hover { background-color: #ff5f57; }
-.titlebar-button-container.mod-right .titlebar-button.mod-minimize:hover { background-color: #febc2e; }
 .titlebar-button-container.mod-right .titlebar-button.mod-maximize:hover { background-color: #28c840; }
 
 .titlebar-button-container.mod-right .titlebar-button:active {

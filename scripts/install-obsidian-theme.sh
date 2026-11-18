@@ -1,13 +1,14 @@
 #!/bin/bash
-# Install the Silky macOS Obsidian theme and the Silky Typing plugin into Obsidian vaults.
+# Install the Silky macOS Obsidian theme and its plugins (Silky Typing, Silky Window Controls) into Obsidian vaults.
 #
 #   ./scripts/install-obsidian-theme.sh                 # every vault listed in ~/.config/obsidian/obsidian.json
 #   ./scripts/install-obsidian-theme.sh ~/Notes ...     # only these vaults
-#   ./scripts/install-obsidian-theme.sh --no-plugin     # theme only, no typing animation
+#   ./scripts/install-obsidian-theme.sh --no-plugin     # theme only, no plugins
 #   ./scripts/install-obsidian-theme.sh --remove [...]  # put the vaults back the way they were
 #
-# Per vault it copies the theme to .obsidian/themes/Silky macOS/, the plugin to .obsidian/plugins/silky-typing/,
-# sets "cssTheme" and "theme": "system" (follow light / dark) in appearance.json and lists the plugin in
+# Per vault it copies the theme to .obsidian/themes/Silky macOS/, the plugins to .obsidian/plugins/silky-typing/
+# and .obsidian/plugins/silky-window-controls/, sets "cssTheme" and "theme": "system" (follow light / dark) in
+# appearance.json and lists the plugins in
 # community-plugins.json. The original appearance.json and community-plugins.json are saved once to
 # ~/.local/state/silky-omarchy/obsidian/<vault-hash>/ and restored by --remove. Safe to run again.
 #
@@ -17,9 +18,9 @@ set -euo pipefail
 
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 theme_name="Silky macOS"
-plugin_id="silky-typing"
+plugin_ids=(silky-typing silky-window-controls)
 theme_src="$repo/config/obsidian/themes/$theme_name"
-plugin_src="$repo/config/obsidian/plugins/$plugin_id"
+plugins_src="$repo/config/obsidian/plugins"
 obsidian_json="${XDG_CONFIG_HOME:-$HOME/.config}/obsidian/obsidian.json"
 state_root="${XDG_STATE_HOME:-$HOME/.local/state}/silky-omarchy/obsidian"
 
@@ -55,7 +56,8 @@ json_edit() {
   python3 -I - "$@" <<'PY'
 import json, os, sys
 path, action = sys.argv[1], sys.argv[2]
-theme, plugin = "Silky macOS", "silky-typing"
+theme = "Silky macOS"
+plugins = sys.argv[3:]
 try:
     with open(path) as f:
         data = json.load(f)
@@ -65,10 +67,9 @@ if action == "appearance":
     data["cssTheme"] = theme
     data["theme"] = "system"
 elif action == "plugin-add":
-    if plugin not in data:
-        data.append(plugin)
+    data += [p for p in plugins if p not in data]
 elif action == "plugin-del":
-    data = [p for p in data if p != plugin]
+    data = [p for p in data if p not in plugins]
 elif action == "appearance-del":
     if data.get("cssTheme") == theme:
         data.pop("cssTheme")
@@ -106,13 +107,16 @@ for vault in "${vaults[@]}"; do
 
     if ((with_plugin)); then
       mkdir -p "$config/plugins"
-      rm -rf -- "${config:?}/plugins/$plugin_id"
-      cp -r -- "$plugin_src" "$config/plugins/$plugin_id"
-      json_edit "$config/community-plugins.json" plugin-add
+      for id in "${plugin_ids[@]}"; do
+        rm -rf -- "${config:?}/plugins/$id"
+        cp -r -- "$plugins_src/$id" "$config/plugins/$id"
+      done
+      json_edit "$config/community-plugins.json" plugin-add "${plugin_ids[@]}"
     fi
     echo "ok    $vault"
   else
-    rm -rf -- "$config/themes/$theme_name" "${config:?}/plugins/$plugin_id"
+    rm -rf -- "$config/themes/$theme_name"
+    for id in "${plugin_ids[@]}"; do rm -rf -- "${config:?}/plugins/$id"; done
     for f in appearance.json community-plugins.json; do
       if [[ -f $state/$f ]]; then
         cp -p -- "$state/$f" "$config/$f"
@@ -121,7 +125,7 @@ for vault in "${vaults[@]}"; do
       elif [[ $f == appearance.json && -f $config/$f ]]; then
         json_edit "$config/$f" appearance-del
       elif [[ -f $config/$f ]]; then
-        json_edit "$config/$f" plugin-del
+        json_edit "$config/$f" plugin-del "${plugin_ids[@]}"
       fi
     done
     rmdir -- "$config/themes" "$config/plugins" 2>/dev/null || true
@@ -172,9 +176,10 @@ fi
 if [[ $mode == install ]]; then
   cat <<'EOF'
 
-Obsidian picks up the theme without a restart. For the typing animation, once per vault:
-  Settings → Community plugins → turn off Restricted mode, then make sure "Silky Typing" is on.
-设置 → 第三方插件 → 关闭「安全模式」，并确认「Silky Typing」已开启（每个库一次）。
+Obsidian picks up the theme without a restart. For the typing fade and the window buttons, once per vault:
+  Settings → Community plugins → turn off Restricted mode, then make sure "Silky Typing" and
+  "Silky Window Controls" are on.
+设置 → 第三方插件 → 关闭「安全模式」，并确认「Silky Typing」和「Silky Window Controls」已开启（每个库一次）。
 EOF
 fi
 exit $((failures > 0))

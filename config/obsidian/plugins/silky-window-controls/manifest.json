@@ -1,0 +1,10 @@
+{
+  "id": "silky-window-controls",
+  "name": "Silky Window Controls",
+  "version": "1.0.0",
+  "minAppVersion": "1.6.0",
+  "description": "On Hyprland, the green traffic light toggles Full width (like Super+Alt+F) and the minimise light does nothing.",
+  "author": "Silky Omarchy",
+  "authorUrl": "https://github.com/sqlsec/silky-omarchy",
+  "isDesktopOnly": true
+}

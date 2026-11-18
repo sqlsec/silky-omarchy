@@ -100,7 +100,7 @@
 ## Obsidian 笔记
 
 - Obsidian 换成 macOS 27 风格：菜单、命令面板、弹窗是玻璃，侧栏是浮动的圆角玻璃面板；文件夹是 Finder 蓝色文件夹，不同后缀有各自的图标；代码块是带红黄绿三个点的终端窗口。光标会平滑滑动，新输入的字淡入，拼音上屏也一样。见 [15 · Obsidian](15-obsidian.md)。
-- Obsidian 的关闭、最小化、缩放按钮和 macOS 一样在左上角，是红黄绿圆点，悬停时显示符号。见 [15 · Obsidian](15-obsidian.md#效果)。
+- Obsidian 的窗口按钮和 Sublime 等应用的标题栏一样在左上角：红色关闭，中间是灰色（没有最小化），绿色切换全宽，和 `Super+Alt+F` 相同，再点一次恢复。见 [15 · Obsidian](15-obsidian.md#效果)。
 - 点 Dock 上的 Obsidian 图标会直接切到已经打开的窗口，图标下有运行圆点，不会再一直跳。见 [15 · Obsidian](15-obsidian.md#实现)。
 
 ## 检查是否都还在
