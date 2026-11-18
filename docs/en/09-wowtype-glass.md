@@ -16,6 +16,18 @@ WeChat is different: it statically links the fcitx5-qt client into its binary an
 
 The fix is one line: `config/hypr/silky-ime.lua` turns `fadePopups` off. The cost is that other popups, such as context menus, also appear instantly instead of fading in.
 
+## WeChat's candidate bar blinks while typing
+
+With fades off the ghosting is gone, but while you keep typing the candidate bar still blinks and feels less responsive than in other apps.
+
+Cause: the fcitx5-qt bundled with WeChat 4.1.13 (Qt 6.6) is old. Its `updatePosition()` does not use `xdg_popup.reposition`; whenever the anchor changes it calls `hide()` and then `show()`, so the bar is destroyed and recreated with an empty frame in between. The anchor is the text cursor. With the pinyin shown inline in the input box (preedit), the cursor moves one step right on every letter, so the bar is recreated on every keystroke. Newer upstream fcitx5-qt repositions instead, but WeChat links its copy statically, so it cannot be swapped.
+
+Fix: Silky ships a tiny fcitx5 addon, [`plugins/silky-wechat-preedit`](../../plugins/silky-wechat-preedit/silky-wechat-preedit.cpp), that turns preedit off only for WeChat's D-Bus input context (`program:wechat frontend:dbus`). The pinyin moves to the first line of the candidate bar, the cursor stays put while you compose, and the bar is only redrawn and resized in place instead of being recreated. Other apps and WeChat's `wayland_v2` context are untouched. The cost: in WeChat the pinyin is no longer shown inline in the input box; it sits at the top of the candidate bar.
+
+- Install: `./scripts/install-wowtype-glass.sh` builds it with `make` against the local fcitx5 headers (`Fcitx5Core`, shipped in Arch's `fcitx5` package), installs it to `~/.local/lib/silky-omarchy/libsilkywechatpreedit.so`, writes `~/.local/share/fcitx5/addon/silky-wechat-preedit.conf` (an absolute `Library=` path, so nothing is written to `/usr/lib`), and restarts fcitx5 over D-Bus. Without `make`, `pkg-config` or the headers it is skipped with a message. WeChat does not need a restart; it reconnects to fcitx5 the next time its input box gets focus.
+- Built and loaded on fcitx5 5.1.23. Re-run the installer after a major fcitx5 update.
+- Preedit is turned off again when a context is created and on every focus-in, because a global fcitx5 config reload resets every context to the default. `Ctrl+Alt+P` in WeChat (fcitx5's "Toggle preedit") brings the inline pinyin back temporarily; it is turned off again after you switch away and back.
+
 The `QT_IM_MODULE=wayland` / `ibus` interfaces tried earlier only allow English in this WeChat version; do not use them again. `Super+I` relies on the current fcitx (D-Bus) interface.
 
 ## Silky Glass skins
@@ -56,9 +68,10 @@ Modern Windows supplies `simfang.ttf` under the family name `FangSong`. Older fi
 systemctl --user is-active silky-ime-theme
 grep '^Theme=' ~/.config/fcitx5/conf/classicui.conf
 hyprctl animations | grep -A3 'name: fadePopups$'   # enabled: 0
+grep -c libsilkywechatpreedit /proc/$(pgrep -x fcitx5)/maps   # greater than 0
 ```
 
-Then type `nihao` in a WeChat input box: while you keep typing, the candidate bar should be a single layer with sharp edges, and it should follow light/dark switches.
+Then type `nihao` in a WeChat input box: while you keep typing, the candidate bar should be a single layer with sharp edges, the pinyin should be on its first line, and the bar should stay in place without blinking. It should follow light/dark switches. The commands above were run on this machine; typing in WeChat with the addon loaded still needs a check on real hardware.
 
 ## Rollback
 
@@ -68,3 +81,10 @@ mv ~/.config/fcitx5/conf/classicui.conf.silky-backup ~/.config/fcitx5/conf/class
 ```
 
 Then remove `require("hypr.silky-ime")` from `~/.config/hypr/hyprland.lua` and run `hyprctl reload`.
+
+To bring back only the inline pinyin in WeChat, remove the addon and restart fcitx5:
+
+```bash
+rm ~/.local/share/fcitx5/addon/silky-wechat-preedit.conf ~/.local/lib/silky-omarchy/libsilkywechatpreedit.so
+fcitx5 -rd
+```

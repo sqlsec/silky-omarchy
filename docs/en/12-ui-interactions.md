@@ -80,7 +80,7 @@ The Control Center's new "Display" page has an Appearance switch, so you can swi
 
 ## Input method
 
-- WowType candidate window: rounded frosted skin, Inter 12, an edge-to-edge highlight that shares the panel's 8 px corner, a translucent panel the blur shows through, and the two corners coincide when the first candidate is selected; fixed the ghosting candidate bar in WeChat ([09](09-wowtype-glass.md))
+- WowType candidate window: rounded frosted skin, Inter 12, an edge-to-edge highlight that shares the panel's 8 px corner, a translucent panel the blur shows through, and the two corners coincide when the first candidate is selected; fixed the ghosting candidate bar in WeChat; in WeChat the pinyin now sits on the bar's first line, so the bar no longer blinks while you type ([09](09-wowtype-glass.md#wechats-candidate-bar-blinks-while-typing))
 - WowType voice input: a frosted waveform pill at the bottom of the screen that follows your voice level ([05](05-voice-overlay.md))
 
 ## Lock and boot

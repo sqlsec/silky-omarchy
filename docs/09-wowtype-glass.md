@@ -20,6 +20,28 @@ Hyprland 默认给弹出层做淡入淡出（`fadePopups` 继承 `fade`），旧
 
 修复只需一行：`config/hypr/silky-ime.lua` 关掉 `fadePopups`。代价是右键菜单等弹出层也不再淡入，直接出现。
 
+## 微信里候选条连续打字时闪烁
+
+关掉淡入淡出后重影没了，但连续打字时候选条仍会一闪一闪，不如其他应用跟手。
+
+原因：微信 4.1.13（Qt 6.6）自带的 fcitx5-qt 比较旧，它的 `updatePosition()` 没有走 `xdg_popup.reposition`，
+只要锚点变了就 `hide()` 再 `show()`，候选条被销毁重建，中间会空一帧。锚点就是输入光标；拼音直接显示在
+输入框里（预编辑，preedit）时，每敲一个字母光标都右移一格，于是候选条每次按键都重建。
+上游新版 fcitx5-qt 已经改用 reposition，但微信是静态链接的，换不了。
+
+修复：Silky 自带一个很小的 fcitx5 插件 [`plugins/silky-wechat-preedit`](../plugins/silky-wechat-preedit/silky-wechat-preedit.cpp)，
+只对微信的 D-Bus 输入上下文（`program:wechat frontend:dbus`）关闭预编辑。拼音改为显示在候选条第一行，
+光标在组词期间不动，候选条只是原地重绘、改变宽度，不再重建。其他应用和微信的 `wayland_v2` 上下文不受影响。
+代价：在微信里打字时输入框内看不到拼音，拼音在候选条上方。
+
+- 安装：`./scripts/install-wowtype-glass.sh` 会用 `make` 针对本机 fcitx5 头文件（`Fcitx5Core`，Arch 的 `fcitx5` 包自带）编译，
+  装到 `~/.local/lib/silky-omarchy/libsilkywechatpreedit.so`，并写入 `~/.local/share/fcitx5/addon/silky-wechat-preedit.conf`
+  （`Library=` 用绝对路径，不往 `/usr/lib` 写东西），然后通过 D-Bus 重启 fcitx5。缺少 `make`、`pkg-config` 或头文件时跳过，并打印原因。
+  微信不用重启，下一次聚焦输入框时会自动重连 fcitx5。
+- 在 fcitx5 5.1.23 上实机构建并加载。fcitx5 大版本更新后重新运行安装脚本。
+- 新建输入上下文和每次获得焦点时都会再关一次预编辑，因为 fcitx5 重载全局配置时会把所有上下文恢复为默认值。
+  在微信里按 `Ctrl+Alt+P`（fcitx5 的“切换预编辑”）可以临时恢复内嵌拼音，切走再回来会再次关闭。
+
 之前试过的 `QT_IM_MODULE=wayland` / `ibus` 两种接口在这个微信版本里都只能打英文，不要再用；
 `Super+I` 依赖现在的 fcitx（D-Bus）接口。
 
@@ -64,9 +86,11 @@ Hyprland 默认给弹出层做淡入淡出（`fadePopups` 继承 `fade`），旧
 systemctl --user is-active silky-ime-theme
 grep '^Theme=' ~/.config/fcitx5/conf/classicui.conf
 hyprctl animations | grep -A3 'name: fadePopups$'   # enabled: 0
+grep -c libsilkywechatpreedit /proc/$(pgrep -x fcitx5)/maps   # 大于 0
 ```
 
-然后在微信输入框打 `nihao`，连续敲键时候选条应只有一层、边缘清晰；切换深浅色后候选框跟着变。
+然后在微信输入框打 `nihao`，连续敲键时候选条应只有一层、边缘清晰。拼音应显示在候选条第一行，
+候选条位置固定、不再闪烁。切换深浅色后，候选框跟着变。上面的命令检查已在本机执行。插件加载后的微信打字效果还需在实机上确认。
 
 ## 回滚
 
@@ -76,3 +100,10 @@ mv ~/.config/fcitx5/conf/classicui.conf.silky-backup ~/.config/fcitx5/conf/class
 ```
 
 再从 `~/.config/hypr/hyprland.lua` 删掉 `require("hypr.silky-ime")`，执行 `hyprctl reload`。
+
+只想恢复微信里的内嵌拼音时，删掉插件并重启 fcitx5：
+
+```bash
+rm ~/.local/share/fcitx5/addon/silky-wechat-preedit.conf ~/.local/lib/silky-omarchy/libsilkywechatpreedit.so
+fcitx5 -rd
+```
