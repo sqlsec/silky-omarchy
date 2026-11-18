@@ -289,36 +289,67 @@ body {
   font-weight: 600;
 }
 
-/* Window controls as traffic lights (close · minimise · maximise), glyphs only on hover. */
-.titlebar-button-container.mod-right {
-  gap: 8px;
-  padding: 0 14px 0 8px;
+/* Window controls as macOS traffic lights in the top-left corner (close · minimise · zoom).
+ * Obsidian reserves --frame-right-space for the controls on Linux / Windows and --frame-left-space on macOS;
+ * swap them so the controls sit where macOS puts them, inside the floating sidebar panel. Glyphs show on hover. */
+body.mod-linux.is-hidden-frameless:not(.is-fullscreen):not(.mod-system-rtl),
+body.mod-windows.is-hidden-frameless:not(.is-fullscreen):not(.mod-system-rtl) {
+  --frame-left-space: 84px;
+  --frame-right-space: 0px;
+  --silky-lights-top: 9px;
+}
+
+/* With the left sidebar closed the controls line up with the tab bar instead of the panel header. */
+body.is-hidden-frameless:has(.workspace-split.mod-left-split.is-sidedock-collapsed) {
+  --silky-lights-top: 0px;
+}
+
+.is-hidden-frameless:not(.is-fullscreen):not(.mod-system-rtl) .titlebar-button-container.mod-right {
+  inset-inline-end: auto;
+  /* Sit just right of the ribbon when it is shown. */
+  inset-inline-start: var(--frame-ribbon-left, 0px);
+  top: var(--silky-lights-top);
+  height: var(--header-height);
+  display: flex;
   align-items: center;
+  gap: 8px;
+  padding: 0 0 0 20px;
+  background: transparent !important;
+  z-index: var(--layer-cover);
 }
 
 .titlebar-button-container.mod-right .titlebar-button {
+  display: block;
   width: 12px;
   height: 12px;
   padding: 0;
+  margin: 0;
   border-radius: 50%;
-  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.18);
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.2);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 7px 7px;
   transition: filter 120ms ease;
 }
 
-.titlebar-button-container.mod-right .titlebar-button.mod-close { order: 1; background: #ff5f57; }
-.titlebar-button-container.mod-right .titlebar-button.mod-minimize { order: 2; background: #febc2e; }
-.titlebar-button-container.mod-right .titlebar-button.mod-maximize { order: 3; background: #28c840; }
-
 .titlebar-button-container.mod-right .titlebar-button svg {
-  width: 8px;
-  height: 8px;
-  color: rgba(0, 0, 0, 0.6);
-  opacity: 0;
-  transition: opacity 120ms ease;
+  display: none;
 }
 
-.titlebar-button-container.mod-right:hover .titlebar-button svg {
-  opacity: 1;
+.titlebar-button-container.mod-right .titlebar-button.mod-close { order: 1; background-color: #ff5f57; }
+.titlebar-button-container.mod-right .titlebar-button.mod-minimize { order: 2; background-color: #febc2e; }
+.titlebar-button-container.mod-right .titlebar-button.mod-maximize { order: 3; background-color: #28c840; }
+
+.titlebar-button-container.mod-right:hover .titlebar-button.mod-close {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M1.5 1.5l5 5M6.5 1.5l-5 5' stroke='%234d0000' stroke-width='1.25' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+.titlebar-button-container.mod-right:hover .titlebar-button.mod-minimize {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M1 4h6' stroke='%23985700' stroke-width='1.35' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+.titlebar-button-container.mod-right:hover .titlebar-button.mod-maximize {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M1.2 2.7v4.1h4.1zM6.8 5.3V1.2H2.7z' fill='%23006500'/%3E%3C/svg%3E");
 }
 
 .titlebar-button-container.mod-right .titlebar-button:hover {
@@ -326,9 +357,13 @@ body {
   filter: brightness(0.94);
 }
 
-.titlebar-button-container.mod-right .titlebar-button.mod-close:hover { background: #ff5f57; }
-.titlebar-button-container.mod-right .titlebar-button.mod-minimize:hover { background: #febc2e; }
-.titlebar-button-container.mod-right .titlebar-button.mod-maximize:hover { background: #28c840; }
+.titlebar-button-container.mod-right .titlebar-button.mod-close:hover { background-color: #ff5f57; }
+.titlebar-button-container.mod-right .titlebar-button.mod-minimize:hover { background-color: #febc2e; }
+.titlebar-button-container.mod-right .titlebar-button.mod-maximize:hover { background-color: #28c840; }
+
+.titlebar-button-container.mod-right .titlebar-button:active {
+  filter: brightness(0.8);
+}
 
 /* Status bar: a small floating glass capsule. */
 .status-bar {

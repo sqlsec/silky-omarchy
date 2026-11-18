@@ -11,7 +11,8 @@
 - **Finder 风格文件树**：文件夹是 macOS 蓝色文件夹，展开时换成打开的样式。不同后缀有各自的图标，包括笔记、文本、Canvas、Base、PDF、Word / WPS、表格、演示、图片、SVG、音频、视频、压缩包、网页链接，以及 JS / TS / Python / Shell / JSON / CSS / HTML / Lua / YAML / Rust / Go / C 等代码文件。代码文件的图标是带红黄绿三个点的深色小终端。选中行用强调色填满，和 Finder 侧栏一样。
 - **丝滑打字**：光标在两个位置之间平滑滑过去，不再跳格；闪烁改成渐隐渐显。配套插件 Silky Typing 会让刚打出的字带一点模糊和强调色光晕淡入。拼音等输入法上屏的整段文字也会淡入。
 - **代码块像 macOS 终端窗口**：深色玻璃底，左上角有红黄绿三个点，标题栏居中显示语言名，语法高亮用 Xcode Default (Dark) 配色。深浅两种模式下代码块都是深色窗口，行内代码是跟随深浅色的浅色小胶囊。
-- 其他细节：Apple 系统色和字体栈（`-apple-system`、Inter、Noto Sans CJK SC，等宽字体用 SF Mono / JetBrainsMono Nerd Font）；窗口按钮是红黄绿圆点，悬停时显示符号；开关是 iOS 样式；任务复选框是 Reminders 样式的圆形；滚动条只在悬停时出现；菜单和弹窗有轻微的弹出动画。开启系统的「减少动态效果」后，所有动画都会关闭。
+- **窗口按钮在左上角**：关闭、最小化、缩放三个按钮是 macOS 的红黄绿圆点，放在左上角，侧栏打开时在浮动侧栏面板的标题行里，侧栏收起时和标签栏对齐。显示功能区（ribbon）时，按钮排在功能区右边。悬停时显示 ×、−、缩放符号，右侧不再留出按钮的空位。
+- 其他细节：Apple 系统色和字体栈（`-apple-system`、Inter、Noto Sans CJK SC，等宽字体用 SF Mono / JetBrainsMono Nerd Font）；开关是 iOS 样式；任务复选框是 Reminders 样式的圆形；滚动条只在悬停时出现；菜单和弹窗有轻微的弹出动画。开启系统的「减少动态效果」后，所有动画都会关闭。
 
 ## 安装
 
@@ -61,6 +62,7 @@
 已知限制：
 
 - 阅读视图里的代码块拿不到语言名，标题栏只显示红黄绿三个点；实时预览模式的标题栏会显示语言。
+- **窗口按钮的位置**：Obsidian 在 Linux / Windows 上用 `--frame-right-space` 给窗口按钮在右侧留位置，在 macOS 上用 `--frame-left-space` 在左侧留位置。主题把两者对调（左侧 84 px，右侧 0），再把 `.titlebar-button-container.mod-right` 移到左边，偏移量是功能区宽度 `--frame-ribbon-left`。侧栏是否收起用 `:has(.mod-left-split.is-sidedock-collapsed)` 判断，决定按钮的垂直位置。原来的按钮图标是 Windows 样式（最大化显示“向下还原”的双方框），而且 8 px 的 SVG 在 12 px 圆点里偏左偏下，所以隐藏 SVG，改用居中的背景图画 macOS 符号。从右到左书写（RTL）的系统不做调整。
 - 本机的 `~/.config/obsidian/user-flags.conf` 里有 `-disable-gpu`，Obsidian 用软件合成。模糊只用在菜单、命令面板、侧栏等区域，还没有专门测过 CPU 开销。去掉这个参数后，模糊交给 GPU 处理，会更省 CPU。
 - 实时预览里代码块的首行和末行是 ```` ``` ```` 围栏行，光标移进代码块时能看到它们，位置在终端标题栏下方。
 
@@ -70,6 +72,8 @@
 
 - **隔离测试**：用 `--user-data-dir` 启动一个只打开临时测试库的独立 Obsidian 实例，通过 DevTools 协议检查：`cssTheme` 是 `Silky macOS`，深浅两种模式的截图正常；`.cm-cursor` 的 `transition` 包含 `left` / `top`；`.cm-cursorLayer` 的缓动是 `cubic-bezier(0.45, 0, 0.55, 1)`；模拟逐字输入时每个字各有一个 `.silky-typed`；模拟拼音组字 `ni`→`nihao` 期间没有新增标记，上屏的「你好」随后被标记；约 0.7 秒后标记全部清除，文本没有改动。
 - **实机**：在本机两个库上运行安装脚本后，正在运行的 Obsidian 不重启就换成了浮动玻璃侧栏。打字淡入要等关闭安全模式后才会生效，还需要在实机上确认。
+
+另在隔离实例里检查了窗口按钮：侧栏打开或收起、功能区显示或隐藏，四种布局下按钮都在左上角，不和侧栏按钮、标签页重叠；三个符号居中；`elementFromPoint` 命中关闭按钮，`app-region` 为 `no-drag`，可以点击；`--frame-right-space` 为 `0px`。
 
 自己检查：
 
@@ -83,6 +87,7 @@ gsettings set org.gnome.desktop.interface color-scheme prefer-light       # Obsi
 1. 按 `Ctrl+P`，命令面板应该是圆角玻璃，背后的内容透过来变模糊。
 2. 在笔记里随便打几个字，再用拼音输入一个词：光标应该滑过去，新字淡入，输入法候选和上屏都正常。
 3. 写一个 ```` ```bash ```` 代码块：应该显示成带红黄绿三个点的深色终端窗口，标题栏有 `bash`。
+4. 看窗口左上角：应该有红黄绿三个圆点，和侧栏顶部的按钮排在同一行，右上角不再有窗口按钮。鼠标移上去会出现 ×、−、缩放符号，点关闭能关掉窗口。
 
 待验证：多显示器上缩放比例不同（2× 和 2.5×）时的模糊开销；Obsidian 弹出的独立窗口（popout）。
 

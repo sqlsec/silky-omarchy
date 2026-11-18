@@ -11,7 +11,8 @@ Obsidian gets a macOS 27 look and follows the desktop's light / dark mode:
 - **Finder-style file tree.** Folders are macOS blue folders and switch to an open folder when expanded. Each extension has its own icon: notes, plain text, Canvas, Base, PDF, Word / WPS, spreadsheets, presentations, images, SVG, audio, video, archives, web links, and code files such as JS / TS / Python / Shell / JSON / CSS / HTML / Lua / YAML / Rust / Go / C. Code files show a small dark terminal with red / yellow / green dots. The selected row is filled with the accent colour, as in Finder's sidebar.
 - **Smooth typing.** The caret glides between positions instead of jumping, and fades in and out instead of blinking hard. The companion plugin Silky Typing fades each new character in with a slight blur and an accent glow. Text committed from an input method such as Pinyin fades in as a whole.
 - **Code blocks look like a macOS Terminal window**: dark glass, red / yellow / green dots in the top left, the language name centred in the title bar, and Xcode Default (Dark) syntax colours. Code blocks stay dark in both modes. Inline code is a light pill that follows the appearance.
-- Other details: Apple system colours and font stack (`-apple-system`, Inter, Noto Sans CJK SC; SF Mono / JetBrainsMono Nerd Font for code). Window buttons are traffic lights whose glyphs appear on hover. Switches are iOS-style, task checkboxes are round like Reminders, scrollbars only appear on hover, and menus and modals pop in with a short animation. Turning on the system's reduced-motion setting disables all animations.
+- **Window buttons in the top-left corner.** Close, minimise and zoom are macOS traffic lights in the top-left corner: in the floating sidebar panel's header row when the sidebar is open, and level with the tab bar when it is collapsed. When the ribbon is shown, the buttons sit just right of it. Hovering shows ×, − and zoom glyphs, and no empty space is reserved for the buttons on the right any more.
+- Other details: Apple system colours and font stack (`-apple-system`, Inter, Noto Sans CJK SC; SF Mono / JetBrainsMono Nerd Font for code). Switches are iOS-style, task checkboxes are round like Reminders, scrollbars only appear on hover, and menus and modals pop in with a short animation. Turning on the system's reduced-motion setting disables all animations.
 
 ## Install
 
@@ -61,6 +62,7 @@ Key points:
 Known limitations:
 
 - Code blocks in Reading view don't expose the language name, so their title bar only shows the dots. The Live Preview title bar shows the language.
+- **Window button placement.** Obsidian reserves room for the window buttons with `--frame-right-space` on Linux / Windows and `--frame-left-space` on macOS. The theme swaps them (84 px on the left, 0 on the right) and moves `.titlebar-button-container.mod-right` to the left, offset by the ribbon width `--frame-ribbon-left`. `:has(.mod-left-split.is-sidedock-collapsed)` decides the vertical position depending on whether the sidebar is collapsed. The stock glyphs are Windows-style (maximise shows a "restore down" double square), and the 8 px SVG sat low and to the left inside the 12 px circle, so the SVG is hidden and centred background images draw macOS glyphs instead. Right-to-left (RTL) systems are left unchanged.
 - On this machine, `~/.config/obsidian/user-flags.conf` contains `-disable-gpu`, so Obsidian composites in software. Blur is only used on menus, the command palette, the sidebars and similar areas, and its CPU cost has not been measured. Without that flag the GPU handles the blur, which uses less CPU.
 - In Live Preview, the first and last lines of a code block are the ```` ``` ```` fence lines. They appear below the terminal title bar when the cursor is inside the block.
 
@@ -70,6 +72,8 @@ Verified on Obsidian 1.15.1 (aarch64, native Wayland window, Electron's bundled 
 
 - **Isolated test**: a separate Obsidian instance started with `--user-data-dir` on a temporary test vault, inspected over the DevTools protocol. `cssTheme` was `Silky macOS` and screenshots in both modes looked right. `.cm-cursor` had a `transition` covering `left` / `top`, and `.cm-cursorLayer` used `cubic-bezier(0.45, 0, 0.55, 1)`. Simulated typing produced one `.silky-typed` mark per character. During a simulated Pinyin composition (`ni` → `nihao`) no new marks were added, and the committed 「你好」 was marked afterwards. All marks were gone after about 0.7 s and the text was unchanged.
 - **On this machine**: after the install script ran on the two local vaults, the running Obsidian switched to the floating glass sidebar without a restart. The typing fade only works once Restricted mode is off, and still needs to be confirmed on the real vaults.
+
+The window buttons were also checked in the isolated instance: with the sidebar open or collapsed and the ribbon shown or hidden, all four layouts put the buttons in the top-left corner without overlapping the sidebar buttons or tabs. The three glyphs are centred, `elementFromPoint` hits the close button, its `app-region` is `no-drag` so it can be clicked, and `--frame-right-space` is `0px`.
 
 To check it yourself:
 
@@ -83,6 +87,7 @@ In Obsidian:
 1. Press `Ctrl+P`. The command palette should be a rounded glass card, with the content behind it blurred.
 2. Type a few characters in a note, then type a word with Pinyin. The caret should glide, new characters should fade in, and the input method's candidates and commit should work normally.
 3. Add a ```` ```bash ```` code block. It should look like a dark terminal window with red / yellow / green dots and `bash` in the title bar.
+4. Look at the top-left corner of the window. The three traffic lights should be there, on the same row as the buttons at the top of the sidebar, with no window buttons left in the top-right corner. Hovering shows ×, − and zoom glyphs, and clicking close closes the window.
 
 Not yet verified: blur cost across monitors with different scales (2× and 2.5×), and Obsidian's popout windows.
 
