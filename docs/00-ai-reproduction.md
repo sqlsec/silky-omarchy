@@ -32,6 +32,7 @@ omarchy theme set macos-tahoe-dark
 ./scripts/install-maclock.sh                  # 07：所有锁屏改用 MacLock
 ./scripts/install-boot-screen.sh              # 07：macOS 风格开机解锁界面
 ./scripts/install-nautilus-actions.sh         # 08：Nautilus 右键菜单
+./scripts/install-nautilus-zh-cn.py            # 08：可选的 Nautilus 简体中文界面
 ./scripts/install-wowtype-glass.sh            # 09：WowType 候选框皮肤
 ./scripts/install-shortcuts.sh                # 10：快捷键冲突 + Super+K 面板
 ./scripts/install-menu-glass.sh               # 11：Omarchy 菜单玻璃 + 深浅色

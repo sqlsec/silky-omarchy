@@ -51,6 +51,8 @@ python3 scripts/install-macshell-overview.py
 ./scripts/install-maclock.sh
 ./scripts/install-boot-screen.sh
 ./scripts/install-nautilus-actions.sh
+# 可选：将 Nautilus 文件管理器切换为简体中文
+./scripts/install-nautilus-zh-cn.py
 ./scripts/install-wowtype-glass.sh
 ./scripts/install-shortcuts.sh
 ./scripts/install-menu-glass.sh
