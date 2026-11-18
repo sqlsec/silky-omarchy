@@ -1,0 +1,2352 @@
+diff --git i/install.sh w/install.sh
+index c116c4a..6ada5fa 100755
+--- i/install.sh
++++ w/install.sh
+@@ -32,6 +32,11 @@ die() { printf 'omalogi install: %s\n' "$*" >&2; exit 1; }
+ [ "$(uname -s)" = Linux ] || die "Omalogi runs on Linux"
+ case "$(uname -m)" in
+   x86_64) target=x86_64-unknown-linux-gnu ;;
++  aarch64)
++    # Silky Omarchy：ARM 没有官方预编译助手，交给 silky-omarchy 的源码构建脚本（它会登记自己的位置）
++    silky=${XDG_DATA_HOME:-$HOME/.local/share}/silky-omarchy/install-omalogi.sh
++    [ -x "$silky" ] && exec "$silky" "$@"
++    die "ARM（aarch64）没有官方预编译助手：在 silky-omarchy 仓库运行 ./scripts/install-omalogi.sh，从源码构建并安装汉化版" ;;
+   *) die "there is no prebuilt binary for $(uname -m) yet; install from the AUR (omalogi) or with cargo" ;;
+ esac
+ for tool in curl tar sha256sum install; do
+diff --git i/manifest.json w/manifest.json
+index 88bd007..bace6a7 100644
+--- i/manifest.json
++++ w/manifest.json
+@@ -5,7 +5,7 @@
+   "version": "0.3.8",
+   "author": "elberacasa",
+   "license": "MIT OR Apache-2.0",
+-  "description": "Onboard profiles for Logitech G-series mice.",
++  "description": "罗技 G 系列鼠标的板载配置文件。",
+   "kinds": ["overlay", "bar-widget"],
+   "keepLoaded": true,
+   "entryPoints": {
+@@ -14,7 +14,7 @@
+   },
+   "barWidget": {
+     "displayName": "Omalogi",
+-    "description": "Active onboard profile of your Logitech mouse",
++    "description": "罗技鼠标当前使用的板载配置文件",
+     "category": "Devices",
+     "allowMultiple": false,
+     "defaultSection": "right"
+diff --git i/plugin/ActionLibrary.qml w/plugin/ActionLibrary.qml
+index b476885..582ed46 100644
+--- i/plugin/ActionLibrary.qml
++++ w/plugin/ActionLibrary.qml
+@@ -6,7 +6,7 @@ import "Model.js" as Model
+ 
+ // The action library beside the mouse, as in G HUB's assignments panel: category tabs,
+ // search, and a list of actions to drag onto a button or pick for the selected one.
+-// Keyboard shortcuts are recorded from the keys the user presses.
++// Shortcuts can be composed by hand or captured and reviewed before applying.
+ Item {
+   id: library
+ 
+@@ -15,7 +15,7 @@ Item {
+   property var entries: []
+   // The selected button's entry, or null.
+   property var entry: null
+-  property string layerName: "Default layer"
++  property string layerName: "默认层"
+   // Whether the G-Shift layer is shown, and the buttons that reach it, e.g. ["G5"].
+   property bool gshift: false
+   property var gshiftButtons: []
+@@ -24,12 +24,27 @@ Item {
+   property Item dragProxy: null
+   property string group: "Mouse"
+   property string query: ""
++  property int shortcutSlot: -1
++  property string shortcutKey: ""
++  property int shortcutModifiers: 0
+   property bool recording: false
+   property string recordingHint: ""
+-  property int recordingSlot: -1
++  readonly property bool editingShortcut: shortcutSlot >= 0
++  readonly property string shortcutCombo: Model.shortcutCombo(shortcutKey, shortcutModifiers)
++  readonly property var commonKeys: [
++    { key: "pageup", label: "PgUp", hint: "向上翻页 · PgUp · PageUp" },
++    { key: "pagedown", label: "PgDn", hint: "向下翻页 · PgDn · PageDown" },
++    { key: "home", label: "Home", hint: "行首" },
++    { key: "end", label: "End", hint: "行尾" },
++    { key: "printscreen", label: "截图", hint: "截图键 · PrintScreen · PrtSc" }
++  ]
++  readonly property var shortcutOptions: Model.shortcutKeys().map(function(key) {
++    var common = library.commonKeys.find(function(item) { return item.key === key })
++    return { value: key, label: Model.zh(Model.comboLabel(key)), description: common ? common.hint : "" }
++  })
+ 
+   signal chosen(string action)
+-  signal shortcutRecorded(int slot, string action)
++  signal shortcutChosen(int slot, string action)
+   signal selectionNeeded()
+ 
+   readonly property bool searching: query.trim() !== ""
+@@ -40,15 +55,30 @@ Item {
+         return section.group === library.group
+       })).filter(function(row) { return row.kind === "action" })
+ 
+-  function startRecording(slot) {
+-    library.recordingSlot = slot
+-    library.recordingHint = "Press the shortcut"
+-    library.recording = true
+-    recorder.forceActiveFocus()
++  function openShortcut(slot) {
++    var current = library.entries.find(function(entry) { return entry.slot === slot })
++    if (!current) return
++    library.recording = false
++    var selection = Model.shortcutSelection(Model.keyCombo(current.action))
++    library.shortcutKey = selection.key
++    library.shortcutModifiers = selection.modifiers
++    library.shortcutSlot = slot
++    shortcutEditor.forceActiveFocus()
+   }
+ 
+-  function stopRecording() {
++  function closeShortcut() {
++    if (!library.editingShortcut) return
++    keyPicker.close()
+     library.recording = false
++    library.shortcutSlot = -1
++  }
++
++  function applyShortcut() {
++    if (library.shortcutCombo === "" || library.recording) return
++    var slot = library.shortcutSlot
++    var action = "key:" + library.shortcutCombo
++    library.closeShortcut()
++    library.shortcutChosen(slot, action)
+   }
+ 
+   component Label: Text {
+@@ -72,7 +102,7 @@ Item {
+ 
+       Label {
+         width: parent.width
+-        text: "Assignments"
++        text: "按键分配"
+         font.pixelSize: Style.font.heading
+         font.bold: true
+       }
+@@ -90,21 +120,23 @@ Item {
+     Label {
+       width: parent.width
+       wrapMode: Text.Wrap
++      visible: !library.editingShortcut
+       opacity: library.unreachable ? 1 : 0.7
+       color: library.unreachable ? Commons.Color.accent : Commons.Color.menu.text
+       text: {
+         if (library.unreachable)
+-          return "No button holds G-Shift on this profile, so these actions can't be used yet. Give a button the G-Shift action on the Default layer first."
++          return "这个配置文件里没有按键绑定 G-Shift，所以这一层暂时用不了。先在默认层给一个按键分配 G-Shift 动作。"
+         return library.entry
+-          ? "Pick an action for " + library.entry.name + ", or drag one onto any button."
+-          : "Drag an action onto a button, or select a button and pick one."
++          ? "为 " + library.entry.name + " 选一个动作，或把动作拖到任意按键上。"
++          : "把动作拖到按键上，或先选中按键再挑选动作。"
+       }
+     }
+ 
+     TextField {
+       id: search
++      visible: !library.editingShortcut
+       width: parent.width
+-      placeholderText: "Search actions"
++      placeholderText: "搜索动作"
+       foreground: Commons.Color.menu.text
+       onTextChanged: library.query = text
+       Keys.onEscapePressed: {
+@@ -117,7 +149,7 @@ Item {
+     Flow {
+       width: parent.width
+       spacing: Style.spacing.sm
+-      visible: !library.searching
++      visible: !library.searching && !library.editingShortcut
+ 
+       Repeater {
+         model: library.groups
+@@ -132,7 +164,7 @@ Item {
+           Text {
+             id: tabText
+             textFormat: Text.PlainText
+-            text: tab.modelData.toUpperCase()
++            text: Model.zhGroup(tab.modelData)
+             color: tab.selected ? Commons.Color.menu.text : Commons.Color.menu.text
+             opacity: tab.selected ? 1 : (tabArea.containsMouse ? 0.8 : 0.5)
+             font.family: Style.font.menuFamily
+@@ -162,55 +194,153 @@ Item {
+     }
+   }
+ 
+-  // Shortcut recorder.
+   Rectangle {
++    id: shortcutEditor
+     anchors.left: parent.left
+     anchors.right: parent.right
+     anchors.top: header.bottom
+     anchors.topMargin: Style.spacing.md
+-    height: Style.space(120)
+-    visible: library.recording
++    height: shortcutControls.implicitHeight + Style.spacing.md * 2
++    visible: library.editingShortcut
+     radius: Style.cornerRadius
+     color: Util.alpha(Commons.Color.menu.text, 0.04)
+-    border.width: Math.max(2, Style.normalBorderWidth)
+-    border.color: Commons.Color.accent
++    border.width: Math.max(1, Style.normalBorderWidth)
++    border.color: Util.alpha(Commons.Color.accent, 0.65)
+ 
+     Column {
+-      anchors.centerIn: parent
+-      width: parent.width - Style.spacing.md * 2
++      id: shortcutControls
++      anchors.left: parent.left
++      anchors.right: parent.right
++      anchors.top: parent.top
++      anchors.margins: Style.spacing.md
+       spacing: Style.spacing.sm
+ 
++      Label {
++        width: parent.width
++        text: library.entry ? library.entry.name + " · 设置快捷键" : "设置快捷键"
++        font.bold: true
++      }
++
+       Row {
+-        anchors.horizontalCenter: parent.horizontalCenter
+-        spacing: Style.spacing.sm
++        width: parent.width
++        spacing: Style.spacing.xs
+ 
+-        Icon {
+-          anchors.verticalCenter: parent.verticalCenter
+-          name: "keyboard"
+-          tint: Commons.Color.accent
+-          size: Style.space(22)
++        Repeater {
++          model: Model.SHORTCUT_MODIFIERS
++          delegate: Button {
++            required property var modelData
++            width: (shortcutControls.width - 3 * parent.spacing) / 4
++            horizontalPadding: Style.spacing.xs
++            text: Model.comboLabel(modelData.name)
++            fontFamily: Style.font.menuFamily
++            foreground: Commons.Color.menu.text
++            selected: (library.shortcutModifiers & modelData.mask) !== 0
++            bordered: true
++            focusable: true
++            Accessible.role: Accessible.CheckBox
++            Accessible.name: text
++            Accessible.checked: selected
++            onClicked: {
++              library.recording = false
++              library.shortcutModifiers ^= modelData.mask
++            }
++          }
+         }
++      }
+ 
+-        Label {
+-          anchors.verticalCenter: parent.verticalCenter
+-          text: library.recordingHint
+-          font.pixelSize: Style.font.title
++      SearchableDropdown {
++        id: keyPicker
++        width: parent.width
++        showLabel: false
++        triggerLabel: value === "" ? "选择主键" : ""
++        placeholderText: "搜索主键"
++        emptyText: "没有匹配的按键"
++        fontFamily: Style.font.menuFamily
++        options: library.shortcutOptions
++        value: library.shortcutKey
++        onPopupOpenChanged: if (popupOpen) library.recording = false
++        onChanged: function(value) {
++          library.shortcutKey = value
++          keyPicker.value = Qt.binding(function() { return library.shortcutKey })
++        }
++      }
++
++      Flow {
++        width: parent.width
++        spacing: Style.spacing.xs
++
++        Repeater {
++          model: library.commonKeys
++          delegate: Button {
++            required property var modelData
++            text: modelData.label
++            tooltipText: modelData.key === "printscreen" ? "选用 Print Screen 截图键并清除修饰键" : Model.comboLabel(modelData.key)
++            fontFamily: Style.font.menuFamily
++            fontSize: Style.font.caption
++            foreground: Commons.Color.menu.text
++            horizontalPadding: Style.spacing.xs
++            bordered: true
++            focusable: true
++            selected: library.shortcutKey === modelData.key
++              && (modelData.key !== "printscreen" || library.shortcutModifiers === 0)
++            onClicked: {
++              library.recording = false
++              library.shortcutKey = modelData.key
++              if (modelData.key === "printscreen") library.shortcutModifiers = 0
++            }
++          }
+         }
+       }
+ 
+       Label {
+         width: parent.width
+-        horizontalAlignment: Text.AlignHCenter
+         wrapMode: Text.Wrap
+-        opacity: 0.6
+-        text: "Hold any of Ctrl, Shift, Alt or Super, then press a key. Esc cancels."
+-        font.pixelSize: Style.font.caption
++        text: library.recording ? library.recordingHint
++          : (library.shortcutCombo === "" ? "选择一个主键，修饰键可选。" : Model.zh(Model.comboLabel(library.shortcutCombo)))
++        color: library.shortcutCombo !== "" || library.recording ? Commons.Color.accent : Commons.Color.menu.text
+       }
+-    }
+ 
+-    MouseArea {
+-      anchors.fill: parent
+-      onClicked: recorder.forceActiveFocus()
++      Row {
++        width: parent.width
++        spacing: Style.spacing.xs
++
++        Button {
++          text: library.recording ? "停止录制" : "录制"
++          foreground: Commons.Color.menu.text
++          fontFamily: Style.font.menuFamily
++          horizontalPadding: Style.spacing.sm
++          bordered: true
++          focusable: true
++          onClicked: {
++            library.recording = !library.recording
++            if (library.recording) {
++              library.recordingHint = "请按下快捷键，Esc 停止录制。"
++              recorder.forceActiveFocus()
++            }
++          }
++        }
++
++        Button {
++          text: "取消"
++          foreground: Commons.Color.menu.text
++          fontFamily: Style.font.menuFamily
++          horizontalPadding: Style.spacing.sm
++          focusable: true
++          onClicked: library.closeShortcut()
++        }
++
++        Button {
++          text: "应用"
++          foreground: Commons.Color.accent
++          fontFamily: Style.font.menuFamily
++          horizontalPadding: Style.spacing.sm
++          bordered: true
++          focusable: true
++          enabled: library.shortcutCombo !== "" && !library.recording
++          opacity: enabled ? 1 : 0.5
++          onClicked: library.applyShortcut()
++        }
++      }
+     }
+   }
+ 
+@@ -222,8 +352,9 @@ Item {
+     Keys.onPressed: function(event) {
+       if (!library.recording) return
+       event.accepted = true
+-      if (event.key === Qt.Key_Escape && (event.modifiers & (Qt.ControlModifier | Qt.ShiftModifier | Qt.AltModifier | Qt.MetaModifier)) === 0) {
+-        library.stopRecording()
++      if (event.key === Qt.Key_Escape && Model.modifiersLabel(event.modifiers) === "") {
++        library.recording = false
++        shortcutEditor.forceActiveFocus()
+         return
+       }
+       var result = Model.recordKey(event.nativeScanCode, event.modifiers)
+@@ -232,11 +363,14 @@ Item {
+         return
+       }
+       if (result.unsupported) {
+-        library.recordingHint = "The mouse can't send that key"
++        library.recordingHint = "鼠标无法发送这个按键"
+         return
+       }
+-      library.stopRecording()
+-      library.shortcutRecorded(library.recordingSlot, "key:" + result.combo)
++      var selection = Model.shortcutSelection(result.combo)
++      library.shortcutKey = selection.key
++      library.shortcutModifiers = selection.modifiers
++      library.recording = false
++      shortcutEditor.forceActiveFocus()
+     }
+   }
+ 
+@@ -246,7 +380,7 @@ Item {
+     anchors.top: header.bottom
+     anchors.topMargin: Style.spacing.md
+     anchors.bottom: parent.bottom
+-    visible: !library.recording
++    visible: !library.editingShortcut
+     clip: true
+     boundsBehavior: Flickable.StopAtBounds
+     model: library.rows
+@@ -255,7 +389,7 @@ Item {
+       anchors.centerIn: parent
+       visible: library.rows.length === 0
+       opacity: 0.6
+-      text: "No actions match"
++      text: "没有匹配的动作"
+     }
+ 
+     delegate: Item {
+@@ -263,8 +397,9 @@ Item {
+       required property var modelData
+       readonly property bool isAction: modelData.kind === "action"
+       readonly property bool isShortcut: isAction && modelData.value === "key:"
++      readonly property bool systemAction: isAction && modelData.group === "System"
+       readonly property bool current: isAction && library.entry !== null
+-        && Model.actionChoice(library.entry.action) === modelData.value
++        && (isShortcut ? Model.actionChoice(library.entry.action) : library.entry.action) === modelData.value
+       readonly property var assigned: isAction && !isShortcut ? Model.assignedNames(library.entries, modelData.value) : []
+ 
+       width: ListView.view.width
+@@ -277,7 +412,7 @@ Item {
+         anchors.bottom: parent.bottom
+         anchors.bottomMargin: Style.spacing.xs
+         opacity: 0.5
+-        text: row.isAction ? "" : row.modelData.group.toUpperCase()
++        text: row.isAction ? "" : Model.zhGroup(row.modelData.group)
+         font.pixelSize: Style.font.caption
+         font.letterSpacing: 1.2
+       }
+@@ -303,14 +438,26 @@ Item {
+           size: Style.space(18)
+         }
+ 
+-        Label {
++        Column {
+           anchors.left: rowIcon.right
+           anchors.right: badges.left
+           anchors.leftMargin: Style.spacing.sm
+           anchors.rightMargin: Style.spacing.sm
+           anchors.verticalCenter: parent.verticalCenter
+-          text: row.isShortcut ? "Record a shortcut…" : (row.isAction ? row.modelData.label : "")
+-          color: row.current ? Commons.Color.accent : Commons.Color.menu.text
++
++          Label {
++            width: parent.width
++            text: row.isShortcut ? "设置快捷键…" : (row.isAction ? row.modelData.label : "")
++            color: row.current ? Commons.Color.accent : Commons.Color.menu.text
++          }
++
++          Label {
++            width: parent.width
++            visible: row.systemAction
++            text: row.systemAction ? Model.comboLabel(Model.keyCombo(row.modelData.value)) : ""
++            opacity: 0.65
++            font.pixelSize: Style.font.caption
++          }
+         }
+ 
+         Label {
+@@ -353,7 +500,7 @@ Item {
+           if (!library.entry) {
+             library.selectionNeeded()
+           } else if (row.isShortcut) {
+-            library.startRecording(library.entry.slot)
++            library.openShortcut(library.entry.slot)
+           } else {
+             library.chosen(row.modelData.value)
+           }
+diff --git i/plugin/DeviceCanvas.qml w/plugin/DeviceCanvas.qml
+index 49a03b6..4abe391 100644
+--- i/plugin/DeviceCanvas.qml
++++ w/plugin/DeviceCanvas.qml
+@@ -14,6 +14,8 @@ Item {
+ 
+   // Model.pictureViews(picture).
+   property var views: []
++  property bool compactDots: false
++  property bool showSelectionMenu: true
+   property bool whiteAvailable: false
+   property bool whiteSelected: false
+   property int viewIndex: 0
+@@ -32,7 +34,7 @@ Item {
+   signal colorRequested(bool white)
+   signal layerRequested(bool gshift)
+   signal actionAssigned(int slot, string action)
+-  signal recordRequested(int slot)
++  signal shortcutRequested(int slot)
+   signal revertRequested(int slot)
+ 
+   readonly property bool gshift: table === "gshift"
+@@ -42,19 +44,23 @@ Item {
+   readonly property var entryBySlot: Model.indexBySlot(entries)
+   readonly property var looseEntries: hasPicture ? Model.entriesWithoutHotspot(entries, views) : entries
+ 
+-  readonly property int labelWidth: Style.space(200)
++  readonly property int labelWidth: Math.min(Style.space(180), Math.floor(width * 0.24))
+   readonly property int labelHeight: Style.space(40)
+   readonly property int labelGap: Style.spacing.sm
+-  readonly property int sideGap: Style.space(64)
++  readonly property int sideGap: Math.min(Style.space(54), Math.floor(width * 0.08))
+   readonly property int footerHeight: Style.space(52)
+-  readonly property int looseHeight: looseEntries.length > 0 ? labelHeight + Style.spacing.lg : 0
+-  readonly property int switcherHeight: views.length > 1 ? Style.space(96) : 0
++  // Leave room for any buttons without a position on the picture.
++  readonly property int looseColumns: Math.max(1, Math.floor((width + Style.spacing.lg) / (labelWidth + Style.spacing.lg)))
++  readonly property int looseRows: Math.ceil(looseEntries.length / looseColumns)
++  readonly property int looseHeight: looseRows > 0
++    ? looseRows * labelHeight + (looseRows - 1) * Style.spacing.lg + Style.spacing.lg : 0
++  readonly property int switcherHeight: views.length > 1 ? Style.space(76) : 0
+   readonly property int pictureHeight: Model.fitPictureHeight(
+     shownViews,
+     width - 2 * (labelWidth + sideGap) - Style.space(32),
+     0,
+-    Style.space(240),
+-    Math.max(Style.space(240), height - switcherHeight - footerHeight - looseHeight - Style.space(32)))
++    Style.space(120),
++    Math.max(Style.space(120), height - switcherHeight - footerHeight - looseHeight - Style.space(32)))
+   readonly property var layout: Model.calloutLayout(shownViews, pictureHeight, 0, labelHeight, labelGap)
+   readonly property real picturesX: Math.round((width - layout.picturesWidth) / 2)
+   readonly property real leftX: picturesX - sideGap - labelWidth
+@@ -106,8 +112,9 @@ Item {
+     property var entry: ({ slot: -1, name: "", label: "", changed: false, action: null })
+     property bool onLeft: true
+     readonly property bool selected: entry.slot === canvas.selectedSlot
+-    readonly property bool dropping: drop.containsDrag
+-    readonly property bool hovered: entry.slot === canvas.hoveredSlot || dropping
++    readonly property bool hovered: entry.slot === canvas.hoveredSlot || drop.containsDrag
++    readonly property real underlineWidth: Math.min(width, Math.max(Style.space(44),
++      Math.max(buttonName.implicitWidth, bindingRow.width) + Style.spacing.xs))
+     // A disabled button reads quieter than one that does something.
+     readonly property bool quiet: entry.action === "disabled" && !selected && !hovered && !entry.changed
+ 
+@@ -124,13 +131,16 @@ Item {
+       spacing: 0
+ 
+       Caption {
++        id: buttonName
+         width: parent.width
++        elide: Text.ElideRight
+         horizontalAlignment: label.onLeft ? Text.AlignRight : Text.AlignLeft
+-        opacity: 0.5
++        opacity: label.selected || label.hovered ? 1 : 0.72
+         text: label.entry.name
+       }
+ 
+       Row {
++        id: bindingRow
+         anchors.right: label.onLeft ? parent.right : undefined
+         layoutDirection: label.onLeft ? Qt.RightToLeft : Qt.LeftToRight
+         spacing: Style.spacing.xs
+@@ -138,7 +148,7 @@ Item {
+         Icon {
+           anchors.verticalCenter: parent.verticalCenter
+           name: Model.actionIcon(label.entry.action)
+-          tint: label.selected || label.entry.changed || label.dropping ? Commons.Color.accent : Commons.Color.menu.text
++          tint: label.selected || label.hovered || label.entry.changed ? Commons.Color.accent : Commons.Color.menu.text
+           size: Style.space(15)
+         }
+ 
+@@ -148,7 +158,7 @@ Item {
+           textFormat: Text.PlainText
+           text: label.entry.label
+           elide: Text.ElideRight
+-          color: label.selected || label.entry.changed || label.dropping ? Commons.Color.accent : Commons.Color.menu.text
++          color: label.selected || label.hovered || label.entry.changed ? Commons.Color.accent : Commons.Color.menu.text
+           font.family: Style.font.menuFamily
+           font.pixelSize: Style.font.body
+           font.bold: label.selected
+@@ -190,17 +200,20 @@ Item {
+       id: lines
+       anchors.fill: parent
+ 
++      onWidthChanged: requestPaint()
++      onHeightChanged: requestPaint()
++
+       onPaint: {
+         var ctx = getContext("2d")
+         ctx.reset()
+-        var dim = canvas.css(Util.alpha(Commons.Color.menu.text, 0.28))
++        var dim = canvas.css(Util.alpha(Commons.Color.menu.text, 0.40))
+         var accent = canvas.css(Commons.Color.accent)
+-        function draw(card, onLeft) {
+-          if (canvas.entryBySlot[card.slot] === undefined) return
++        function draw(card, label) {
++          if (!label || !label.visible) return
+           var hot = canvas.hot(card.slot)
+           var y = card.cardY + canvas.labelHeight
+-          var outer = onLeft ? canvas.leftX : canvas.rightX + canvas.labelWidth
+-          var inner = onLeft ? canvas.leftX + canvas.labelWidth : canvas.rightX
++          var inner = label.onLeft ? label.x + label.width : label.x
++          var outer = inner + (label.onLeft ? -label.underlineWidth : label.underlineWidth)
+           ctx.beginPath()
+           ctx.strokeStyle = hot ? accent : dim
+           ctx.lineWidth = hot ? 2 : 1
+@@ -209,12 +222,13 @@ Item {
+           ctx.lineTo(canvas.picturesX + card.x, card.y)
+           ctx.stroke()
+         }
+-        canvas.layout.left.forEach(function(card) { draw(card, true) })
+-        canvas.layout.right.forEach(function(card) { draw(card, false) })
++        canvas.layout.left.forEach(function(card, index) { draw(card, leftLabels.itemAt(index)) })
++        canvas.layout.right.forEach(function(card, index) { draw(card, rightLabels.itemAt(index)) })
+       }
+     }
+ 
+     Image {
++      z: -1
+       x: canvas.picturesX
+       width: canvas.layout.picturesWidth
+       height: canvas.pictureHeight
+@@ -235,21 +249,26 @@ Item {
+         required property var modelData
+         readonly property bool hot: canvas.hot(modelData.slot) || dotDrop.containsDrag
+         visible: canvas.entryBySlot[modelData.slot] !== undefined
+-        width: Style.space(34)
++        // On the G604 the six thumb buttons and five wheel gestures share tight groups.
++        width: canvas.compactDots
++          ? Math.max(12, Math.min(Style.space(25), Math.round(canvas.pictureHeight * 0.051)))
++          : Style.space(34)
+         height: width
+         x: canvas.picturesX + modelData.x - width / 2
+         y: modelData.y - height / 2
+ 
+         Rectangle {
+           anchors.centerIn: parent
+-          width: dotDrop.containsDrag ? Style.space(20) : (dot.hot ? Style.space(15) : Style.space(11))
++          width: canvas.compactDots
++            ? (dot.hot ? Style.space(13) : Style.space(9))
++            : (dotDrop.containsDrag ? Style.space(20) : (dot.hot ? Style.space(15) : Style.space(11)))
+           height: width
+           radius: width / 2
+           color: dot.hot ? Commons.Color.accent : Commons.Color.menu.text
+           border.width: Math.max(2, Style.normalBorderWidth)
+           border.color: Commons.Color.menu.background
+ 
+-          Behavior on width { NumberAnimation { duration: 90 } }
++          Behavior on width { NumberAnimation { duration: Style.duration(90) } }
+         }
+ 
+         MouseArea {
+@@ -270,9 +289,13 @@ Item {
+     }
+ 
+     Repeater {
++      id: leftLabels
+       model: canvas.layout.left
++      onItemAdded: lines.requestPaint()
++      onItemRemoved: lines.requestPaint()
+ 
+       delegate: CalloutLabel {
++        onUnderlineWidthChanged: lines.requestPaint()
+         required property var modelData
+         visible: canvas.entryBySlot[modelData.slot] !== undefined
+         entry: canvas.entryFor(modelData.slot)
+@@ -283,9 +306,13 @@ Item {
+     }
+ 
+     Repeater {
++      id: rightLabels
+       model: canvas.layout.right
++      onItemAdded: lines.requestPaint()
++      onItemRemoved: lines.requestPaint()
+ 
+       delegate: CalloutLabel {
++        onUnderlineWidthChanged: lines.requestPaint()
+         required property var modelData
+         visible: canvas.entryBySlot[modelData.slot] !== undefined
+         entry: canvas.entryFor(modelData.slot)
+@@ -312,7 +339,7 @@ Item {
+         required property int index
+         readonly property bool current: index === canvas.currentView
+ 
+-        width: Style.space(136)
++        width: Math.min(Style.space(112), (canvas.width - Style.spacing.sm) / 2)
+         height: canvas.switcherHeight - Style.spacing.sm * 2
+         radius: Style.cornerRadius
+         color: current
+@@ -346,7 +373,7 @@ Item {
+           font.bold: tile.current
+           color: tile.current ? Commons.Color.accent : Commons.Color.menu.text
+           opacity: tile.current ? 1 : 0.6
+-          text: String(tile.modelData.name).toUpperCase()
++          text: ({ front: "正面", side: "侧面", top: "顶部", bottom: "底部" })[tile.modelData.name] || String(tile.modelData.name).toUpperCase()
+         }
+ 
+         MouseArea {
+@@ -377,7 +404,7 @@ Item {
+ 
+     Caption {
+       anchors.verticalCenter: parent.verticalCenter
+-      text: "BLACK"
++      text: "黑色"
+       color: canvas.whiteSelected ? Commons.Color.menu.text : Commons.Color.accent
+       opacity: canvas.whiteSelected ? 0.6 : 1
+     }
+@@ -392,7 +419,7 @@ Item {
+ 
+     Caption {
+       anchors.verticalCenter: parent.verticalCenter
+-      text: "WHITE"
++      text: "白色"
+       color: canvas.whiteSelected ? Commons.Color.accent : Commons.Color.menu.text
+       opacity: canvas.whiteSelected ? 1 : 0.6
+     }
+@@ -430,7 +457,7 @@ Item {
+       font.bold: !canvas.gshift
+       opacity: canvas.gshift ? 0.5 : 1
+       color: canvas.gshift ? Commons.Color.menu.text : Commons.Color.accent
+-      text: "DEFAULT"
++      text: "默认"
+ 
+       MouseArea {
+         anchors.fill: parent
+@@ -467,13 +494,16 @@ Item {
+   Rectangle {
+     id: menu
+     readonly property var card: canvas.selectedEntry ? canvas.cardFor(canvas.selectedSlot) : null
+-    visible: canvas.selectedEntry !== null
++    visible: canvas.showSelectionMenu && canvas.selectedEntry !== null
+     z: 20
+     width: Style.space(250)
+     height: menuColumn.implicitHeight + Style.spacing.sm * 2
+-    x: card === null
+-      ? (canvas.width - width) / 2
+-      : (card.side === "left" ? canvas.leftX : canvas.rightX + canvas.labelWidth - width)
++    x: {
++      var aligned = card === null
++        ? (canvas.width - width) / 2
++        : (card.side === "left" ? canvas.leftX : canvas.rightX + canvas.labelWidth - width)
++      return Math.max(0, Math.min(aligned, canvas.width - width))
++    }
+     y: {
+       var below = card === null
+         ? canvas.height - canvas.footerHeight - height - Style.spacing.md
+@@ -567,7 +597,7 @@ Item {
+ 
+       MenuItem {
+         icon: "rotate-ccw"
+-        text: "Use default"
++        text: "恢复默认"
+         detail: canvas.defaultAction !== "" ? Model.actionLabel(canvas.catalog, canvas.defaultAction, "", true) : ""
+         enabled: canvas.selectedEntry !== null && canvas.defaultAction !== ""
+           && canvas.defaultAction !== canvas.selectedEntry.action
+@@ -576,20 +606,20 @@ Item {
+ 
+       MenuItem {
+         icon: "ban"
+-        text: "Disable"
++        text: "禁用"
+         enabled: canvas.selectedEntry !== null && canvas.selectedEntry.action !== "disabled"
+         onActivated: canvas.actionAssigned(canvas.selectedSlot, "disabled")
+       }
+ 
+       MenuItem {
+         icon: "keyboard"
+-        text: "Record a shortcut…"
+-        onActivated: canvas.recordRequested(canvas.selectedSlot)
++        text: "设置快捷键…"
++        onActivated: canvas.shortcutRequested(canvas.selectedSlot)
+       }
+ 
+       MenuItem {
+         icon: "undo-2"
+-        text: "Undo this change"
++        text: "撤销这项修改"
+         visible: canvas.selectedEntry !== null && canvas.selectedEntry.changed
+         onActivated: canvas.revertRequested(canvas.selectedSlot)
+       }
+diff --git i/plugin/DpiTrack.qml w/plugin/DpiTrack.qml
+index 3dea540..0a43fd6 100644
+--- i/plugin/DpiTrack.qml
++++ w/plugin/DpiTrack.qml
+@@ -156,8 +156,8 @@ Item {
+         visible: node.modelData.isDefault || node.modelData.isShift || node.dragging && track.dragRemoving
+         color: node.dragging && track.dragRemoving ? Commons.Color.urgent : Commons.Color.accent
+         text: node.dragging && track.dragRemoving
+-          ? "Remove"
+-          : [node.modelData.isDefault ? "Default" : "", node.modelData.isShift ? "Shift" : ""]
++          ? "删除"
++          : [node.modelData.isDefault ? "默认" : "", node.modelData.isShift ? "切换" : ""]
+             .filter(function(tag) { return tag !== "" })
+             .join(" · ")
+       }
+diff --git i/plugin/Model.js w/plugin/Model.js
+index c75009a..c390209 100644
+--- i/plugin/Model.js
++++ w/plugin/Model.js
+@@ -101,16 +101,16 @@ function supportBadge(support, selfTest) {
+   if (!support || support.verified) return null
+   if (!support.editable) {
+     return {
+-      text: "Not supported yet",
+-      action: "Report it",
+-      detail: "Omalogi cannot read this mouse's profile layout (format " + support.profile_format + ") yet."
++      text: "暂不支持",
++      action: "报告问题",
++      detail: "Omalogi 还读不懂这只鼠标的配置文件布局（格式 " + support.profile_format + "）。"
+     }
+   }
+   return {
+-    text: "Untested",
+-    action: "Help verify it",
+-    detail: "Omalogi has not been tested on the " + support.name + " yet. Every change is backed up and verified." +
+-      (selfTest ? " Help verify it runs the self-test in a terminal, on a spare profile, and puts everything back." : "")
++    text: "未测试",
++    action: "帮忙验证",
++    detail: "Omalogi 还没有在 " + support.name + " 上测试过。每次修改都会先备份并回读校验。" +
++      (selfTest ? "「帮忙验证」会在终端里用一个空闲配置文件运行自检，结束后把一切恢复原样。" : "")
+   }
+ }
+ 
+@@ -165,55 +165,55 @@ function setupCopy(kind, message) {
+   switch (kind) {
+   case "helper":
+     return {
+-      title: "Install Omalogi's helper",
+-      body: "To talk to your mouse, the plugin needs its helper: the omalogi command and a udev rule that lets your user reach the mouse. The installer checks its download, asks for your password once, and asks before adding the bar indicator and automatic profile switching.",
+-      action: "Install helper",
++      title: "安装 Omalogi 助手",
++      body: "插件需要助手才能和鼠标通信：omalogi 命令，以及让当前用户访问鼠标的 udev 规则。安装程序会校验下载内容，只询问一次密码，并在添加菜单栏指示器和自动切换配置文件前征求你的同意。",
++      action: "安装助手",
+       installer: true
+     }
+   case "access":
+     return {
+-      title: "Allow access to your mouse",
+-      body: "The helper is installed but cannot open the mouse. The installer adds Omalogi's udev rule, which gives your login session access to supported Logitech mice and their receivers, and nothing else.",
+-      action: "Allow access",
++      title: "允许访问鼠标",
++      body: "助手已安装，但打不开鼠标。安装程序会添加 Omalogi 的 udev 规则，只让你的登录会话访问支持的罗技鼠标及其接收器，不涉及其他设备。",
++      action: "允许访问",
+       installer: true
+     }
+   case "outdated":
+     return {
+-      title: "Update Omalogi's helper",
+-      body: "This version of the plugin needs a newer helper. The installer updates it in place.",
+-      action: "Update helper",
++      title: "更新 Omalogi 助手",
++      body: "这个版本的插件需要更新的助手，安装程序会直接原地更新。",
++      action: "更新助手",
+       installer: true
+     }
+   case "stale":
+     return {
+-      title: "Restart the shell to finish updating",
+-      body: "Omalogi's files were updated, but Omarchy's shell still has the previous version loaded. Restarting the shell loads the new one. Your windows and workspaces stay as they are.",
+-      action: "Restart shell",
++      title: "重启 Shell 以完成更新",
++      body: "Omalogi 的文件已更新，但 Omarchy Shell 仍加载着旧版本。重启 Shell 即可载入新版本，窗口和工作区都保持不变。",
++      action: "重启 Shell",
+       installer: false
+     }
+   case "directory":
+     return {
+-      title: "Repair the profile list on your mouse",
+-      body: "The list of profiles stored on your mouse fails its checksum, so Omalogi is not changing anything. Repair first checks that every profile it lists is intact, backs up the mouse's memory, then rewrites only that list and verifies it.",
+-      action: "Repair",
++      title: "修复鼠标上的配置文件列表",
++      body: "鼠标里保存的配置文件列表校验和不正确，所以 Omalogi 不会做任何修改。修复会先检查列表中每个配置文件都完好，备份鼠标存储，然后只重写这份列表并校验。",
++      action: "修复",
+       installer: false
+     }
+   case "first_directory":
+     return {
+-      title: "Set up the profiles on your mouse",
+-      body: "Your mouse has never had its own profiles written, so it runs its factory profiles and Omalogi has nothing to edit yet. Setting up backs up the mouse's memory, copies the factory profiles into its own, then writes the list of them last, verifying every write. The mouse works as before until you change something.",
+-      action: "Set up",
++      title: "在鼠标上建立配置文件",
++      body: "这只鼠标从未写入过自己的配置文件，目前运行的是出厂配置，Omalogi 暂时没有可编辑的内容。建立时会先备份鼠标存储，把出厂配置复制为自己的配置文件，最后写入列表，每次写入都会校验。在你修改之前，鼠标的表现和原来一样。",
++      action: "建立",
+       installer: false
+     }
+   case "device":
+     return {
+-      title: "Plug in your mouse",
+-      body: "Connect a Logitech G-series mouse over USB, or turn on a wireless one paired to its receiver, then try again.",
++      title: "请连接鼠标",
++      body: "用 USB 连接罗技 G 系列鼠标，或打开已与接收器配对的无线鼠标，然后重试。",
+       action: "",
+       installer: false
+     }
+   default:
+-    return { title: "Omalogi could not read your mouse", body: String(message || ""), action: "", installer: false }
++    return { title: "Omalogi 无法读取鼠标", body: zhMessage(String(message || "")), action: "", installer: false }
+   }
+ }
+ 
+@@ -221,8 +221,8 @@ function setupCopy(kind, message) {
+ // the list was set up, so they get the repair wording.
+ function repairNotice(result) {
+   var setUp = !!(result && result.repair && result.repair.never_written)
+-  return (setUp ? "Set up the profiles from the factory profiles." : "Repaired the profile list.") +
+-    " Backup saved to " + (result ? result.backup : "")
++  return (setUp ? "已根据出厂配置建立配置文件。" : "已修复配置文件列表。") +
++    "备份已保存到 " + (result ? result.backup : "")
+ }
+ 
+ function clampCursor(cursor, count) {
+@@ -252,25 +252,25 @@ function deviceSummary(info) {
+ 
+ function profileTitle(slot) {
+   var number = slot.position + 1
+-  return slot.profile.name ? number + "  " + slot.profile.name : "Profile " + number
++  return slot.profile.name ? number + "  " + slot.profile.name : "配置文件 " + number
+ }
+ 
+ function reportRate(profile) {
+-  return profile.report_rate_ms > 0 ? Math.round(1000 / profile.report_rate_ms) + " Hz" : "Unknown rate"
++  return profile.report_rate_ms > 0 ? Math.round(1000 / profile.report_rate_ms) + " Hz" : "回报率未知"
+ }
+ 
+ // Whether the mouse is using the profile, which decides when its changes are felt.
+ function profileStatus(slot) {
+-  if (!slot.enabled) return "Turned off on the mouse  ·  changes apply once it is turned on and activated"
+-  if (slot.active) return "In use  ·  " + reportRate(slot.profile)
+-  return "Not in use  ·  " + reportRate(slot.profile) + "  ·  changes apply when you activate it"
++  if (!slot.enabled) return "已在鼠标上关闭  ·  开启并激活后修改才会生效"
++  if (slot.active) return "使用中  ·  " + reportRate(slot.profile)
++  return "未使用  ·  " + reportRate(slot.profile) + "  ·  激活后修改生效"
+ }
+ 
+ // Why a profile cannot be activated, or "" when it can.
+ function activationRefusal(slot) {
+   var number = slot.position + 1
+-  if (!slot.enabled) return "Profile " + number + " is turned off on the mouse, so it can't be activated."
+-  if (slot.active) return "Profile " + number + " is already active."
++  if (!slot.enabled) return "配置文件 " + number + " 已在鼠标上关闭，无法激活。"
++  if (slot.active) return "配置文件 " + number + " 已经处于激活状态。"
+   return ""
+ }
+ 
+@@ -278,13 +278,13 @@ function activationRefusal(slot) {
+ function daemonNote(daemon, slot) {
+   if (!daemon || !daemon.connected || !daemon.source || !slot.active) return ""
+   if (daemon.active_profile !== slot.position + 1) return ""
+-  if (daemon.source === "default") return "Set automatically as the default profile"
+-  return "Set automatically by " + daemon.source + (daemon.app ? " for " + daemon.app : "")
++  if (daemon.source === "default") return "已自动设为默认配置文件"
++  return "由" + zhSource(daemon.source) + "自动设置" + (daemon.app ? "（" + daemon.app + "）" : "")
+ }
+ 
+ // A problem the daemon reports, ready for the footer, or "".
+ function daemonProblem(daemon) {
+-  return daemon && daemon.error ? "Auto-switching: " + daemon.error : ""
++  return daemon && daemon.error ? "自动切换：" + zhMessage(daemon.error) : ""
+ }
+ 
+ var MOUSE_GLYPH = "󰍽"
+@@ -301,12 +301,12 @@ function indicatorActive(daemon) {
+ }
+ 
+ function indicatorTooltip(daemon) {
+-  if (!daemon) return "Omalogi: daemon not running"
+-  if (daemon.error) return "Omalogi: " + daemon.error
+-  if (!daemon.connected || !daemon.active_profile) return "Omalogi: no mouse connected"
+-  var text = "Omalogi: profile " + daemon.active_profile
+-  if (daemon.source === "default") return text + " (default)"
+-  if (daemon.source) return text + " (" + daemon.source + (daemon.app ? " for " + daemon.app : "") + ")"
++  if (!daemon) return "Omalogi：守护进程未运行"
++  if (daemon.error) return "Omalogi：" + zhMessage(daemon.error)
++  if (!daemon.connected || !daemon.active_profile) return "Omalogi：未连接鼠标"
++  var text = "Omalogi：配置文件 " + daemon.active_profile
++  if (daemon.source === "default") return text + "（默认）"
++  if (daemon.source) return text + "（" + zhSource(daemon.source) + (daemon.app ? "：" + daemon.app : "") + "）"
+   return text
+ }
+ 
+@@ -397,14 +397,14 @@ function setBinding(draft, table, slot, action) {
+ 
+ // What still has to be chosen before the draft can be written, or "".
+ function draftProblem(draft) {
+-  if (draft.dpiStages.length === 0) return "Add at least one DPI stage."
+-  if (draft.defaultDpi === null || draft.dpiStages.indexOf(draft.defaultDpi) === -1) return "Choose the default DPI stage."
+-  if (draft.shiftDpi === null || draft.dpiStages.indexOf(draft.shiftDpi) === -1) return "Choose the DPI shift stage."
+-  var tables = [["buttons", "Button"], ["gshift", "G-Shift"]]
++  if (draft.dpiStages.length === 0) return "至少添加一个 DPI 档位。"
++  if (draft.defaultDpi === null || draft.dpiStages.indexOf(draft.defaultDpi) === -1) return "请选择默认 DPI 档位。"
++  if (draft.shiftDpi === null || draft.dpiStages.indexOf(draft.shiftDpi) === -1) return "请选择 DPI 切换档位。"
++  var tables = [["buttons", "按键"], ["gshift", "G-Shift"]]
+   for (var t = 0; t < tables.length; t++) {
+     var slots = draft[tables[t][0]]
+     for (var slot = 0; slot < slots.length; slot++) {
+-      if (slots[slot] === "key:") return "Type the keyboard shortcut for " + tables[t][1] + " slot " + slot + "."
++      if (slots[slot] === "key:") return "请为" + tables[t][1] + "槽位 " + slot + " 输入键盘快捷键。"
+     }
+   }
+   return ""
+@@ -497,14 +497,35 @@ function recordKey(nativeScanCode, modifiers) {
+   if (EVDEV_MODIFIERS.indexOf(code) !== -1) return { combo: "", waiting: true, unsupported: false }
+   var name = EVDEV_KEYS[code]
+   if (name === undefined) return { combo: "", waiting: false, unsupported: true }
+-  var parts = []
+-  // The order omalogi prints them in, so a re-recorded shortcut compares equal.
+-  if (modifiers & QT_CTRL) parts.push("ctrl")
+-  if (modifiers & QT_SHIFT) parts.push("shift")
+-  if (modifiers & QT_ALT) parts.push("alt")
+-  if (modifiers & QT_META) parts.push("super")
+-  parts.push(name)
+-  return { combo: parts.join("+"), waiting: false, unsupported: false }
++  return { combo: shortcutCombo(name, modifiers), waiting: false, unsupported: false }
++}
++
++var SHORTCUT_MODIFIERS = [
++  { name: "ctrl", mask: QT_CTRL }, { name: "shift", mask: QT_SHIFT },
++  { name: "alt", mask: QT_ALT }, { name: "super", mask: QT_META }
++]
++
++function shortcutCombo(key, modifiers) {
++  if (!key) return ""
++  // Match the order printed by omalogi.
++  var parts = SHORTCUT_MODIFIERS.filter(function(option) { return modifiers & option.mask })
++    .map(function(option) { return option.name })
++  return parts.concat(key).join("+")
++}
++
++function shortcutSelection(combo) {
++  var parts = combo.split("+")
++  var key = parts.pop()
++  var modifiers = 0
++  SHORTCUT_MODIFIERS.forEach(function(option) {
++    if (parts.indexOf(option.name) !== -1) modifiers |= option.mask
++  })
++  return { key: shortcutKeys().indexOf(key) === -1 ? "" : key, modifiers: modifiers }
++}
++
++function shortcutKeys() {
++  return Object.keys(EVDEV_KEYS).map(function(code) { return EVDEV_KEYS[code] })
++    .sort(function(a, b) { return a.localeCompare(b, undefined, { numeric: true }) })
+ }
+ 
+ var KEY_LABELS = {
+@@ -564,7 +585,8 @@ var GROUP_ICONS = {
+   DPI: "gauge",
+   Profiles: "layers",
+   Scroll: "move",
+-  Other: "settings"
++  Other: "settings",
++  System: "settings"
+ }
+ 
+ function actionIcon(action) {
+@@ -579,7 +601,42 @@ function groupIcon(group) {
+ 
+ // ---- Action picker ---------------------------------------------------------
+ 
+-var GROUP_ORDER = ["Mouse", "Keyboard", "Media", "DPI", "Profiles", "Scroll", "Other"]
++var GROUP_ORDER = ["Mouse", "Keyboard", "System", "Media", "DPI", "Profiles", "Scroll", "Other"]
++
++// Import the display list used by Super+K. Store only keyboard chords the mouse can send.
++function systemActions(output) {
++  var keys = shortcutKeys()
++  var aliases = {
++    return: "enter", escape: "esc", print: "printscreen",
++    prior: "pageup", next: "pagedown", page_up: "pageup", page_down: "pagedown"
++  }
++  var modifierMasks = { CTRL: QT_CTRL, SHIFT: QT_SHIFT, ALT: QT_ALT, SUPER: QT_META }
++  var seen = {}
++  var actions = []
++  String(output || "").slice(0, 65536).split("\n").slice(0, 512).forEach(function(line) {
++    var row = /^(.+?)\s+→\s+(.+)$/.exec(line.trim())
++    if (!row) return
++    var label = row[2].trim()
++    if (!label || label.length > 160 || label.indexOf("HL.Dispatcher(") === 0) return
++    var chord = row[1].split(/\s+\+\s+/)
++    if (chord.length > 2) return
++    var key = chord.pop().toLowerCase()
++    if (Object.prototype.hasOwnProperty.call(aliases, key)) key = aliases[key]
++    if (keys.indexOf(key) === -1) return
++    var modifiers = 0
++    var names = chord.length ? chord[0].split(/\s+/) : []
++    if (!names.every(function(name) {
++      if (!Object.prototype.hasOwnProperty.call(modifierMasks, name)) return false
++      modifiers |= modifierMasks[name]
++      return true
++    })) return
++    var combo = shortcutCombo(key, modifiers)
++    if (seen[combo]) return
++    seen[combo] = true
++    actions.push({ value: "key:" + combo, label: label, group: "System" })
++  })
++  return actions
++}
+ 
+ // Catalog entries in display sections, filtered by `query` on label, value or group.
+ function actionSections(catalog, query) {
+@@ -594,7 +651,8 @@ function actionSections(catalog, query) {
+     var actions = entries.filter(function(action) {
+       if (action.group !== group) return false
+       if (needle === "") return true
+-      return [action.label, action.value, action.group].some(function(text) {
++      return [action.label, zh(action.label), action.value, comboLabel(keyCombo(action.value)),
++        action.group, zhGroup(action.group)].some(function(text) {
+         return String(text).toLowerCase().indexOf(needle) !== -1
+       })
+     })
+@@ -606,7 +664,9 @@ function actionSections(catalog, query) {
+ // Names of the buttons whose binding is `action` (keyboard shortcuts count as one action).
+ function assignedNames(entries, action) {
+   return (entries || [])
+-    .filter(function(entry) { return actionChoice(entry.action) === action })
++    .filter(function(entry) {
++      return action === "key:" ? isKeyAction(entry.action) : entry.action === action
++    })
+     .map(function(entry) { return entry.name })
+ }
+ 
+@@ -631,7 +691,7 @@ function calloutLayout(views, height, viewGap, cardHeight, cardGap) {
+         slot: hotspot.slot,
+         x: x + hotspot.x * width,
+         y: hotspot.y * height,
+-        side: index === 0 && hotspot.x < 0.5 ? "left" : "right"
++        side: hotspot.label_side || (index === 0 && hotspot.x < 0.5 ? "left" : "right")
+       })
+     })
+     x += width + viewGap
+@@ -737,7 +797,7 @@ function actionRows(sections) {
+   ;(sections || []).forEach(function(section) {
+     rows.push({ kind: "header", group: section.group })
+     section.actions.forEach(function(action) {
+-      rows.push({ kind: "action", value: action.value, label: action.label, group: section.group })
++      rows.push({ kind: "action", value: action.value, label: zh(action.label), group: section.group })
+     })
+   })
+   return rows
+@@ -756,18 +816,18 @@ function modifiersLabel(modifiers) {
+ // A button's name where the picture's positions are verified: the name printed on the
+ // mouse from `omalogi picture`'s button_names, or G<slot + 1> from helpers without them.
+ function buttonName(slot, verified, names) {
+-  if (!verified) return "Slot " + slot
+-  return names && names[slot] ? names[slot] : "G" + (slot + 1)
++  if (!verified) return "槽位 " + slot
++  return names && names[slot] ? zh(names[slot]) : "G" + (slot + 1)
+ }
+ 
+ // How an action reads: the mouse's own label while unchanged, otherwise the catalog
+ // label, the shortcut, or the action text itself.
+ function actionLabel(catalog, action, deviceLabel, changed) {
+-  if (!changed && deviceLabel) return deviceLabel
+-  if (action === null || action === undefined) return deviceLabel || "Unsupported binding"
+-  if (isKeyAction(action)) return comboLabel(keyCombo(action))
++  if (!changed && deviceLabel) return zh(deviceLabel)
++  if (action === null || action === undefined) return deviceLabel ? zh(deviceLabel) : "不支持的绑定"
++  if (isKeyAction(action)) return zh(comboLabel(keyCombo(action)))
+   var matches = (catalog || []).filter(function(entry) { return entry.value === action })
+-  return matches.length > 0 ? matches[0].label : action
++  return matches.length > 0 ? zh(matches[0].label) : action
+ }
+ 
+ // Canvas and inspector entries for one table ("buttons" or "gshift") of a profile.
+@@ -894,43 +954,39 @@ function serveChanges(draft, original) {
+ // The footer after a save (`undo` false) or an undo reply.
+ function saveStatus(result, undo) {
+   var number = result.slot.position + 1
+-  var lead = undo ? "Undid the last change to profile " + number : "Saved to profile " + number
++  var lead = undo ? "已撤销对配置文件 " + number + " 的上一次修改" : "已保存到配置文件 " + number
+   var effect = result.takes_effect
+-  if (!effect) return { text: "Profile " + number + " already has these settings.", isError: false }
+-  if (effect.state === "now") return { text: lead + ". The mouse is using it now.", isError: false }
++  if (!effect) return { text: "配置文件 " + number + " 已经是这些设置。", isError: false }
++  if (effect.state === "now") return { text: lead + "，鼠标已在使用。", isError: false }
+   if (effect.state === "when_activated") {
+-    return { text: lead + ". It applies when you activate this profile.", isError: false }
++    return { text: lead + "，激活这个配置文件后生效。", isError: false }
+   }
+   return {
+-    text: lead + ", but the mouse has not loaded it: " + (effect.reason || "unknown reason") + ".",
++    text: lead + "，但鼠标还没有载入：" + zhMessage(effect.reason || "原因未知") + "。",
+     isError: true
+   }
+ }
+ 
+ // `onboard` with one profile replaced by a fresh read of it.
+ function withSlot(onboard, slot) {
+-  return {
+-    mode: onboard.mode,
+-    description: onboard.description,
++  return Object.assign({}, onboard, {
+     active_position: slot.active ? slot.position : onboard.active_position,
+     profiles: onboard.profiles.map(function(existing) {
+       return existing.position === slot.position ? slot : existing
+     })
+-  }
++  })
+ }
+ 
+ // `onboard` with the profile at `position` in use.
+ function withActive(onboard, position) {
+-  return {
+-    mode: onboard.mode,
+-    description: onboard.description,
++  return Object.assign({}, onboard, {
+     active_position: position,
+     profiles: onboard.profiles.map(function(slot) {
+       var copy = Object.assign({}, slot)
+       copy.active = slot.position === position
+       return copy
+     })
+-  }
++  })
+ }
+ 
+ // Follows a profile switch made on the mouse. The editor moves along only when it shows
+@@ -974,3 +1030,103 @@ function viewWidth(view, height) {
+   return Math.round((height * view.width) / view.height)
+ }
+ 
++// ---- 简体中文（Silky Omarchy 汉化） ----------------------------------------
++// 助手（omalogi 命令）的动作名、分组名和报错保持英文，这样 CLI、它的测试和上面的
++// problemKind 判断都不受影响；插件只在显示时用 zh() 翻译。
++
++var ZH_LABELS = {
++  "Left button": "左键", "Right button": "右键", "Wheel click": "滚轮按下",
++  "Wheel tilt left": "滚轮左拨", "Wheel tilt right": "滚轮右拨",
++  "Wheel scroll down": "滚轮向下", "Wheel scroll up": "滚轮向上",
++  "left click": "左键单击", "right click": "右键单击", "middle click": "中键单击",
++  "back": "后退", "forward": "前进", "no mouse button": "无鼠标按键",
++  "next track": "下一曲", "previous track": "上一曲", "play/pause": "播放/暂停",
++  "mute": "静音", "volume up": "音量加", "volume down": "音量减",
++  "scroll left": "向左滚动", "scroll right": "向右滚动",
++  "scroll up": "向上滚动", "scroll down": "向下滚动",
++  "DPI up": "DPI 升高", "DPI down": "DPI 降低", "cycle DPI": "循环切换 DPI",
++  "default DPI": "默认 DPI", "DPI shift (hold)": "DPI 切换（按住）",
++  "next profile": "下一个配置文件", "previous profile": "上一个配置文件",
++  "cycle profile": "循环切换配置文件", "G-Shift (hold)": "G-Shift（按住）",
++  "battery indicator": "电量指示", "switch to profile": "切换到配置文件",
++  "performance switch": "性能切换", "host": "主机", "macro": "宏", "disabled": "已禁用",
++  "Keyboard shortcut…": "键盘快捷键…"
++}
++
++var ZH_KEYS = {
++  "Right Ctrl": "右 Ctrl", "Right Shift": "右 Shift", "Right Alt": "右 Alt", "Right Super": "右 Super",
++  "Space": "空格", "Up": "↑", "Down": "↓", "Left": "←", "Right": "→"
++}
++
++var ZH_GROUPS = {
++  Mouse: "鼠标", Keyboard: "键盘", System: "系统", Media: "媒体", DPI: "DPI",
++  Profiles: "配置文件", Scroll: "滚动", Other: "其他"
++}
++
++function zhSource(source) {
++  var match = /^rule (\d+)$/.exec(String(source))
++  if (match) return "规则 " + match[1]
++  return source === "default" ? "默认" : source
++}
++
++function zhGroup(group) {
++  return ZH_GROUPS[group] || group
++}
++
++// 助手报错（英文）里常见的几种，翻成中文；认不出的原样保留。
++var ZH_ERRORS = [
++  [/^no supported Logitech (mouse|device) found.*$/, "没有找到支持的罗技鼠标：请用 USB 连接 G 系列鼠标，或打开已与接收器配对的无线鼠标"],
++  [/^permission denied opening (.*)$/, "无权打开 $1：请先安装 Omalogi 的 udev 规则"],
++  [/^The omalogi command is not installed or not on PATH\.$/, "omalogi 命令未安装，或不在 PATH 中。"],
++  [/^omalogi exited with status (\d+)\.$/, "omalogi 退出，状态码 $1。"],
++  [/^profile (\d+) is disabled$/, "配置文件 $1 已在鼠标上关闭"],
++  [/^profile (\d+) is in use; activate another profile before turning it off$/, "配置文件 $1 正在使用；先激活另一个配置文件再关闭它"],
++  [/^profile (\d+) is the only profile turned on; turn another one on first$/, "配置文件 $1 是唯一开启的配置文件；请先开启另一个"],
++  [/^profile (\d+) does not exist; the device has (\d+) profile slots$/, "配置文件 $1 不存在；这只鼠标有 $2 个配置文件槽位"],
++  [/^the mouse does not support (\d+) Hz; it supports (.*) Hz$/, "鼠标不支持 $1 Hz；支持 $2 Hz"],
++  [/^the sensor does not support (\d+) DPI$/, "传感器不支持 $1 DPI"],
++  [/^give between 1 and 5 DPI stages, not (\d+)$/, "DPI 档位需要 1 到 5 个，当前为 $1 个"],
++  [/^the profile already has these settings; nothing was written$/, "配置文件已经是这些设置，没有写入"],
++  [/^the picture is not downloaded yet.*$/, "鼠标图片还没下载；联网时运行 `omalogi picture`"],
++  [/^device request failed$/, "设备请求失败"],
++  [/^onboard profiles request failed$/, "板载配置文件请求失败"],
++  [/^the device did not answer as a HID\+\+ 2\.0 device$/, "设备没有以 HID++ 2.0 设备应答"],
++  [/^daemon not running$/, "守护进程未运行"]
++]
++
++// 一条动作名或快捷键显示成中文：先查整句，再逐个翻译组合键里的键名。
++function zh(text) {
++  if (text === null || text === undefined) return text
++  var value = String(text)
++  if (ZH_LABELS[value] !== undefined) return ZH_LABELS[value]
++  var match = /^mouse button (\d+)$/.exec(value)
++  if (match) return "鼠标按键 " + match[1]
++  match = /^firmware action (0x[0-9A-F]+)$/.exec(value)
++  if (match) return "固件动作 " + match[1]
++  match = /^unknown binding (.*)$/.exec(value)
++  if (match) return "未知绑定 " + match[1]
++  match = /^consumer control (0x[0-9A-F]+)$/.exec(value)
++  if (match) return "媒体控制 " + match[1]
++  match = /^key (0x[0-9A-F]+)$/.exec(value)
++  if (match) return "按键 " + match[1]
++  if (value.indexOf(" + ") !== -1) return value.split(" + ").map(zh).join(" + ")
++  if (value.indexOf("+") > 0) {
++    return value.split("+").map(function(part) {
++      var code = /^key (0x[0-9A-F]+)$/.exec(part)
++      return code ? "按键 " + code[1] : (ZH_KEYS[part] || part)
++    }).join("+")
++  }
++  return ZH_KEYS[value] || value
++}
++
++// 状态栏和卡片里显示的助手报错。
++function zhMessage(text) {
++  if (text === null || text === undefined) return text
++  var value = String(text)
++  var rule = /^rule (\d+): (.*)$/.exec(value)
++  if (rule) return "规则 " + rule[1] + "：" + zhMessage(rule[2])
++  for (var i = 0; i < ZH_ERRORS.length; i++) {
++    if (ZH_ERRORS[i][0].test(value)) return value.replace(ZH_ERRORS[i][0], ZH_ERRORS[i][1])
++  }
++  return value
++}
+diff --git i/plugin/Omalogi.qml w/plugin/Omalogi.qml
+index f7f8454..b9bd1d9 100644
+--- i/plugin/Omalogi.qml
++++ w/plugin/Omalogi.qml
+@@ -26,6 +26,7 @@ Item {
+   // The daemon's published state, or null when it is not running.
+   property var daemon: null
+   property var catalog: []
++  property var systemActions: []
+   // `omalogi picture`: the mouse's picture with button positions, or null.
+   property var picture: null
+   property bool pictureRequestWhite: false
+@@ -40,6 +41,7 @@ Item {
+   // Whether the badge runs the self-test (Model.canSelfTest).
+   property bool selfTest: false
+   property bool acceptOpen: false
++  property int pendingEnableProfile: 0
+   property bool uninstallOpen: false
+   readonly property var supportBadge: Model.supportBadge(root.support, root.selfTest)
+   // What stands between the plugin and the mouse (see Model.setupState), or "".
+@@ -89,26 +91,33 @@ Item {
+   // The name printed on each slot's button, by slot; [] from helpers that do not send them.
+   readonly property var buttonNames: root.slotsVerified && Array.isArray(root.picture.button_names)
+     ? root.picture.button_names : []
++  readonly property bool g604Diagram: root.slotsVerified && root.picture.depot === "g604"
++    && root.buttonNames.length === 15
+   readonly property int buttonCount: root.onboard ? root.onboard.description.button_count : 0
+   readonly property bool assignments: root.tab !== "sensitivity"
+   readonly property string table: root.tab === "gshift" ? "gshift" : "buttons"
+-  readonly property var entries: Model.slotEntries(
+-    root.selected, root.draft, root.original, root.catalog, root.table, root.buttonCount,
+-    root.slotsVerified, root.buttonNames)
++  readonly property var entries: {
++    var entries = Model.slotEntries(root.selected, root.draft, root.original, root.catalog,
++      root.table, root.buttonCount, root.slotsVerified, root.buttonNames)
++    // The G604 exposes 16 onboard slots but only the first 15 have physical controls.
++    return root.g604Diagram
++      ? entries.filter(function(entry) { return entry.slot < root.buttonNames.length })
++      : entries
++  }
+   readonly property var selectedEntry: {
+     var entry = Model.indexBySlot(root.entries)[root.selectedSlot]
+     return entry === undefined ? null : entry
+   }
+   readonly property var profileOptions: root.profiles.map(function(slot) {
+-    var status = slot.active ? "In use" : (slot.enabled ? "" : "Off")
++    var status = slot.active ? "使用中" : (slot.enabled ? "" : "已关闭")
+     return { value: String(slot.position), label: Model.profileTitle(slot) + (status !== "" ? "  ·  " + status : "") }
+   })
+ 
+-  readonly property int cardWidth: Math.min(Style.space(1440), panel.width - Style.gapsOut * 2)
+-  readonly property int cardHeight: Math.min(Style.space(860), panel.height - Style.gapsOut * 2)
++  readonly property int cardWidth: panel.width
++  readonly property int cardHeight: panel.height
+   readonly property int headerHeight: Math.max(Style.space(44), Style.spacing.controlHeight + Style.spacing.sm)
+   readonly property int railWidth: Style.space(52)
+-  readonly property int libraryWidth: Style.space(330)
++  readonly property int libraryWidth: Math.min(Style.space(330), Math.round(cardWidth * 0.29))
+ 
+   // Its own file: the daemon reads config.toml strictly and would reject unknown keys.
+   Settings {
+@@ -133,7 +142,11 @@ Item {
+     root.loadPicture()
+   }
+ 
++  onCursorChanged: if (library) library.closeShortcut()
++  onTabChanged: if (library) library.closeShortcut()
++
+   onSelectedSlotChanged: {
++    if (library) library.closeShortcut()
+     // Show the view that has the selected button.
+     var view = Model.viewForSlot(root.views, root.selectedSlot)
+     if (view !== -1) root.viewIndex = view
+@@ -148,6 +161,7 @@ Item {
+     if (root.ready) root.applyOpenRequest()
+     root.refresh()
+     if (root.catalog.length === 0 && !catalogCommand.running) catalogCommand.start(["actions", "--json"])
++    systemActionsCommand.running = true
+     if (root.picture === null) root.loadPicture()
+     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+   }
+@@ -164,7 +178,7 @@ Item {
+   function finishClose() {
+     root.mounted = false
+     root.selectedSlot = -1
+-    library.stopRecording()
++    library.closeShortcut()
+     root.stopServerWhenIdle()
+     if (root.shell && root.manifest) root.shell.hide(root.manifest.id)
+   }
+@@ -198,6 +212,36 @@ Item {
+     })
+   }
+ 
++  // Silky Omarchy：有线和无线鼠标同时连着时，切换编辑哪一只（写 ~/.config/omalogi/device，助手和守护进程都读它）
++  readonly property bool onWireless: root.info !== null && String(root.info.path || "").indexOf("/dev/") !== 0
++
++  function switchMouse() {
++    if (root.dirty || root.saving || root.undoing || saveTimer.running || library.editingShortcut) {
++      root.say("先等修改保存完，再切换鼠标。", false)
++      return
++    }
++    var next = root.onWireless ? "wired" : "wireless"
++    server.stop()
++    root.info = null
++    root.onboard = null
++    root.picture = null
++    root.support = null
++    root.selectedSlot = -1
++    root.say(next === "wireless" ? "正在切换到无线鼠标…" : "正在切换到有线鼠标…", false)
++    mouseSwitch.command = ["sh", "-c",
++      "d=\"${XDG_CONFIG_HOME:-$HOME/.config}/omalogi\"; mkdir -p \"$d\" && printf '%s\\n' \"$1\" > \"$d/device\"; " +
++      "systemctl --user try-restart omalogi.service >/dev/null 2>&1; exit 0", "sh", next]
++    mouseSwitch.running = true
++  }
++
++  Process {
++    id: mouseSwitch
++    onExited: {
++      root.refresh()
++      root.loadPicture()
++    }
++  }
++
+   function retry() {
+     server.stop()
+     root.loadError = ""
+@@ -230,7 +274,7 @@ Item {
+       return
+     }
+     if (root.dirty && root.problem !== "") {
+-      root.say("Changes to profile " + root.draft.number + " were not saved: " + root.problem, true)
++      root.say("配置文件 " + root.draft.number + " 的修改没有保存：" + Model.zhMessage(root.problem), true)
+     }
+     root.cursor = next
+     root.loadDraft()
+@@ -275,6 +319,7 @@ Item {
+     }
+     // An untested mouse is written only after the user accepts it, once.
+     if (Model.needsAcceptance(root.support)) {
++      root.pendingEnableProfile = 0
+       root.acceptOpen = true
+       return false
+     }
+@@ -299,7 +344,7 @@ Item {
+         var status = Model.saveStatus(result, false)
+         root.say(status.text, status.isError)
+       } else {
+-        root.say("Not saved: " + result, true)
++        root.say("没有保存：" + Model.zhMessage(result), true)
+       }
+       root.afterWrite(ok)
+     })
+@@ -312,7 +357,7 @@ Item {
+     // The latest change is one not saved yet: drop it without touching the mouse.
+     if (root.dirty) {
+       root.draft = root.original
+-      root.say("Undid the changes that were not saved yet.", false)
++      root.say("已撤销尚未保存的修改。", false)
+       return
+     }
+     if (root.undoDepth === 0) return
+@@ -330,7 +375,7 @@ Item {
+         var status = Model.saveStatus(result, true)
+         root.say(status.text, status.isError)
+       } else {
+-        root.say("Undo failed: " + result, true)
++        root.say("撤销失败：" + Model.zhMessage(result), true)
+       }
+       root.afterWrite(ok)
+     })
+@@ -354,20 +399,47 @@ Item {
+ 
+   function activate() {
+     var slot = root.selected
+-    if (!slot) return
+-    var refusal = Model.activationRefusal(slot)
+-    if (refusal !== "") {
+-      root.say(refusal, false)
++    if (!slot || slot.active || root.loading || root.saving || root.undoing || root.dirty) return
++    var number = slot.position + 1
++    if (slot.enabled) {
++      root.saving = true
++      root.activateProfile(number)
+       return
+     }
+-    var position = slot.position
+-    server.request({ cmd: "activate", profile: position + 1 }, function(ok, result) {
++    if (Model.needsAcceptance(root.support)) {
++      root.pendingEnableProfile = number
++      root.acceptOpen = true
++      return
++    }
++    root.enableAndActivate(number)
++  }
++
++  function enableAndActivate(number) {
++    root.saving = true
++    server.request({ cmd: "set_enabled", profile: number, enabled: true }, function(ok, result) {
+       if (!ok) {
++        root.saving = false
+         root.say(result, true)
++        root.afterWrite(false)
++        if (root.opened) root.refresh()
+         return
+       }
+-      root.onboard = Model.withActive(root.onboard, position)
+-      root.say("Profile " + (position + 1) + " is now in use.", false)
++      root.onboard = result.onboard
++      root.activateProfile(number, true)
++    })
++  }
++
++  function activateProfile(number, justEnabled) {
++    server.request({ cmd: "activate", profile: number }, function(ok, result) {
++      root.saving = false
++      if (ok) {
++        root.onboard = Model.withActive(root.onboard, number - 1)
++        root.say("配置文件 " + number + " 已激活。", false)
++      } else {
++        var message = "激活失败：" + Model.zhMessage(result)
++        root.say(justEnabled ? "配置文件 " + number + " 已启用。" + message : message, true)
++      }
++      root.afterWrite(ok)
+     })
+   }
+ 
+@@ -382,7 +454,7 @@ Item {
+   }
+ 
+   function say(message, isError) {
+-    root.notice = message
++    root.notice = Model.zhMessage(message)
+     root.noticeIsError = isError
+   }
+ 
+@@ -463,16 +535,26 @@ Item {
+     root.close()
+   }
+ 
+-  // Accepts editing this untested mouse, then saves the changes that were waiting.
+-  function acceptUntested() {
++  function cancelAcceptance() {
++    root.pendingEnableProfile = 0
+     root.acceptOpen = false
++  }
++
++  // Accepts editing this untested mouse, then retries the requested operation.
++  function acceptUntested() {
++    var number = root.pendingEnableProfile
++    root.cancelAcceptance()
++    if (number > 0) root.saving = true
+     server.request({ cmd: "accept_untested" }, function(ok, result) {
++      if (number > 0) root.saving = false
+       if (!ok) {
+-        root.say("Not saved: " + result, true)
++        root.say(result, true)
++        if (number > 0) root.afterWrite(false)
+         return
+       }
+       root.support = result.support
+-      root.save()
++      if (number > 0) root.enableAndActivate(number)
++      else root.save()
+     })
+   }
+ 
+@@ -568,6 +650,14 @@ Item {
+     }
+   }
+ 
++  Process {
++    id: systemActionsCommand
++    command: ["timeout", "12s", "omarchy", "menu", "keybindings", "--print"]
++    stdout: StdioCollector {
++      onStreamFinished: root.systemActions = Model.systemActions(text)
++    }
++  }
++
+   // Reads sysfs and the cache, never the device. Without a picture the buttons are
+   // shown as labels alone.
+   OmalogiCommand {
+@@ -580,14 +670,28 @@ Item {
+       var next = exitCode === 0 ? Model.parseJson(stdout) : null
+       if (next === null && root.pictureRequestWhite) {
+         deviceAppearance.mouseColor = "black"
+-        root.say("Could not load the white picture: " + Model.errorMessage(stderr, exitCode), true)
++        root.say("无法载入白色款图片：" + Model.errorMessage(stderr, exitCode), true)
+         root.loadPicture()
+         return
+       }
++      // Silky Omarchy：无线鼠标的图片要经接收器查型号，和刚启动的 serve 同时打开接收器时会失败，稍后重试
++      if (next === null && pictureRetry.attempts < 3) {
++        pictureRetry.attempts++
++        pictureRetry.restart()
++        return
++      }
++      pictureRetry.attempts = 0
+       root.picture = next
+     }
+   }
+ 
++  Timer {
++    id: pictureRetry
++    property int attempts: 0
++    interval: 1500
++    onTriggered: root.loadPicture()
++  }
++
+   FileView {
+     path: Quickshell.env("XDG_RUNTIME_DIR") + "/omalogi/state.json"
+     watchChanges: true
+@@ -665,35 +769,35 @@ Item {
+     }
+   }
+ 
+-  PanelWindow {
++  // Silky Omarchy：普通窗口而不是全屏浮层。浮层固定在 Overlay 图层，切工作区仍压在最上面，也不能平铺 / 浮动 /
++  // Alt+Tab；FloatingWindow 是 xdg toplevel，和 Omarchy 自带的 dev-gallery 插件同一做法。
++  FloatingWindow {
+     id: panel
+     visible: root.mounted
+-    anchors { top: true; bottom: true; left: true; right: true }
++    title: "罗技鼠标"
+     color: "transparent"
+-    WlrLayershell.namespace: "omalogi"
+-    WlrLayershell.layer: WlrLayer.Overlay
+-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+-    exclusionMode: ExclusionMode.Ignore
++    // 1280×700：居中时下边停在 Dock 上方（窗口压到 Dock 区域它就自动隐藏），宽度保证按键列表排成 4 列
++    // 逻辑像素，不经 Style.space 缩放，和 config/hypr/silky-omalogi.lua 的窗口规则一致
++    implicitWidth: 1280
++    implicitHeight: 700
++    minimumSize: Qt.size(960, 600)
+ 
+-    Rectangle {
+-      anchors.fill: parent
+-      color: Commons.Color.menu.scrim
+-      opacity: card.opacity
+-    }
+-
+-    MouseArea {
+-      anchors.fill: parent
+-      onClicked: root.close()
++    // 用 Hyprland 关闭窗口（Super+W、标题栏关闭钮）时，和 Esc 一样先保存再收尾
++    onVisibleChanged: {
++      if (visible || !root.mounted) return
++      root.saveNow()
++      root.opened = false
++      enterAnimation.stop()
++      root.finishClose()
+     }
+ 
+     BorderSurface {
+       id: card
+-      width: root.cardWidth
+-      height: root.cardHeight
+-      anchors.centerIn: parent
+-      radius: Style.cornerRadius
+-      color: Commons.Color.menu.background
+-      borderSpec: Border.surfaceSpec("menu", "border", Commons.Color.menu.border, Math.max(1, Style.space(2)))
++      anchors.fill: parent
++      radius: 0
++      // Silky Omarchy：菜单玻璃把 menu.background 调得很透（短菜单好看），编辑器的小字会被身后窗口干扰，至少 85% 不透明
++      color: Qt.rgba(Commons.Color.menu.background.r, Commons.Color.menu.background.g, Commons.Color.menu.background.b,
++        Math.max(Commons.Color.menu.background.a, 0.85))
+       padding: Style.spacing.panelPadding
+       opacity: 0
+ 
+@@ -711,6 +815,11 @@ Item {
+             event.accepted = true
+             return
+           }
++          if (library.editingShortcut) {
++            if (event.key === Qt.Key_Escape) library.closeShortcut()
++            event.accepted = true
++            return
++          }
+           var ctrl = (event.modifiers & Qt.ControlModifier) !== 0
+           if (event.key === Qt.Key_Escape) {
+             if (root.selectedSlot >= 0) root.selectedSlot = -1
+@@ -809,11 +918,12 @@ Item {
+             Button {
+               anchors.verticalCenter: parent.verticalCenter
+               visible: root.ready && !(root.selected && root.selected.active)
+-              text: "Activate"
++              text: root.selected && !root.selected.enabled ? "启用并激活" : "激活"
+               bordered: true
+-              enabled: root.selected !== null && root.selected.enabled && !root.selected.active
++              enabled: root.selected !== null && !root.selected.active
++                && !root.loading && !root.saving && !root.undoing && !root.dirty
+               opacity: enabled ? 1 : 0.5
+-              foreground: Commons.Color.menu.text
++              foreground: Commons.Color.accent
+               fontFamily: Style.font.menuFamily
+               onClicked: root.activate()
+             }
+@@ -825,7 +935,8 @@ Item {
+               text: {
+                 if (!root.selected) return ""
+                 var note = Model.daemonNote(root.daemon, root.selected)
+-                return note !== "" ? note : (root.selected.active ? "" : Model.profileStatus(root.selected))
++                return note !== "" ? note : (root.selected.enabled && !root.selected.active
++                  ? Model.profileStatus(root.selected) : "")
+               }
+               font.pixelSize: Style.font.caption
+             }
+@@ -872,11 +983,22 @@ Item {
+               text: root.info ? Model.deviceSummary(root.info) : ""
+             }
+ 
++            Button {
++              anchors.verticalCenter: parent.verticalCenter
++              visible: root.info !== null
++              text: root.onWireless ? "切换到有线" : "切换到无线"
++              opacity: hot ? 1 : 0.55
++              fontSize: Style.font.caption
++              foreground: Commons.Color.menu.text
++              fontFamily: Style.font.menuFamily
++              onClicked: root.switchMouse()
++            }
++
+             // Omarchy has no uninstall hook for plugins, so Omalogi offers its own. Quiet,
+             // and always reachable, including from the setup screen.
+             Button {
+               anchors.verticalCenter: parent.verticalCenter
+-              text: "Uninstall"
++              text: "卸载"
+               opacity: hot ? 1 : 0.55
+               fontSize: Style.font.caption
+               foreground: Commons.Color.menu.text
+@@ -891,8 +1013,8 @@ Item {
+           anchors.fill: parent
+           z: 110
+           opened: root.uninstallOpen
+-          message: "Uninstall Omalogi? The helper, its daemon, the udev rule and this plugin are removed. Your mouse keeps its profiles, and your backups are kept."
+-          confirmText: "Uninstall"
++          message: "卸载 Omalogi？助手、守护进程、udev 规则和这个插件都会被移除。鼠标上的配置文件和你的备份都会保留。"
++          confirmText: "卸载"
+           background: Commons.Color.menu.background
+           foreground: Commons.Color.menu.text
+           fontFamily: Style.font.menuFamily
+@@ -910,7 +1032,7 @@ Item {
+           // A click outside the dialog closes it without saving.
+           MouseArea {
+             anchors.fill: parent
+-            onClicked: root.acceptOpen = false
++            onClicked: root.cancelAcceptance()
+           }
+ 
+           Rectangle {
+@@ -943,7 +1065,7 @@ Item {
+                 width: parent.width
+                 horizontalAlignment: Text.AlignHCenter
+                 wrapMode: Text.Wrap
+-                text: root.support ? "Edit your " + root.support.name + "?" : ""
++                text: root.support ? "编辑你的 " + root.support.name + "？" : ""
+                 font.pixelSize: Style.font.title
+                 font.bold: true
+               }
+@@ -953,7 +1075,7 @@ Item {
+                 horizontalAlignment: Text.AlignHCenter
+                 wrapMode: Text.Wrap
+                 opacity: 0.75
+-                text: "Omalogi has not been tested on this model yet. It uses the same onboard memory as the verified G502 X, and every change is backed up first and read back to check it. You only need to accept this once."
++                text: "Omalogi 还没有在这个型号上测试过。它和已验证的 G502 X 使用相同的板载存储格式，每次修改都会先备份，写入后回读校验。只需确认一次。"
+               }
+ 
+               Row {
+@@ -961,17 +1083,17 @@ Item {
+                 spacing: Style.spacing.md
+ 
+                 Button {
+-                  text: "Edit it"
++                  text: "编辑"
+                   bordered: true
+                   foreground: Commons.Color.accent
+                   onClicked: root.acceptUntested()
+                 }
+ 
+                 Button {
+-                  text: "Not now"
++                  text: "暂不"
+                   bordered: true
+                   foreground: Commons.Color.menu.text
+-                  onClicked: root.acceptOpen = false
++                  onClicked: root.cancelAcceptance()
+                 }
+               }
+ 
+@@ -980,7 +1102,7 @@ Item {
+                 horizontalAlignment: Text.AlignHCenter
+                 wrapMode: Text.Wrap
+                 opacity: 0.5
+-                text: "After trying it, please tell us how it went with the Untested badge at the top."
++                text: "试用后，请点击顶部的「未测试」标记告诉我们效果如何。"
+                 font.pixelSize: Style.font.caption
+               }
+             }
+@@ -1016,9 +1138,9 @@ Item {
+               width: parent.width - Style.space(20)
+               readonly property string daemonProblem: Model.daemonProblem(root.daemon)
+               readonly property bool busy: root.saving || root.undoing || saveTimer.running
+-              text: root.saving ? "Saving…"
+-                : root.undoing ? "Undoing…"
+-                : saveTimer.running ? "Saving in a moment…"
++              text: root.saving ? "正在保存…"
++                : root.undoing ? "正在撤销…"
++                : saveTimer.running ? "即将保存…"
+                 : root.notice !== "" ? root.notice
+                 : daemonProblem
+               color: !busy && ((root.notice !== "" && root.noticeIsError) || (root.notice === "" && daemonProblem !== ""))
+@@ -1038,14 +1160,14 @@ Item {
+               visible: root.ready && root.setupKind === ""
+               opacity: 0.5
+               text: root.assignments
+-                ? "2 Sensitivity    ←→ view    c color    g G-Shift    ↑↓ profile    ctrl+z undo    esc close"
+-                : "1 Assignments    ↑↓ profile    ctrl+z undo    esc close"
++                ? "2 灵敏度    ←→ 视图    c 颜色    g G-Shift    ↑↓ 配置文件    ctrl+z 撤销    esc 关闭"
++                : "1 按键分配    ↑↓ 配置文件    ctrl+z 撤销    esc 关闭"
+               font.pixelSize: Style.font.caption
+             }
+ 
+             Button {
+               visible: root.undoDepth > 0 || root.dirty
+-              text: "Undo"
++              text: "撤销"
+               iconText: "󰕌"
+               bordered: true
+               enabled: !root.saving && !root.undoing
+@@ -1071,7 +1193,7 @@ Item {
+             anchors.centerIn: parent
+             visible: !root.ready && root.setupKind === ""
+             opacity: 0.6
+-            text: "Reading your mouse…"
++            text: "正在读取鼠标…"
+             font.pixelSize: Style.font.title
+           }
+ 
+@@ -1121,7 +1243,7 @@ Item {
+               }
+ 
+               Button {
+-                text: "Try again"
++                text: "重试"
+                 bordered: true
+                 foreground: Commons.Color.menu.text
+                 onClicked: root.retry()
+@@ -1134,7 +1256,7 @@ Item {
+               horizontalAlignment: Text.AlignHCenter
+               wrapMode: Text.WrapAnywhere
+               opacity: 0.45
+-              text: "Omalogi closes and a terminal runs  " + Model.helperInstallCommand(root.installScript) + "  Open Omalogi again when it is done."
++              text: "Omalogi 会关闭，并在终端里运行  " + Model.helperInstallCommand(root.installScript) + "  完成后重新打开 Omalogi。"
+               font.pixelSize: Style.font.caption
+             }
+           }
+@@ -1153,14 +1275,14 @@ Item {
+ 
+               RailButton {
+                 icon: "mouse-pointer-click"
+-                label: "Assignments"
++                label: "按键分配"
+                 selected: root.assignments
+                 onActivated: if (!root.assignments) root.tab = "buttons"
+               }
+ 
+               RailButton {
+                 icon: "gauge"
+-                label: "Sensitivity"
++                label: "灵敏度"
+                 selected: !root.assignments
+                 onActivated: root.tab = "sensitivity"
+               }
+@@ -1190,17 +1312,17 @@ Item {
+                 anchors.left: parent.left
+                 anchors.top: parent.top
+                 anchors.bottom: parent.bottom
+-                catalog: root.catalog
++                catalog: root.catalog.concat(root.systemActions)
+                 entries: root.entries
+                 entry: root.selectedEntry
+-                layerName: root.table === "gshift" ? "G-Shift layer" : "Default layer"
++                layerName: root.table === "gshift" ? "G-Shift 层" : "默认层"
+                 gshift: root.table === "gshift"
+                 gshiftButtons: Model.gshiftButtons(root.draft, root.buttonCount, root.buttonNames)
+                 dragProxy: dragProxy
+                 onChosen: function(action) { root.assign(root.selectedSlot, action) }
+-                onShortcutRecorded: function(slot, action) { root.assign(slot, action) }
+-                onSelectionNeeded: root.say("Select a button on the mouse first, or drag the action onto one.", false)
+-                onRecordingChanged: if (!recording) keyCatcher.forceActiveFocus()
++                onShortcutChosen: function(slot, action) { root.assign(slot, action) }
++                onSelectionNeeded: root.say("先在鼠标图上选一个按键，或把动作拖到按键上。", false)
++                onEditingShortcutChanged: if (!editingShortcut) keyCatcher.forceActiveFocus()
+               }
+ 
+               Rectangle {
+@@ -1220,6 +1342,8 @@ Item {
+                 anchors.top: parent.top
+                 anchors.bottom: parent.bottom
+                 views: root.views
++                compactDots: root.g604Diagram
++                showSelectionMenu: !library.editingShortcut
+                 whiteAvailable: root.picture !== null && root.picture.has_white === true
+                 whiteSelected: deviceAppearance.mouseColor === "white"
+                 viewIndex: root.viewIndex
+@@ -1238,7 +1362,7 @@ Item {
+                 onColorRequested: function(white) { root.setPictureColor(white) }
+                 onLayerRequested: function(gshift) { root.tab = gshift ? "gshift" : "buttons" }
+                 onActionAssigned: function(slot, action) { root.assign(slot, action) }
+-                onRecordRequested: function(slot) { library.startRecording(slot) }
++                onShortcutRequested: function(slot) { library.openShortcut(slot) }
+                 onRevertRequested: function(slot) { root.revertSlot(slot) }
+               }
+             }
+diff --git i/plugin/SensitivityPanel.qml w/plugin/SensitivityPanel.qml
+index 5a70e4b..b2ed49a 100644
+--- i/plugin/SensitivityPanel.qml
++++ w/plugin/SensitivityPanel.qml
+@@ -54,7 +54,7 @@ Item {
+ 
+       Label {
+         width: parent.width
+-        text: "Sensitivity"
++        text: "灵敏度"
+         font.pixelSize: Style.font.heading
+         font.bold: true
+       }
+@@ -62,7 +62,7 @@ Item {
+       Label {
+         width: parent.width
+         opacity: 0.6
+-        text: panel.stages.length === 1 ? "1 DPI level" : panel.stages.length + " DPI levels"
++        text: panel.stages.length + " 个 DPI 档位"
+         font.pixelSize: Style.font.caption
+       }
+     }
+@@ -72,7 +72,7 @@ Item {
+       spacing: Style.spacing.md
+ 
+       PanelSectionHeader {
+-        text: "DPI levels"
++        text: "DPI 档位"
+         foreground: Commons.Color.menu.text
+       }
+ 
+@@ -80,20 +80,20 @@ Item {
+         width: parent.width
+         opacity: 0.6
+         wrapMode: Text.Wrap
+-        text: "Drag a level to change it, or away from the bar to remove it. Click the bar to add a level. The DPI buttons step through the levels from low to high."
++        text: "拖动档位调整数值，拖离滑条即可删除；点击滑条添加档位。鼠标上的 DPI 键会从低到高依次切换。"
+       }
+ 
+       Row {
+         spacing: Style.spacing.lg
+ 
+         Label {
+-          text: "Current on mouse: " + (panel.liveDpi > 0 ? panel.liveDpi + " DPI" : "—")
++          text: "鼠标当前：" + (panel.liveDpi > 0 ? panel.liveDpi + " DPI" : "—")
+           color: Commons.Color.accent
+           font.bold: true
+         }
+ 
+         Label {
+-          text: "Saved default: " + (panel.draft ? panel.draft.defaultDpi + " DPI" : "—")
++          text: "已保存的默认值：" + (panel.draft ? panel.draft.defaultDpi + " DPI" : "—")
+           opacity: 0.6
+         }
+       }
+@@ -113,7 +113,7 @@ Item {
+ 
+         Label {
+           anchors.verticalCenter: parent.verticalCenter
+-          text: "Level " + (panel.current + 1)
++          text: "档位 " + (panel.current + 1)
+           font.bold: true
+         }
+ 
+@@ -130,7 +130,7 @@ Item {
+ 
+         Button {
+           anchors.verticalCenter: parent.verticalCenter
+-          text: "Set as default"
++          text: "设为默认"
+           bordered: true
+           enabled: panel.draft !== null && panel.currentDpi !== panel.draft.defaultDpi
+           opacity: enabled ? 1 : 0.4
+@@ -141,7 +141,7 @@ Item {
+ 
+         Button {
+           anchors.verticalCenter: parent.verticalCenter
+-          text: "Set as DPI shift"
++          text: "设为 DPI 切换"
+           bordered: true
+           enabled: panel.draft !== null && panel.currentDpi !== panel.draft.shiftDpi
+           opacity: enabled ? 1 : 0.4
+@@ -152,7 +152,7 @@ Item {
+ 
+         Button {
+           anchors.verticalCenter: parent.verticalCenter
+-          text: "Add level"
++          text: "添加档位"
+           iconText: "󰐕"
+           bordered: true
+           visible: panel.stages.length < 5
+@@ -169,7 +169,7 @@ Item {
+ 
+         Button {
+           anchors.verticalCenter: parent.verticalCenter
+-          text: "Remove"
++          text: "删除"
+           bordered: true
+           enabled: panel.stages.length > 1
+           opacity: enabled ? 1 : 0.4
+@@ -197,7 +197,7 @@ Item {
+       spacing: Style.spacing.md
+ 
+       PanelSectionHeader {
+-        text: "Report rate"
++        text: "回报率"
+         foreground: Commons.Color.menu.text
+       }
+ 
+@@ -213,7 +213,7 @@ Item {
+         width: parent.width
+         opacity: 0.6
+         wrapMode: Text.Wrap
+-        text: "How often the mouse reports its movement. Higher is smoother and costs a little more CPU."
++        text: "鼠标上报移动的频率。越高越流畅，CPU 占用也会略高。"
+       }
+     }
+   }
+diff --git i/plugin/tests/model.test.js w/plugin/tests/model.test.js
+index 3efa2f9..0483ccb 100644
+--- i/plugin/tests/model.test.js
++++ w/plugin/tests/model.test.js
+@@ -271,6 +271,19 @@ test("viewForSlot finds the view that shows a button", () => {
+   assert.equal(Model.viewForSlot(null, 0), -1)
+ })
+ 
++test("G604 callouts follow their label side and use physical control names", () => {
++  const views = [
++    { width: 1190, height: 2800, hotspots: [
++      { slot: 5, x: 0.5, y: 0.4, label_side: "left" },
++      { slot: 8, x: 0.6, y: 0.4, label_side: "right" }
++    ] }
++  ]
++  const layout = Model.calloutLayout(views, 400, 0, 40, 8)
++  assert.deepEqual(plain(layout.left.map((card) => card.slot)), [5])
++  assert.deepEqual(plain(layout.right.map((card) => card.slot)), [8])
++  assert.equal(Model.buttonName(0, true, ["Left button"]), "左键")
++})
++
+ test("factoryAction reads what use default puts back", () => {
+   const onboard = { factory: { buttons: ["left", "right", null], gshift_buttons: ["disabled"] } }
+   assert.equal(Model.factoryAction(onboard, "buttons", 1), "right")
+@@ -289,6 +302,26 @@ test("fitPictureHeight fits the width within bounds", () => {
+   assert.equal(Model.fitPictureHeight([], 50, 20, 100, 300), 300)
+ })
+ 
++test("system actions import only supported, unique keyboard shortcuts from Super+K", () => {
++  const actions = Model.systemActions([
++    "SUPER + K         → 快捷键",
++    "SUPER SHIFT + F   → 文件管理器",
++    "SUPER SHIFT + F   → 重复项",
++    "PRINT             → 截图",
++    "SUPER + RETURN    → 终端",
++    "SUPER + mouse_up  → 滚动",
++    "CAPS + A          → 不支持的修饰键",
++    "CTRL + XF86Eject  → 不支持的主键",
++    "F13               → HL.Dispatcher(exec_cmd),42"
++  ].join("\n"))
++  assert.deepEqual(plain(actions.map((action) => action.value)),
++    ["key:super+k", "key:shift+super+f", "key:printscreen", "key:super+enter"])
++  assert.equal(Model.actionSections(actions, "Super+K")[0].actions[0].label, "快捷键")
++  assert.equal(Model.actionGroups(actions)[0], "System")
++  const entries = [{ action: "key:super+k", name: "G4" }, { action: "key:super+f", name: "G5" }]
++  assert.deepEqual(plain(Model.assignedNames(entries, "key:super+k")), ["G4"])
++})
++
+ test("actionRows puts a header before each section", () => {
+   const rows = plain(
+     Model.actionRows([
+@@ -382,6 +415,14 @@ test("every keyboard shortcut is the picker's one shortcut entry", () => {
+ const QT = { SHIFT: 0x02000000, CTRL: 0x04000000, ALT: 0x08000000, META: 0x10000000 }
+ const scan = (evdev) => evdev + 8
+ 
++test("manual shortcuts reuse the recorded key names and canonical modifier order", () => {
++  assert.equal(Model.shortcutCombo("v", QT.META | QT.SHIFT), "shift+super+v")
++  assert.equal(Model.shortcutCombo("", QT.CTRL), "")
++  assert.deepEqual(plain(Model.shortcutSelection("ctrl+alt+f13")), { key: "f13", modifiers: QT.CTRL | QT.ALT })
++  assert.equal(Model.shortcutSelection("ctrl+f25").key, "")
++  assert.ok(Model.shortcutKeys().includes("esc"))
++})
++
+ test("recordKey turns physical keys into shortcuts", () => {
+   assert.deepEqual(plain(Model.recordKey(scan(20), QT.CTRL | QT.SHIFT)), {
+     combo: "ctrl+shift+t",
+diff --git i/src/assets.rs w/src/assets.rs
+index 006dc01..87f3c32 100644
+--- i/src/assets.rs
++++ w/src/assets.rs
+@@ -38,12 +38,31 @@ const G502X_BUTTON_NAMES: &[&str] = &[
+     "G1", "G2", "G3", "G4", "G6", "G5", "G10", "G11", "G9", "G8", "G7",
+ ];
+ 
++/// G604 factory bindings identify the 15 physical controls. Slot 15 has no control.
++const G604_BUTTON_NAMES: &[&str] = &[
++    "Left button",
++    "Right button",
++    "Wheel click",
++    "G4",
++    "G5",
++    "G6",
++    "G7",
++    "G8",
++    "G9",
++    "DPI −",
++    "DPI +",
++    "Wheel tilt left",
++    "Wheel tilt right",
++    "Wheel scroll down",
++    "Wheel scroll up",
++];
++
+ /// Depots whose button ids are checked against the device's onboard slots, with the
+-/// printed name of each slot's button. For these, `<depot>_g<N>_m1` is onboard slot N-1
+-/// (docs/hardware-tests.md).
++/// name of each slot's button (docs/hardware-tests.md).
+ const VERIFIED_DEPOTS: &[(&str, &[&str])] = &[
+     ("g502x", G502X_BUTTON_NAMES),
+     ("g502x_lightspeed", G502X_BUTTON_NAMES),
++    ("g604", G604_BUTTON_NAMES),
+ ];
+ 
+ #[derive(Debug, Error)]
+@@ -111,6 +130,8 @@ pub struct Hotspot {
+     pub slot: usize,
+     pub x: f64,
+     pub y: f64,
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub label_side: Option<&'static str>,
+ }
+ 
+ #[derive(Debug, Clone, Copy)]
+@@ -168,6 +189,12 @@ struct Assignment {
+     #[serde(rename = "slotId")]
+     slot_id: String,
+     marker: Point,
++    label: Option<LabelPosition>,
++}
++
++#[derive(Deserialize)]
++struct LabelPosition {
++    x: f64,
+ }
+ 
+ #[derive(Deserialize)]
+@@ -313,6 +340,14 @@ pub fn load(
+                         slot: onboard_slot(depot, &assignment.slot_id)?,
+                         x: assignment.marker.x / image.origin.width,
+                         y: assignment.marker.y / image.origin.height,
++                        label_side: if depot == "g604" {
++                            assignment
++                                .label
++                                .as_ref()
++                                .map(|label| if label.x < 0.0 { "left" } else { "right" })
++                        } else {
++                            None
++                        },
+                     })
+                 })
+                 .collect()
+@@ -336,10 +371,17 @@ pub fn load(
+     })
+ }
+ 
+-/// `<depot>_g<N>_m1` is onboard slot N-1 on verified depots; wheel ids have no slot.
++/// `<depot>_g<N>_m1` is onboard slot N-1 on verified depots.
+ /// Some depots spell their name with hyphens in button ids: `g502x_lightspeed` names
+ /// its buttons `g502x-lightspeed_g<N>_m1`.
+ fn onboard_slot(depot: &str, slot_id: &str) -> Option<usize> {
++    if depot == "g604" {
++        match slot_id {
++            "g604_scroll1_m1" => return Some(14),
++            "g604_scroll2_m1" => return Some(13),
++            _ => {}
++        }
++    }
+     let number = slot_id
+         .strip_prefix(depot)
+         .or_else(|| slot_id.strip_prefix(depot.replace('_', "-").as_str()))?
+@@ -348,7 +390,9 @@ fn onboard_slot(depot: &str, slot_id: &str) -> Option<usize> {
+     if number.is_empty() || !number.bytes().all(|b| b.is_ascii_digit()) {
+         return None;
+     }
+-    number.parse::<usize>().ok()?.checked_sub(1)
++    let slot = number.parse::<usize>().ok()?.checked_sub(1)?;
++    // Logitech's G604 metadata only uses G1–G13; the wheel uses separate IDs.
++    (depot != "g604" || slot < 13).then_some(slot)
+ }
+ 
+ /// The depot becomes a directory name and the asset path part of a URL.
+@@ -539,7 +583,8 @@ mod tests {
+             vec![Hotspot {
+                 slot: 0,
+                 x: 0.25,
+-                y: 0.25
++                y: 0.25,
++                label_side: None,
+             }]
+         );
+         assert_eq!(picture.views[1].hotspots[0].slot, 3);
+@@ -645,6 +690,22 @@ mod tests {
+         assert_eq!(slots, [vec![0], vec![3]]);
+     }
+ 
++    #[test]
++    fn g604_maps_wheel_directions_and_keeps_the_asset_label_side() {
++        let dir = TempDir::new("g604");
++        let files = host("g604", FRONT);
++        let requests = RefCell::new(Vec::new());
++        let picture = load(&dir.0, 0xC099, ONLINE, serve(&files, &requests)).unwrap();
++        assert!(picture.slots_verified);
++        assert_eq!(picture.button_names, G604_BUTTON_NAMES);
++        assert_eq!(picture.views[0].hotspots[0].label_side, Some("left"));
++        assert_eq!(picture.views[0].hotspots[1].slot, 14);
++        assert_eq!(onboard_slot("g604", "g604_scroll2_m1"), Some(13));
++        assert_eq!(onboard_slot("g604", "g604_g13_m1"), Some(12));
++        assert_eq!(onboard_slot("g604", "g604_g14_m1"), None);
++        assert_eq!(onboard_slot("g604", "g604_g16_m1"), None);
++    }
++
+     #[test]
+     fn unverified_devices_get_pictures_without_slots() {
+         let dir = TempDir::new("unverified");
+diff --git i/src/device.rs w/src/device.rs
+index af646c3..3db52a9 100644
+--- i/src/device.rs
++++ w/src/device.rs
+@@ -186,6 +186,17 @@ impl Session {
+     ///
+     /// `software_id` is [`CLI_SOFTWARE_ID`] or [`DAEMON_SOFTWARE_ID`].
+     pub async fn open(software_id: u8) -> Result<Self, SessionError> {
++        // Silky Omarchy: with a wired and a wireless mouse both connected, `wireless` in
++        // `$XDG_CONFIG_HOME/omalogi/device` picks the one behind a receiver; otherwise, or
++        // when there is none, the wired one is used as upstream does.
++        if prefer_wireless() {
++            if let Ok(Some((mouse, channel))) = crate::wireless::open().await {
++                let index = mouse.route.device_index();
++                let mut session = Self::on_channel(channel, index, mouse.model, mouse.path).await?;
++                session.consent = crate::consent::default_path();
++                return Ok(session);
++            }
++        }
+         let mut session = match hidraw::find_supported() {
+             Ok(node) => {
+                 let path = node.path.display().to_string();
+@@ -798,3 +809,15 @@ mod tests {
+         assert_eq!(to_hex(&[0x00, 0x0A, 0xFF]), "000aff");
+     }
+ }
++
++/// Silky Omarchy: whether `$XDG_CONFIG_HOME/omalogi/device` (or `~/.config/omalogi/device`)
++/// asks for the mouse behind a receiver first.
++#[must_use]
++pub fn prefer_wireless() -> bool {
++    let base = std::env::var_os("XDG_CONFIG_HOME")
++        .filter(|dir| !dir.is_empty())
++        .map(std::path::PathBuf::from)
++        .or_else(|| std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config")));
++    base.and_then(|dir| std::fs::read_to_string(dir.join("omalogi/device")).ok())
++        .is_some_and(|text| text.trim() == "wireless")
++}
+diff --git i/src/hidraw.rs w/src/hidraw.rs
+index 9aadf54..a6c2d8c 100644
+--- i/src/hidraw.rs
++++ w/src/hidraw.rs
+@@ -97,7 +97,9 @@ pub const WIRELESS_DEVICES: &[SupportedDevice] = &[
+     untested(0x4074, "G305"),
+     untested(0x4079, "G Pro Wireless"),
+     untested(0x407F, "G502 Lightspeed"),
+-    untested(0x4085, "G604"),
++    // Silky Omarchy: tested through its Lightspeed receiver on an aarch64 laptop (2026-11-17):
++    // `omalogi check` passes all 29 checks and edits read back right. Layout (1, 3) is verified.
++    verified(0x4085, "G604"),
+     untested(0x4086, "G703 Hero"),
+     untested(0x4087, "G903 Hero"),
+     untested(0x4093, "G Pro X Superlight"),
+@@ -454,7 +456,9 @@ mod tests {
+         assert_eq!(ids.len(), WIRELESS_DEVICES.len());
+         assert_eq!(WIRELESS_DEVICES[0].product_id, 0x409F);
+         assert!(WIRELESS_DEVICES[0].verified);
+-        assert_eq!(WIRELESS_DEVICES.iter().filter(|d| d.verified).count(), 1);
++        // Silky Omarchy: plus the G604, tested on real hardware here.
++        let verified: Vec<u16> = WIRELESS_DEVICES.iter().filter(|d| d.verified).map(|d| d.product_id).collect();
++        assert_eq!(verified, [0x409F, 0x4085]);
+         let lightspeed = SUPPORTED_DEVICES
+             .iter()
+             .find(|device| device.product_id == 0xC08D)
+diff --git i/src/main.rs w/src/main.rs
+index 057e990..5833f11 100644
+--- i/src/main.rs
++++ w/src/main.rs
+@@ -275,16 +275,29 @@ fn print_actions(json: bool) -> Result<(), Box<dyn Error>> {
+ }
+ 
+ async fn show_picture(json: bool, options: assets::Options) -> Result<(), Box<dyn Error>> {
+-    let model = match find_supported() {
+-        Ok(node) => node.device,
+-        // No wired mouse: a known mouse behind a receiver, found through OpenLogi.
+-        Err(HidrawError::NotFound) => omalogi::wireless::find()
+-            .await?
+-            .into_iter()
+-            .next()
++    // Silky Omarchy: the same mouse `Session::open` picks when the wireless one is preferred.
++    let preferred = if omalogi::device::prefer_wireless() {
++        omalogi::wireless::find()
++            .await
++            .ok()
++            .and_then(|mice| mice.into_iter().next())
+             .map(|mouse| mouse.model)
+-            .ok_or(HidrawError::NotFound)?,
+-        Err(error) => return Err(error.into()),
++    } else {
++        None
++    };
++    let model = match preferred {
++        Some(model) => model,
++        None => match find_supported() {
++            Ok(node) => node.device,
++            // No wired mouse: a known mouse behind a receiver, found through OpenLogi.
++            Err(HidrawError::NotFound) => omalogi::wireless::find()
++                .await?
++                .into_iter()
++                .next()
++                .map(|mouse| mouse.model)
++                .ok_or(HidrawError::NotFound)?,
++            Err(error) => return Err(error.into()),
++        },
+     };
+     let picture = assets::picture(model.product_id, options)?;
+     output(json, &picture, || {

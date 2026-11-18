@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Opens Omalogi (罗技鼠标) as its own window, or focuses it when it is already open.
+# The app is the Omalogi shell plugin run in a small Quickshell config (omalogi-app/shell.qml);
+# see docs/14-omalogi.md.
+set -euo pipefail
+
+app_dir="${XDG_DATA_HOME:-$HOME/.local/share}/silky-omarchy/omalogi-app"
+class=io.github.elberacasa.omalogi
+
+if hyprctl clients -j 2>/dev/null | grep -q "\"class\": \"$class\""; then
+  # Lua config: hyprctl dispatch takes a dispatcher expression (focus also switches to its workspace)
+  exec hyprctl dispatch "hl.dsp.focus({ window = \"class:^(${class//./\\\\.})\$\" })" >/dev/null
+fi
+[[ -f "$app_dir/shell.qml" ]] || { echo "silky-omalogi: run scripts/install-omalogi.sh first" >&2; exit 1; }
+exec qs -n -d -p "$app_dir"

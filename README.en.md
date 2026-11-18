@@ -24,6 +24,7 @@ To see every interface and interaction change grouped by where you feel it (menu
 | 10 | Shortcuts | ✅ | Keys MacShell and Omarchy both use go to MacShell only, Omarchy's actions move to free keys; Super+K becomes a searchable macOS 27-style shortcut panel that runs what you pick |
 | 11 | Menu glass | ✅ | Omarchy's own menus (Super+Esc, Super+Ctrl+M, clipboard, emoji) become macOS 27 frosted glass that switches light / dark live |
 | 13 | Window overview | ✅ | Four fingers up on the touchpad shows every window of the workspace, four fingers down every window of the current app; linear, follows the fingers, interruptible and reversible (plugin + MacShell component) |
+| 14 | [Logitech mouse](docs/en/14-omalogi.md) | ✅ | Standalone Omalogi window with a Chinese UI, G604 button diagrams, onboard profiles, a manual key picker, Super+K system shortcuts, and an ARM source build |
 
 ## Quick start
 
@@ -42,6 +43,7 @@ python3 scripts/install-macshell-overview.py
 ./scripts/install-wowtype-glass.sh
 ./scripts/install-shortcuts.sh
 ./scripts/install-menu-glass.sh
+./scripts/install-omalogi.sh
 ```
 
 Every script backs up the files it changes first. After installing or upgrading, run the self-check: it confirms item by item that the menu bar, Dock, plugins, lock screen, voice overlay and so on are in the expected state, and prints the fix for anything that is not:
@@ -68,6 +70,7 @@ config/systemd/   User services silky-sleep-lock, silky-ime-theme, silky-menu-gl
 plymouth/         Boot unlock theme and preview image
 voice-overlay/    WowType voice overlay (Quickshell + D-Bus bridge)
 keys-panel/       Super+K shortcut panel Silky Keys (Quickshell)
+omalogi-app/      Logitech mouse window (the Omalogi plugin with its own app id)
 nautilus/         Nautilus context-menu extension (nautilus-python)
 wowtype-glass/    WowType Silky Glass candidate skin generator and light/dark switcher
 scripts/          Install scripts
@@ -97,3 +100,4 @@ docs/             One document per module (English in docs/en/)
 - [11 · Omarchy's own menus: macOS 27 glass, light / dark](docs/en/11-menu-glass.md)
 - [12 · UI interaction overview](docs/en/12-ui-interactions.md)
 - [13 · Four fingers up / down: window overview](docs/en/13-window-overview.md)
+- [14 · Omalogi: G604 buttons, onboard profiles, and system shortcuts](docs/en/14-omalogi.md)
