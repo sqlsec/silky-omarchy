@@ -125,6 +125,7 @@ done
 python3 "$repo_root/scripts/tune-calendar.py" "$staged_shell/MacBar.qml"
 python3 "$repo_root/scripts/tune-display-controls.py" "$staged_shell/MacBar.qml"
 python3 "$repo_root/scripts/tune-display-settings.py" "$staged_shell"
+python3 "$repo_root/scripts/tune-window-tiling.py" "$staged_shell/MacBar.qml"
 # Volume sliders play a tap at the level they set.
 python3 "$repo_root/scripts/tune-volume-feedback.py" "$staged_shell/MacBar.qml"
 # Live microphone level under the input slider on the Sound page.

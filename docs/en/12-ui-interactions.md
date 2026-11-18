@@ -58,6 +58,8 @@ The Control Center's new "Display" page has an Appearance switch, so you can swi
 - Floating windows get a macOS round traffic-light title bar ([04](04-macos-theme.md#traffic-light-title-bar))
 - MacShell's own windows (Settings, About This Mac) keep their size, are centred, and open without a white flash at the edges ([02](02-macshell.md))
 - The Settings window's navigation list: 140 px smooth scrolling per wheel notch, native inertia on the touchpad ([02 · Settings window](02-macshell.md#dock-icons-and-the-settings-window))
+- Use `Super+T` for split tiling on the current workspace. Use `Super+Alt+T` for single-window tiling and press it again to return to floating and bring back the displaced windows. ([10 · Super+T](10-shortcuts.md#supert))
+- Switching back to floating with either shortcut keeps the window’s top edge below the menu bar. ([10 · Super+T](10-shortcuts.md#supert))
 
 ## Gestures (touchpad / touchscreen)
 

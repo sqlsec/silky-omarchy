@@ -48,6 +48,18 @@ Omarchy actions that moved:
 
 Every new key was checked to be free in the current configuration first. Super+C / Super+X (universal copy / cut) do not clash and stay as they are.
 
+### Super+T
+
+Use `Super+T` on each of two windows to tile them on the same workspace. On a fullscreen or maximized tiled window, the first press returns it to the split layout. An app can retain its fullscreen presentation within its tile. The floating and tiling actions in MacShell’s View and Window menus use the same action.
+
+Hyprland restores a window's floating size and position when switching back to floating. This could put WeChat under the menu bar. If the restored position is too close to the menu bar, the shortcut places the window 4 logical pixels below the monitor’s reserved top edge and reduces its height if needed. Press `Super+T` on the main WeChat window to float it, check that its top edge clears the menu bar, then press it again to return to tiling.
+
+If the workspace uses the floating layout, use `Super+Shift+L` to select Tiling so new windows automatically join the split. In the tiling layout, `Super+J` switches between horizontal and vertical splits.
+
+Use `Super+Alt+T` to tile a window on its own. Silky moves the other windows to the next workspace on the same display, wrapping from the last workspace to the first. Focus the same window on the original workspace and press `Super+Alt+T` again to float it and return the windows that are still on the destination workspace.
+
+Silky skips windows that have since been closed, moved to another workspace, pinned, or grouped with unrelated windows. It records the moves when you tile the window and clears that history when Hyprland reloads its configuration or restarts.
+
 ## How it works
 
 | File | Role |
@@ -99,6 +111,8 @@ The doctor's clash check exports every bind from the registry, groups them by "m
 - Do not use `pkill -f 'qs -c SilkyKeys'`: the command line of the shell running it contains that string too, so it kills itself. The installer uses `pkill -x -f 'qs -c SilkyKeys( -d)?'`.
 
 ## Rollback
+
+To undo the floating-window placement fix alone, restore the previous `~/.config/hypr/silky-shortcuts.lua.bak.*` and run `hyprctl reload`. The installer creates a backup when it replaces a shortcut Lua file whose contents differ.
 
 ```bash
 rm ~/.config/hypr/silky-keys-registry.lua ~/.config/hypr/silky-shortcuts.lua ~/.config/hypr/silky-keys.lua

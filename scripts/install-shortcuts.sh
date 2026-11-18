@@ -19,7 +19,13 @@ grep -q 'require("hypr.macshell")' "$config" || printf 'Note: MacShell is not lo
 mkdir -p "$panel_dir"
 install -m 644 "$repo_root/keys-panel/shell.qml" "$panel_dir/shell.qml"
 for name in silky-keys-registry silky-shortcuts silky-keys; do
-  install -m 644 "$repo_root/config/hypr/$name.lua" "$hypr_dir/$name.lua"
+  source_file="$repo_root/config/hypr/$name.lua"
+  destination="$hypr_dir/$name.lua"
+  if [[ -f $destination ]] && ! cmp -s "$source_file" "$destination"; then
+    backup=$(mktemp "$destination.bak.XXXXXXXX")
+    cp -p "$destination" "$backup"
+  fi
+  install -m 644 "$source_file" "$destination"
 done
 
 cp -a "$config" "$config.bak.$(date +%Y%m%d-%H%M%S)"

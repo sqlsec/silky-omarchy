@@ -21,7 +21,7 @@ To see every interface and interaction change grouped by where you feel it (menu
 | 07 | Lock and boot screens | ✅ | Shortcuts, menus, idle and lid close all use MacLock; the boot disk-unlock screen looks like macOS FileVault |
 | 08 | File manager context menu | ✅ | Nautilus right-click "Copy Path", "Open in Terminal", "Extract Here / Extract to…" |
 | 09 | Frosted candidate window | ✅ | Rounded frosted WowType candidate skin that follows dark/light mode; fixes the ghosting candidate bar in WeChat |
-| 10 | Shortcuts | ✅ | Keys MacShell and Omarchy both use go to MacShell only, Omarchy's actions move to free keys; Super+K becomes a searchable macOS 27-style shortcut panel that runs what you pick |
+| 10 | Shortcuts | ✅ | Keys MacShell and Omarchy both use go to MacShell only, Omarchy's actions move to free keys; Super+K becomes a searchable macOS 27-style shortcut panel that runs what you pick. `Super+T` splits windows on the current workspace, and `Super+Alt+T` toggles single-window tiling with window restoration |
 | 11 | Menu glass | ✅ | Omarchy's own menus (Super+Esc, Super+Ctrl+M, clipboard, emoji) become macOS 27 frosted glass that switches light / dark live |
 | 13 | Window overview | ✅ | Four fingers up on the touchpad or touch screen shows every window of the workspace, four fingers down every window of the current app; linear, follows the fingers, interruptible and reversible (plugin + MacShell component) |
 | 14 | [Logitech mouse](docs/en/14-omalogi.md) | ✅ | Standalone Omalogi window with a Chinese UI, G604 button diagrams, onboard profiles, a manual key picker, Super+K system shortcuts, and an ARM source build |

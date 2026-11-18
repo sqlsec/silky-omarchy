@@ -59,6 +59,8 @@ When it is done, restart MacShell from the "Tools" page of MacShell's settings.
 
 In Smart mode, the Dock hides when a visible window on its screen overlaps it, whether the window is floating or tiled. It returns when the window moves away. Move the pointer to the bottom edge to reveal it temporarily.
 
+With Silky shortcuts installed, the floating and tiling actions in MacShell’s View and Window menus behave like `Super+T`, keeping windows on the same workspace for split tiling. ([10 · Super+T](10-shortcuts.md#supert))
+
 ### Applying QML updates
 
 The menu bar and the Dock share one Quickshell instance, so saving menu-bar code made the automatic reload rebuild the Dock too. The Silky optimization script for 0.5.1 turns off the QML file watcher. On a running 0.5.2 you can apply just that setting:
