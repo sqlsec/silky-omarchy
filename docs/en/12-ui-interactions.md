@@ -66,7 +66,7 @@ The Control Center's new "Display" page has an Appearance switch, so you can swi
 - Switching back to floating with either shortcut keeps the window’s top edge below the menu bar. ([10 · Super+T](10-shortcuts.md#supert))
 - Pictures and videos opened in WeChat always appear in a centred floating viewer instead of being tiled into the split. ([10](10-shortcuts.md#wechats-image-viewer-always-floats))
 - The Logitech mouse editor (Omalogi) is a normal window: centred floating 1280×700 (clear of the Dock), tiles / goes full screen, shows in Alt+Tab, and no longer stays on top across workspaces; opening it again only focuses it; with wired and wireless mice both connected, switch between them at the top right ([14 · A real window](14-omalogi.md#a-real-window))
-- Remmina remote desktop shows Simplified Chinese, and its main window uses borderless title bar buttons, a grid-free connection list and smaller secondary text. See [Remmina in Simplified Chinese with a macOS look](04-macos-theme.md#remmina).
+- Remmina remote desktop shows Simplified Chinese, and its main and connection windows use MacShell glass that follows light / dark live. The connection toolbar moves to the top with traffic lights and the connection name, drags the window from empty title space, thin line icons and plain tooltips, rarely used actions in `⋯`, and no tab bar for a single session. The main list selects rows with a rounded accent pill. See [Remmina in Simplified Chinese with a macOS look](04-macos-theme.md#remmina).
 
 ## Gestures (touchpad / touchscreen)
 

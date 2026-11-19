@@ -1,28 +1,66 @@
 /*
- * Silky Remmina: macOS-style polish for the Remmina main window.
- * Loaded only by Remmina through GTK_THEME=Silky-Remmina-{Dark,Light}
- * (see bin/silky-remmina); every other GTK3 app keeps stock MacTahoe.
- * Colours come from the imported MacTahoe palette, so one file serves both
- * appearances.
+ * Silky Remmina: macOS-style polish for Remmina, in MacShell glass.
+ * Loaded only into Remmina by the silky-remmina GTK3 module (see
+ * plugins/silky-remmina), on top of whichever MacTahoe theme is active, so
+ * light and dark follow the system live. The module tags Remmina's windows:
+ *   .silky-glass  main / connection window with an RGBA visual (Hyprland blurs behind it)
+ *   .silky-dark / .silky-light  current appearance
+ * and defines @silky_accent from MacShell's accent colour.
+ * The module reloads this file when it changes on disk.
  */
 
-/* Compact type scale, close to macOS 13 px body text. */
-window.background {
+/* MacShell glass: smoky dark / frosted white, a little more opaque than menus
+ * because Remmina is a working window. */
+@define-color silky_glass_dark rgba(28, 28, 30, 0.80);
+@define-color silky_glass_light rgba(246, 246, 248, 0.82);
+@define-color silky_bar_dark rgba(28, 28, 30, 0.42);
+@define-color silky_bar_light rgba(255, 255, 255, 0.46);
+@define-color silky_rim_dark rgba(255, 255, 255, 0.10);
+@define-color silky_rim_light rgba(0, 0, 0, 0.08);
+
+/* ---------- shared ---------- */
+
+window.silky-glass {
   font-size: 10pt;
 }
 
-/* Unified toolbar: borderless icon buttons with a soft hover plate. */
-headerbar {
-  min-height: 40px;
-  padding: 0 10px;
+window.silky-glass.silky-dark.background {
+  background-color: @silky_glass_dark;
 }
 
-headerbar .title {
+window.silky-glass.silky-light.background {
+  background-color: @silky_glass_light;
+}
+
+/* ---------- main window ---------- */
+
+#remmina-main-window headerbar {
+  min-height: 40px;
+  padding: 0 10px;
+  border: none;
+  box-shadow: none;
+  background-color: transparent;
+  background-image: none;
+}
+
+/* The CSD title bar is not covered by the window background; tint it the same. */
+#remmina-main-window.silky-dark headerbar {
+  background-color: @silky_glass_dark;
+  box-shadow: inset 0 -1px @silky_rim_dark;
+}
+
+#remmina-main-window.silky-light headerbar {
+  background-color: @silky_glass_light;
+  box-shadow: inset 0 -1px @silky_rim_light;
+}
+
+#remmina-main-window headerbar .title {
   font-size: 10pt;
   font-weight: 600;
 }
 
-headerbar button:not(.titlebutton) {
+/* Unified toolbar: borderless icon buttons with a soft hover plate. */
+#remmina-main-window headerbar button:not(.titlebutton) {
   min-height: 22px;
   min-width: 22px;
   margin: 8px 1px;
@@ -35,97 +73,125 @@ headerbar button:not(.titlebutton) {
   color: alpha(@theme_fg_color, 0.72);
 }
 
-headerbar button:not(.titlebutton):hover {
+#remmina-main-window headerbar button:not(.titlebutton):hover {
   background-color: alpha(@theme_fg_color, 0.08);
   color: @theme_fg_color;
 }
 
-headerbar button:not(.titlebutton):active,
-headerbar button:not(.titlebutton):checked {
-  background-color: alpha(@theme_fg_color, 0.09);
+#remmina-main-window headerbar button:not(.titlebutton):active,
+#remmina-main-window headerbar button:not(.titlebutton):checked {
+  background-color: alpha(@theme_fg_color, 0.10);
   color: @theme_fg_color;
 }
 
-headerbar button:not(.titlebutton):backdrop {
+#remmina-main-window headerbar button:not(.titlebutton):backdrop {
   color: alpha(@theme_fg_color, 0.4);
 }
 
-/* Quick-connect bar: a slim toolbar strip with a macOS search field. */
-searchbar > revealer > box {
-  padding: 6px 12px;
+/* Quick-connect bar: a slim strip with a macOS search field. */
+#remmina-main-window searchbar,
+#remmina-main-window searchbar > revealer > box {
   border: none;
-  border-bottom: 1px solid @borders;
   box-shadow: none;
-  background-color: @theme_bg_color;
+  background-color: transparent;
   background-image: none;
 }
 
-searchbar entry,
-searchbar combobox button {
+#remmina-main-window searchbar > revealer > box {
+  padding: 6px 12px;
+}
+
+#remmina-main-window searchbar entry,
+#remmina-main-window searchbar combobox button {
   min-height: 24px;
   padding: 0 8px;
-  border: 1px solid alpha(@theme_fg_color, 0.1);
+  border: 1px solid alpha(@theme_fg_color, 0.08);
   border-radius: 7px;
   box-shadow: none;
-  background-color: alpha(@theme_fg_color, 0.06);
+  background-color: alpha(@theme_fg_color, 0.07);
   background-image: none;
 }
 
-searchbar entry {
+#remmina-main-window searchbar entry {
   margin-left: 6px;
 }
 
-searchbar entry:focus {
-  border-width: 1px;
-  border-color: alpha(@theme_selected_bg_color, 0.9);
-  box-shadow: 0 0 0 3px alpha(@theme_selected_bg_color, 0.3);
+#remmina-main-window searchbar entry image.left {
+  color: alpha(@theme_fg_color, 0.5);
 }
 
-searchbar combobox button:hover {
-  background-color: alpha(@theme_fg_color, 0.1);
+#remmina-main-window searchbar entry:focus {
+  border-color: alpha(@silky_accent, 0.9);
+  box-shadow: 0 0 0 3px alpha(@silky_accent, 0.3);
 }
 
-/* Connection list: no grid, airy rows, quiet column headers. */
-treeview.view {
+#remmina-main-window searchbar combobox button:hover {
+  background-color: alpha(@theme_fg_color, 0.11);
+}
+
+/* Connection list on glass: no grid, airy rows, quiet column headers, and a
+ * rounded selection pill painted by the module. */
+#remmina-main-window scrolledwindow,
+#remmina-main-window viewport,
+#remmina-main-window treeview.view {
+  background-color: transparent;
+}
+
+#remmina-main-window treeview.view {
   -GtkTreeView-grid-line-width: 0;
   -GtkTreeView-horizontal-separator: 14;
   -GtkTreeView-vertical-separator: 10;
-  background-color: @theme_base_color;
 }
 
-treeview.view:selected {
-  background-color: @theme_selected_bg_color;
-  color: @theme_selected_fg_color;
+#remmina-main-window treeview.view:hover {
+  background-color: transparent;
 }
 
-treeview.view:selected:backdrop {
-  background-color: alpha(@theme_fg_color, 0.14);
+treeview.silky-pill-list.view:selected,
+treeview.silky-pill-list.view:selected:focus,
+treeview.silky-pill-list.view:selected:backdrop {
+  background-color: transparent;
+  background-image: none;
+}
+
+treeview.silky-pill-list.view:selected {
+  color: #ffffff;
+}
+
+treeview.silky-pill-list.view:selected:backdrop {
   color: @theme_fg_color;
 }
 
-treeview.view header button {
+#remmina-main-window treeview.view header button {
   min-height: 0;
   padding: 5px 8px;
   border: none;
-  border-bottom: 1px solid @borders;
   box-shadow: inset -1px 0 alpha(@theme_fg_color, 0.06);
-  background-color: @theme_base_color;
+  background-color: transparent;
   background-image: none;
   font-size: 9pt;
   font-weight: normal;
   color: alpha(@theme_fg_color, 0.55);
 }
 
-treeview.view header button:hover {
+#remmina-main-window.silky-dark treeview.view header button {
+  border-bottom: 1px solid @silky_rim_dark;
+}
+
+#remmina-main-window.silky-light treeview.view header button {
+  border-bottom: 1px solid @silky_rim_light;
+}
+
+#remmina-main-window treeview.view header button:hover {
   color: @theme_fg_color;
 }
 
-treeview.view header button:last-child {
+#remmina-main-window treeview.view header button:last-child {
   box-shadow: none;
 }
 
 /* Status bar: small secondary text, like a Finder footer. */
-statusbar {
+#remmina-main-window statusbar {
   min-height: 0;
   margin: 0;
   padding: 2px 6px;
@@ -133,4 +199,203 @@ statusbar {
   background-color: transparent;
   font-size: 9pt;
   color: alpha(@theme_fg_color, 0.55);
+}
+
+/* ---------- connection window ---------- */
+
+/* Unified toolbar strip across the top, frosted over the blur. */
+window.silky-glass toolbar.silky-toolbar {
+  padding: 3px 8px;
+  border: none;
+  background-color: transparent;
+  background-image: none;
+}
+
+window.silky-glass toolbar.silky-unified {
+  min-height: 38px;
+  padding: 0 10px 0 14px;
+}
+
+window.silky-dark toolbar.silky-unified {
+  background-color: @silky_bar_dark;
+  box-shadow: inset 0 -1px @silky_rim_dark;
+}
+
+window.silky-light toolbar.silky-unified {
+  background-color: @silky_bar_light;
+  box-shadow: inset 0 -1px @silky_rim_light;
+}
+
+toolbar.silky-toolbar button {
+  min-height: 26px;
+  min-width: 28px;
+  margin: 0;
+  padding: 0 4px;
+  border: none;
+  border-radius: 7px;
+  box-shadow: none;
+  background-color: transparent;
+  background-image: none;
+  color: alpha(@theme_fg_color, 0.7);
+}
+
+toolbar.silky-toolbar button:hover {
+  background-color: alpha(@theme_fg_color, 0.09);
+  color: @theme_fg_color;
+}
+
+toolbar.silky-toolbar button:active {
+  background-color: alpha(@theme_fg_color, 0.14);
+}
+
+/* Toggled tools (fullscreen, scaling, keyboard grab…) light up in the accent. */
+toolbar.silky-toolbar button:checked {
+  background-color: alpha(@silky_accent, 0.18);
+  color: @silky_accent;
+}
+
+toolbar.silky-toolbar button:disabled {
+  background-color: transparent;
+  color: alpha(@theme_fg_color, 0.26);
+}
+
+toolbar.silky-toolbar button:backdrop {
+  color: alpha(@theme_fg_color, 0.45);
+}
+
+toolbar.silky-toolbar button:checked:backdrop {
+  color: alpha(@silky_accent, 0.6);
+}
+
+/* Remmina's small dropdowns beside full screen and scaling, now chevrons. */
+toolbar.silky-toolbar button.silky-dropdown {
+  min-width: 14px;
+  margin-left: -3px;
+  padding: 3px 1px;
+}
+
+/* Traffic lights, as on the MacShell titlebars: symbols show on hover. */
+.silky-lights {
+  margin-right: 14px;
+}
+
+toolbar.silky-toolbar button.silky-light-button {
+  min-width: 12px;
+  min-height: 12px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.10);
+  background-image: none;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+toolbar.silky-toolbar button.silky-light-button image {
+  opacity: 0;
+}
+
+toolbar.silky-toolbar .silky-lights:hover button.silky-light-button image {
+  opacity: 1;
+}
+
+toolbar.silky-toolbar button.silky-light-button.close {
+  background-color: #ff5f57;
+}
+
+toolbar.silky-toolbar button.silky-light-button.maximize {
+  background-color: #28c840;
+}
+
+toolbar.silky-toolbar button.silky-light-button:active {
+  box-shadow: inset 0 0 0 12px rgba(0, 0, 0, 0.18);
+}
+
+window.silky-dark:backdrop toolbar.silky-toolbar button.silky-light-button {
+  background-color: rgba(255, 255, 255, 0.16);
+  box-shadow: none;
+}
+
+window.silky-light:backdrop toolbar.silky-toolbar button.silky-light-button {
+  background-color: rgba(0, 0, 0, 0.13);
+  box-shadow: none;
+}
+
+.silky-title {
+  font-weight: 600;
+  color: @theme_fg_color;
+}
+
+.silky-title:backdrop {
+  color: alpha(@theme_fg_color, 0.5);
+}
+
+/* Tabs (only shown with two or more sessions): a segmented strip on glass. */
+window.silky-glass notebook {
+  border: none;
+  background-color: transparent;
+}
+
+window.silky-glass notebook > header {
+  padding: 4px 10px;
+  border: none;
+  background-color: transparent;
+  background-image: none;
+}
+
+window.silky-dark notebook > header {
+  box-shadow: inset 0 -1px @silky_rim_dark;
+}
+
+window.silky-light notebook > header {
+  box-shadow: inset 0 -1px @silky_rim_light;
+}
+
+window.silky-glass notebook > header tab {
+  min-height: 22px;
+  margin: 0 2px;
+  padding: 2px 10px;
+  border: none;
+  border-radius: 7px;
+  box-shadow: none;
+  background-color: transparent;
+  color: alpha(@theme_fg_color, 0.6);
+}
+
+window.silky-glass notebook > header tab:hover {
+  background-color: alpha(@theme_fg_color, 0.07);
+  color: @theme_fg_color;
+}
+
+window.silky-glass notebook > header tab:checked {
+  background-color: alpha(@theme_fg_color, 0.12);
+  color: @theme_fg_color;
+}
+
+window.silky-glass notebook > header tab button {
+  min-width: 16px;
+  min-height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  opacity: 0.55;
+}
+
+window.silky-glass notebook > header tab button:hover {
+  background-color: alpha(@theme_fg_color, 0.12);
+  opacity: 1;
+}
+
+window.silky-glass notebook > stack:not(:only-child) {
+  background-color: transparent;
+}
+
+/* ---------- menus opened from the toolbar ---------- */
+
+menu.silky-more-menu menuitem:hover {
+  background-color: @silky_accent;
+  color: #ffffff;
 }

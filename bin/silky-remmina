@@ -1,13 +1,17 @@
 #!/bin/sh
-# Launch Remmina in Simplified Chinese with the Silky macOS stylesheet.
-# The theme follows the current MacTahoe appearance at launch; with any other
-# GTK theme Remmina keeps the system theme and only the language changes.
+# Launch Remmina in Simplified Chinese with the Silky macOS look.
+# The silky-remmina GTK3 module (plugins/silky-remmina) is loaded only into
+# Remmina: it layers the Silky stylesheet and glass over whichever MacTahoe
+# theme is active, so Remmina follows light / dark live. The module removes
+# itself from GTK_MODULES so programs Remmina starts do not load it.
 set -eu
 
-case $(gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null || true) in
-  "'MacTahoe-Dark'") GTK_THEME=Silky-Remmina-Dark; export GTK_THEME ;;
-  "'MacTahoe-Light'") GTK_THEME=Silky-Remmina-Light; export GTK_THEME ;;
-esac
+module_dir="${XDG_DATA_HOME:-$HOME/.local/share}/silky-remmina/gtk-3.0"
+if [ -f "$module_dir/modules/libsilky-remmina.so" ]; then
+  GTK_PATH="$module_dir${GTK_PATH:+:$GTK_PATH}"
+  GTK_MODULES="silky-remmina${GTK_MODULES:+:$GTK_MODULES}"
+  export GTK_PATH GTK_MODULES
+fi
 
 unset LC_ALL
 LANGUAGE=zh_CN:en

@@ -104,50 +104,58 @@ systemctl --user is-active silky-foot-glass.service
 
 ## Remmina 简体中文与 macOS 外观
 
-Remmina 1.4.44 自带简体中文翻译，但系统语言是 `en_US`，所以界面一直是英文。安装后，从启动器、Dock、`rdp://` 链接或托盘小程序打开 Remmina，菜单、列标题和对话框都显示简体中文。macOS Tahoe 主题下，主窗口还有以下变化：
+Remmina 1.4.44 自带简体中文翻译，但系统语言是 `en_US`，所以界面一直是英文。安装后，无论从启动器、Dock、`rdp://` 链接还是托盘小程序打开 Remmina，菜单、列标题和对话框都显示简体中文。macOS Tahoe 主题下还有以下变化：
 
-- 标题栏按钮不再是灰色圆底，改成无边框图标，指针悬停或按下时才出现圆角底色；标题使用 10pt 半粗体。
-- 快速连接栏变薄，协议下拉框和地址栏都用 7 px 圆角，聚焦时有一圈柔和的强调色光晕。
-- 连接列表去掉表格网格线，行距加大；列标题改用小号常规字重的次要色；页脚状态栏的文字也缩小、变淡，不再显示单独的底色条。
+- **MacShell 玻璃**：主窗口和远程连接窗口都是半透明背景，Hyprland 会模糊透出来的壁纸和窗口。夜间为烟灰玻璃 `#1c1c1e`，日间为磨砂白 `#f6f6f8`，比菜单更不透明一些，文字依然清晰。远程桌面画面本身保持不透明。
+- **日间 / 夜间实时跟随**：通过 MacShell 或 `omarchy theme set` 切换外观时，已打开的 Remmina 窗口会立即切换，不需要重启。
+- **主窗口**：标题栏按钮无边框，悬停时才显示圆角底色。连接列表去掉网格线，选中行显示为左右留边的圆角胶囊，颜色取 MacShell 强调色，窗口失焦时变为浅灰。快速连接栏、列标题和页脚都改为次要色小字。
+- **远程连接窗口**：工具栏从左侧移到顶部，形成统一标题栏。左侧是红绿灯和连接名。按住标题栏的连接名或空白处直接拖动即可移动浮动窗口，不用按 `Super`；双击可最大化。右侧工具按钮换成一套 16 px 细线图标，提示文字也改成直白的说明，例如“远程分辨率跟随窗口”和“发送组合键”，并保留原有快捷键提示。已开启的开关（全屏、缩放、捕获键盘等）显示为强调色。
+- **精简工具栏**：常用的连接列表、窗口贴合、全屏、动态分辨率、缩放、捕获键盘、截屏和断开连接直接显示。复制连接、仅查看、反转滚动、编辑连接设置、最小化和重新连接收进 `⋯` 菜单。当前协议不支持的插件菜单（画质选项、远程操作、发送组合键）会自动隐藏，分隔线也一并去掉。
+- **标签栏**：只有一个会话时隐藏，有两个及以上会话时才显示，样式为圆角分段标签。标签行的空白处同样可以拖动窗口。
 
 在仓库根目录运行：
 
 ```bash
 ./scripts/install-remmina-mac.sh
-remmina --quit
 ```
 
-然后从应用菜单重新打开 Remmina。Remmina 是单实例程序，所以安装前已经运行的进程（包括托盘小程序）需要先退出，新语言和样式才能生效。需要 `remmina`、`zh_CN.UTF-8` locale，外观部分还需要先装 [macOS Tahoe 主题](#安装与切换)。
+安装器只在 Remmina 未运行时修改 `~/.config/remmina/remmina.pref`，因为 Remmina 退出时会重写这个文件。如果安装时 Remmina 正在运行，请先结束远程会话，运行 `remmina --quit`，再重新运行一次安装器，然后从应用菜单打开 Remmina。Remmina 是单实例程序，安装前已经运行的进程（包括托盘小程序）要先退出，新语言和外观才会生效。依赖 `remmina`、`zh_CN.UTF-8` locale，以及用来编译模块的 `gcc`、`pkgconf`、`gtk3` 和 `librsvg`。外观部分还需要先装 [macOS Tahoe 主题](#安装与切换)，Hyprland 需开启窗口模糊（macOS Tahoe 主题已开启）。
 
 ### 实现
 
 | 文件 | 作用 |
 | --- | --- |
-| [`bin/silky-remmina`](../bin/silky-remmina) | 安装到 `~/.local/bin/silky-remmina`。设置 `LANGUAGE=zh_CN:en`、`LC_MESSAGES=zh_CN.UTF-8`，并按当前 `gtk-theme` 选择 `GTK_THEME=Silky-Remmina-Dark` 或 `Silky-Remmina-Light`，再交给 `remmina-file-wrapper`。使用其他 GTK 主题时只切换语言 |
-| [`config/remmina/silky-remmina.css`](../config/remmina/silky-remmina.css) | 主窗口样式，颜色取自 MacTahoe 的命名颜色，深浅两套共用 |
-| [`scripts/install-remmina-mac.sh`](../scripts/install-remmina-mac.sh) | 生成 `~/.local/share/themes/Silky-Remmina-{Dark,Light}/gtk-3.0/`（先导入 MacTahoe，再导入上面的样式），把 `org.remmina.Remmina*.desktop` 复制到 `~/.local/share/applications/` 并改写所有 `Exec`，同时改写 `~/.config/autostart/remmina-applet.desktop`。内容有变化时才写入，原文件备份为 `*.bak.<时间>` |
+| [`plugins/silky-remmina/silky-remmina.c`](../plugins/silky-remmina/silky-remmina.c) | 只加载到 Remmina 的 GTK3 模块。仅在 MacTahoe 主题下，把下面的样式表叠加到当前 GTK 主题上，并监听 `gtk-theme-name` 实时切换深浅色。给主窗口和连接窗口加上 `.silky-glass`、`.silky-dark` / `.silky-light`，并设置 RGBA visual，使背景能透明。从 `~/.config/macbar/settings.json` 读取 MacShell 强调色，定义为 `@silky_accent`。主窗口列表的选中胶囊由模块绘制。连接窗口的工具栏按图标名识别各个按钮，替换图标和提示文字，隐藏或收进 `⋯` 菜单，并在横向工具栏前插入红绿灯和标题。启动时把自己从 `GTK_MODULES` 中移除，Remmina 启动的外部程序不会加载它 |
+| [`config/remmina/silky-remmina.css`](../config/remmina/silky-remmina.css) | 玻璃颜色、主窗口、统一工具栏、红绿灯和标签栏的样式。文件变化后模块会自动重新加载 |
+| [`config/remmina/icons/`](../config/remmina/icons/) | 工具栏线条图标：16×16、1.25 px 圆角描边，`currentColor` 在绘制时替换为按钮当前文字色 |
+| [`bin/silky-remmina`](../bin/silky-remmina) | 安装到 `~/.local/bin/silky-remmina`。设置 `LANGUAGE=zh_CN:en`、`LC_MESSAGES=zh_CN.UTF-8`，模块存在时加上 `GTK_PATH` 和 `GTK_MODULES=silky-remmina`，再交给 `remmina-file-wrapper` |
+| [`scripts/install-remmina-mac.sh`](../scripts/install-remmina-mac.sh) | 在临时目录编译模块，安装到 `~/.local/share/silky-remmina/gtk-3.0/modules/`，样式表和图标装到 `~/.local/share/silky-remmina/`。把 `org.remmina.Remmina*.desktop` 复制到 `~/.local/share/applications/` 并改写所有 `Exec`，同时改写 `~/.config/autostart/remmina-applet.desktop`。Remmina 未运行时设置 `toolbar_placement=0`（顶部）和 `always_show_tab=false`。只在内容变化时写入，原文件备份为 `*.bak.<时间>` |
 
-Remmina 主窗口的控件没有设置 CSS 名称，写进全局 `~/.config/gtk-3.0/gtk.css` 会影响所有 GTK3 应用。因此改用只给 Remmina 进程加载的独立主题。外观在启动时确定：Remmina 运行期间切换日间 / 夜间，要等下次启动才会跟随。`GTK_THEME` 和语言变量也会传给 Remmina 启动的外部工具。Remmina 窗口不受 XWayland 影响，原生 Wayland 下已验证。
+Remmina 的控件大多没有 CSS 名称，规则写进全局 `~/.config/gtk-3.0/gtk.css` 会影响所有 GTK3 应用。旧版本改用 `GTK_THEME` 加载单独主题，但这会把外观固定在启动时，切换日间 / 夜间后要重启 Remmina 才能跟随。GTK3 模块不锁定主题，只叠加样式，所以能实时跟随。GTK3 只从 `GTK_PATH` 下的 `modules/` 目录按名称加载模块，不支持绝对路径。GTK3 的符号图标只会给 `path` 等元素重新填色，无法使用描边图标，所以工具栏图标由模块调用 librsvg，按当前颜色绘制。
+
+只有横向工具栏（`toolbar_placement=0` 或 `2`）显示红绿灯和标题。在 Remmina 首选项里改回左侧或右侧时，按钮精简和新图标依然生效。全屏时使用 Remmina 自己的浮动工具栏，不加红绿灯。只针对 Remmina 1.4.44 / GTK 3.24 验证过，Remmina 改了工具栏图标名后，对应按钮会保留原样。Remmina 在原生 Wayland 下运行，不涉及 XWayland。
 
 ### 验证
 
 ```bash
 grep -h '^Exec' ~/.local/share/applications/org.remmina.Remmina.desktop
-tr '\0' '\n' < /proc/"$(pgrep -xn remmina)"/environ | grep -E '^(GTK_THEME|LANGUAGE)='
-hyprctl clients -j | jq -r '.[] | select(.class == "org.remmina.Remmina") | .title'
+grep -c libsilky-remmina /proc/"$(pgrep -xn remmina)"/maps
+grep -E '^(toolbar_placement|always_show_tab)=' ~/.config/remmina/remmina.pref
 ```
 
-预期 `Exec` 都指向 `~/.local/bin/silky-remmina`，进程环境里有 `GTK_THEME=Silky-Remmina-Dark`（或 `-Light`）和 `LANGUAGE=zh_CN:en`，窗口标题为 `Remmina 远程桌面客户端`。已在实机深色外观下确认中文界面、无网格线列表、扁平标题栏按钮和状态栏；浅色外观和远程会话窗口待验证。
+预期 `Exec` 都指向 `~/.local/bin/silky-remmina`，进程映射中有该模块（计数大于 0），偏好为 `toolbar_placement=0` 和 `always_show_tab=false`。打开一个连接后，窗口顶部应为红绿灯、连接名和细线图标，点击 `⋯` 能看到收进去的操作。通过 MacShell 切换日间 / 夜间时，主窗口和连接窗口应立即变色，背后的壁纸被模糊。
+
+已在隔离实例（独立 D-Bus 与配置目录，使用 WWW 协议的测试连接）中验证：模块加载、顶部工具栏、精简按钮与 `⋯` 菜单、线条图标、主窗口玻璃与选中胶囊，以及运行中从深色切到浅色。实机 RDP 会话的显示效果和 Hyprland 模糊效果待验证。
 
 ### 回滚
 
 ```bash
 remmina --quit
 rm ~/.local/share/applications/org.remmina.Remmina.desktop ~/.local/share/applications/org.remmina.Remmina-file.desktop
-rm -r ~/.local/share/themes/Silky-Remmina-Dark ~/.local/share/themes/Silky-Remmina-Light ~/.local/bin/silky-remmina
+rm -r ~/.local/share/silky-remmina ~/.local/bin/silky-remmina
 ```
 
-再把安装器报告的 `~/.config/autostart/remmina-applet.desktop.bak.*` 恢复为 `remmina-applet.desktop`，然后重新打开 Remmina。
+再把安装器报告的 `~/.config/autostart/remmina-applet.desktop.bak.*` 恢复为 `remmina-applet.desktop`。要恢复原来的左侧工具栏和常驻标签栏，用备份 `~/.config/remmina/remmina.pref.bak.*` 覆盖 `remmina.pref`，或在 Remmina 首选项 → 外观里修改。旧版本生成的 `~/.local/share/themes/Silky-Remmina-{Dark,Light}` 已不再使用，可以删除。然后重新打开 Remmina。
 
 ## 红绿灯标题栏
 

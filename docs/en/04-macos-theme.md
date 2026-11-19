@@ -104,50 +104,58 @@ To roll back, run `systemctl --user disable --now silky-foot-glass.service`, res
 
 ## Remmina in Simplified Chinese with a macOS look
 
-Remmina 1.4.44 ships a Simplified Chinese translation, but the system language is `en_US`, so the interface stayed in English. After installation, Remmina shows Simplified Chinese menus, column headers and dialogs whether you open it from the launcher, the Dock, an `rdp://` link or the tray applet. Under the macOS Tahoe theme the main window also changes:
+Remmina 1.4.44 ships a Simplified Chinese translation, but the system language is `en_US`, so the interface stayed in English. After installation, Remmina shows Simplified Chinese menus, column headers and dialogs whether you open it from the launcher, the Dock, an `rdp://` link or the tray applet. Under the macOS Tahoe theme you also get:
 
-- Title bar buttons lose their grey circles and become borderless icons. A rounded plate appears only on hover or press. The title uses 10pt semibold.
-- The quick-connect bar is slimmer. The protocol drop-down and the address field use 7 px corners and show a soft accent halo when focused.
-- The connection list drops its grid lines and gets more row spacing. Column headers use small, regular-weight secondary text. The footer status text is also smaller and dimmer and no longer sits on its own coloured strip.
+- **MacShell glass**: the main window and remote connection windows have translucent backgrounds that Hyprland blurs. Dark is smoky `#1c1c1e`, light is frosted `#f6f6f8`, a little more opaque than the menus so text stays crisp. The remote desktop picture itself stays opaque.
+- **Live light / dark**: switching appearance in MacShell or with `omarchy theme set` restyles open Remmina windows immediately, without a restart.
+- **Main window**: borderless title bar buttons with a rounded plate on hover. The connection list has no grid lines, and the selected row is a rounded pill inset from the edges, in MacShell's accent colour, turning light grey when the window loses focus. The quick-connect bar, column headers and footer use small secondary text.
+- **Remote connection window**: the toolbar moves from the left edge to the top, forming a unified title bar. Traffic lights and the connection name sit on the left. Dragging the name or any empty toolbar space moves a floating window directly, without holding `Super`; double-clicking maximizes it. The tools on the right use a thin 16 px line icon set, and tooltips say what each tool does in plain words, such as "Resize remote screen with window" or "Send key combination", keeping Remmina's shortcut hint. Active toggles (full screen, scaling, keyboard capture…) show in the accent colour.
+- **Trimmed toolbar**: connection list, fit window, full screen, dynamic resolution, scaling, keyboard capture, screenshot and disconnect stay visible. Duplicate connection, view only, invert scrolling, edit connection settings, minimize and reconnect move into a `⋯` menu. Plugin menus the current protocol does not offer (quality options, remote actions, send key combination) hide themselves, and separators are gone.
+- **Tabs**: hidden for a single session and shown as rounded segments from two sessions on. Empty space in the tab row also drags the window.
 
 From the repository root, run:
 
 ```bash
 ./scripts/install-remmina-mac.sh
-remmina --quit
 ```
 
-Then reopen Remmina from the app menu. Remmina runs as a single instance, so any process started before installation (including the tray applet) must quit before the new language and style apply. Requires `remmina` and the `zh_CN.UTF-8` locale. The styling part also needs the [macOS Tahoe theme](#install-and-switch).
+The installer only edits `~/.config/remmina/remmina.pref` while Remmina is not running, because Remmina rewrites that file when it quits. If Remmina was running, end your remote sessions, run `remmina --quit`, run the installer again, then open Remmina from the app menu. Remmina runs as a single instance, so any process started before installation (including the tray applet) must quit before the new language and look apply. Requires `remmina`, the `zh_CN.UTF-8` locale, and `gcc`, `pkgconf`, `gtk3` and `librsvg` to build the module. The look also needs the [macOS Tahoe theme](#install-and-switch) and Hyprland window blur (enabled by the macOS Tahoe theme).
 
 ### Implementation
 
 | File | Role |
 | --- | --- |
-| [`bin/silky-remmina`](../../bin/silky-remmina) | Installed as `~/.local/bin/silky-remmina`. Sets `LANGUAGE=zh_CN:en` and `LC_MESSAGES=zh_CN.UTF-8`, picks `GTK_THEME=Silky-Remmina-Dark` or `Silky-Remmina-Light` from the current `gtk-theme`, then hands off to `remmina-file-wrapper`. With any other GTK theme only the language changes |
-| [`config/remmina/silky-remmina.css`](../../config/remmina/silky-remmina.css) | Main-window styling. Colours come from MacTahoe's named colours, so both variants share one file |
-| [`scripts/install-remmina-mac.sh`](../../scripts/install-remmina-mac.sh) | Builds `~/.local/share/themes/Silky-Remmina-{Dark,Light}/gtk-3.0/` (imports MacTahoe, then the stylesheet above). Copies `org.remmina.Remmina*.desktop` to `~/.local/share/applications/` with every `Exec` rewritten, and rewrites `~/.config/autostart/remmina-applet.desktop`. Writes only on change and backs up originals as `*.bak.<timestamp>` |
+| [`plugins/silky-remmina/silky-remmina.c`](../../plugins/silky-remmina/silky-remmina.c) | GTK3 module loaded only into Remmina. Under a MacTahoe theme it layers the stylesheet below over the current GTK theme and follows `gtk-theme-name` live. Tags the main and connection windows with `.silky-glass` and `.silky-dark` / `.silky-light` and gives them an RGBA visual so the background can be translucent. Reads MacShell's accent from `~/.config/macbar/settings.json` as `@silky_accent`. Paints the main list's selection pill. Identifies connection toolbar buttons by icon name, swaps icons and tooltips, hides or moves them into `⋯`, and adds the traffic lights and title to a horizontal toolbar. Removes itself from `GTK_MODULES` at startup so programs Remmina launches do not load it |
+| [`config/remmina/silky-remmina.css`](../../config/remmina/silky-remmina.css) | Glass colours, main window, unified toolbar, traffic lights and tabs. The module reloads it when it changes |
+| [`config/remmina/icons/`](../../config/remmina/icons/) | Toolbar line icons: 16×16, 1.25 px round strokes; `currentColor` is replaced with the button's current text colour when drawn |
+| [`bin/silky-remmina`](../../bin/silky-remmina) | Installed as `~/.local/bin/silky-remmina`. Sets `LANGUAGE=zh_CN:en` and `LC_MESSAGES=zh_CN.UTF-8`, adds `GTK_PATH` and `GTK_MODULES=silky-remmina` when the module is installed, then hands off to `remmina-file-wrapper` |
+| [`scripts/install-remmina-mac.sh`](../../scripts/install-remmina-mac.sh) | Builds the module in a temporary directory and installs it to `~/.local/share/silky-remmina/gtk-3.0/modules/`, with the stylesheet and icons in `~/.local/share/silky-remmina/`. Copies `org.remmina.Remmina*.desktop` to `~/.local/share/applications/` with every `Exec` rewritten, and rewrites `~/.config/autostart/remmina-applet.desktop`. While Remmina is not running it sets `toolbar_placement=0` (top) and `always_show_tab=false`. Writes only on change and backs up originals as `*.bak.<timestamp>` |
 
-Remmina's main-window widgets have no CSS names, and rules in the global `~/.config/gtk-3.0/gtk.css` would hit every GTK3 app. A separate theme loaded only by the Remmina process avoids that. The appearance is fixed at launch: switching light/dark while Remmina runs takes effect on its next start. `GTK_THEME` and the language variables also pass to external tools Remmina starts. Remmina runs natively on Wayland, so XWayland plays no part; verified on native Wayland.
+Most Remmina widgets have no CSS names, and rules in the global `~/.config/gtk-3.0/gtk.css` would hit every GTK3 app. The previous version loaded a separate theme through `GTK_THEME`, which froze the appearance at launch: after a light/dark switch Remmina had to restart to follow. The GTK3 module does not pin the theme and only layers styles on top, so it follows live. GTK3 only loads modules by name from a `modules/` directory under `GTK_PATH`, not from an absolute path. GTK3 symbolic icons only refill elements such as `path`, so stroke-based icons cannot use them; the module draws the toolbar icons with librsvg in the current colour instead.
+
+The traffic lights and title appear only on a horizontal toolbar (`toolbar_placement=0` or `2`). If you move the toolbar back to the left or right in Remmina's preferences, the trimmed buttons and new icons still apply. Full screen uses Remmina's own floating toolbar, without traffic lights. Verified only with Remmina 1.4.44 / GTK 3.24. If Remmina renames a toolbar icon, that button keeps its stock look. Remmina runs natively on Wayland, so XWayland plays no part.
 
 ### Verify
 
 ```bash
 grep -h '^Exec' ~/.local/share/applications/org.remmina.Remmina.desktop
-tr '\0' '\n' < /proc/"$(pgrep -xn remmina)"/environ | grep -E '^(GTK_THEME|LANGUAGE)='
-hyprctl clients -j | jq -r '.[] | select(.class == "org.remmina.Remmina") | .title'
+grep -c libsilky-remmina /proc/"$(pgrep -xn remmina)"/maps
+grep -E '^(toolbar_placement|always_show_tab)=' ~/.config/remmina/remmina.pref
 ```
 
-Expected: every `Exec` points to `~/.local/bin/silky-remmina`, the process environment has `GTK_THEME=Silky-Remmina-Dark` (or `-Light`) and `LANGUAGE=zh_CN:en`, and the window title is `Remmina 远程桌面客户端`. Confirmed on real hardware in dark mode: Chinese interface, grid-free list, flat title bar buttons and status bar. Light mode and remote-session windows are still to be verified.
+Expected: every `Exec` points to `~/.local/bin/silky-remmina`, the module appears in the process maps (count above 0), and the preferences read `toolbar_placement=0` and `always_show_tab=false`. After opening a connection, the top of the window shows traffic lights, the connection name and thin line icons, and `⋯` lists the moved actions. Switching light/dark in MacShell restyles the main and connection windows immediately, with the wallpaper blurred behind them.
+
+Verified in an isolated instance (separate D-Bus and config directory, a WWW-protocol test connection): module loading, top toolbar, trimmed buttons and `⋯` menu, line icons, main-window glass and selection pill, and a live switch from dark to light. A real RDP session and the Hyprland blur on hardware are still to be verified.
 
 ### Rollback
 
 ```bash
 remmina --quit
 rm ~/.local/share/applications/org.remmina.Remmina.desktop ~/.local/share/applications/org.remmina.Remmina-file.desktop
-rm -r ~/.local/share/themes/Silky-Remmina-Dark ~/.local/share/themes/Silky-Remmina-Light ~/.local/bin/silky-remmina
+rm -r ~/.local/share/silky-remmina ~/.local/bin/silky-remmina
 ```
 
-Then restore the `~/.config/autostart/remmina-applet.desktop.bak.*` reported by the installer as `remmina-applet.desktop` and reopen Remmina.
+Then restore the `~/.config/autostart/remmina-applet.desktop.bak.*` reported by the installer as `remmina-applet.desktop`. To get the left toolbar and always-visible tabs back, copy the `~/.config/remmina/remmina.pref.bak.*` backup over `remmina.pref`, or change them under Remmina Preferences → Appearance. `~/.local/share/themes/Silky-Remmina-{Dark,Light}` from the previous version is no longer used and can be deleted. Reopen Remmina.
 
 ## Traffic-light title bar
 
