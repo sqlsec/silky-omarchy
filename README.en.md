@@ -13,7 +13,7 @@ To see every interface and interaction change grouped by where you feel it (menu
 | # | Module | Status | What it does |
 | --- | --- | --- | --- |
 | 01 | Touchpad | ✅ | Natural scrolling (touchpad and mouse), three-finger drag, four-finger swipe between workspaces (four fingers up / down: see 13) |
-| 02 | MacShell | ✅ | Simplified Chinese, compact "About This Mac", Vulkan live glass, stutter fixes, network / temperature / battery panels, monochrome tray icons, battery pill with a percentage switch, Control Center "Display" page, Dock and Applications panel animations, screenshots without duplicates or notifications, lock-screen wallpaper, autostart fixes |
+| 02 | MacShell | ✅ | Simplified Chinese, compact "About This Mac", Vulkan live glass, stutter fixes, [per-application menu bar](docs/en/02-macshell.md#per-application-menu-bar), network / temperature / battery panels, monochrome tray icons, battery pill with a percentage switch, Control Center "Display" page, Dock and Applications panel animations, screenshots without duplicates or notifications, lock-screen wallpaper, autostart fixes |
 | 03 | Touchscreen gestures | ✅ | Rubber-band at the ends, three-finger and edge swipes on the touchscreen, touch drag / pinch-resize of floating windows (Hyprland plugin) |
 | 04 | macOS Tahoe theme | ✅ | Dark / light themes, Apple system colors, rounded shadowed glass, MacTahoe blue folder icons, Finder-style Nautilus, theme sync, round traffic lights on floating windows |
 | 05 | Voice overlay | ✅ | Frosted waveform pill for WowType voice input; fixes the Right Alt clash with Superwhisper |

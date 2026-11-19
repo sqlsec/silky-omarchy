@@ -1,0 +1,86 @@
+--- MacBar.qml
++++ MacBar.qml
+@@ -80,2 +80,3 @@
+ import "I18n.js" as I18n
++import "SilkyAppMenus.js" as SilkyAppMenus
+ import "Fonts.js" as Fonts
+@@ -2325,2 +2326,3 @@
+     }
++    readonly property var appMenuProfile: SilkyAppMenus.forApp(activeAppId)
+     readonly property var menuTitles: [
+@@ -2330,6 +2332,13 @@
+         { id: "edit", label: I18n.tr("Edit") },
+-        { id: "view", label: I18n.tr("View") },
++        { id: "view", label: I18n.tr("View") }
++    ].concat(appMenuProfile, [
+         { id: "window", label: I18n.tr("Window") },
+         { id: "help", label: I18n.tr("Help") }
+-    ]
++    ])
++    function isAppMenu(name) {
++        return name.startsWith("silkyMenu") || menuTitles.some(item => item.id === name);
++    }
++    function appMenuLabel(label) {
++        return I18n.tr(SilkyAppMenus.label(label, I18n.code()));
++    }
+ 
+@@ -3781,3 +3790,25 @@
+ 
++    function profileMenuModel(items) {
++        var target = activeTl;
++        var address = activeWin && String(activeWin["class"]).toLowerCase() === activeAppId.toLowerCase()
++                      ? activeWin.address : "";
++        var validTarget = /^0x[0-9a-f]+$/i.test(address);
++        return items.map(function (entry) {
++            if (entry === null) return msep();
++            var parts = entry[1].split("+");
++            var key = parts.pop();
++            var shortcut = parts.concat(key.length === 1 ? key.toUpperCase() : key).join("+");
++            var item = mi(entry[0], shortcut, function () {
++                if (target && target === root.activeTl && validTarget)
++                    root.hlx('hl.dsp.send_shortcut({ mods = "' + parts.join(" ").toUpperCase()
++                             + '", key = "' + key + '", window = "address:' + address + '" })');
++            });
++            item.profileLabel = true;
++            return dis(item, !validTarget);
++        });
++    }
++
+     function menuModelFor(name) {
++        var profile = appMenuProfile.find(menu => menu.id === name);
++        if (profile) return profileMenuModel(profile.items);
+         var m = [], i;
+@@ -5517,2 +5548,5 @@
+                     function onActiveWinChanged() { if (ui.isMenu) ui.menuModel = root.menuModelFor(ui.pop); }
++                    function onActiveTlChanged() {
++                        if (ui.isMenu && ui.pop !== "apple") ui.pop = "";
++                    }
+                 }
+@@ -5532,2 +5566,2 @@
+                 }
+-                readonly property bool isMenu: ["apple", "app", "file", "edit", "view", "window", "help"].indexOf(pop) >= 0
++                readonly property bool isMenu: root.isAppMenu(pop)
+@@ -5609,5 +5643,7 @@
+                     menuX = x;
+-                    if (["apple", "app", "file", "edit", "view", "window", "help"].indexOf(name) >= 0) menuDropX = x;
+-                    if (["apple", "app", "file", "edit", "view", "window", "help"].indexOf(name) >= 0) root.refreshActive();
+-                    if (["apple", "app", "file", "edit", "view", "window", "help"].indexOf(name) >= 0) menuModel = root.menuModelFor(name);
++                    if (root.isAppMenu(name)) {
++                        menuDropX = x;
++                        root.refreshActive();
++                        menuModel = root.menuModelFor(name);
++                    }
+                     if (name === "cal") { var d = new Date(); calYear = d.getFullYear(); calMonth = d.getMonth(); }
+@@ -6158,3 +6194,4 @@
+                                     anchors.centerIn: parent
+-                                    text: I18n.tr(mt.modelData.label)
++                                    textFormat: Text.PlainText
++                                    text: mt.modelData.items ? root.appMenuLabel(mt.modelData.label) : I18n.tr(mt.modelData.label)
+                                     color: bpal.fg
+@@ -7432,3 +7469,5 @@
+                                     elide: Text.ElideRight
+-                                    text: it.isSep ? "" : (it.armedNow ? I18n.tr("Click again to confirm") : I18n.tr(it.modelData.label))
++                                    textFormat: Text.PlainText
++                                    text: it.isSep ? "" : it.armedNow ? I18n.tr("Click again to confirm")
++                                          : it.modelData.profileLabel ? root.appMenuLabel(it.modelData.label) : I18n.tr(it.modelData.label)
+                                     color: it.hot ? "white" : (it.off ? panelPal.fg2 : panelPal.fg)

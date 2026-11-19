@@ -58,6 +58,7 @@ omarchy theme set macos-tahoe-dark
 
 ## 02 MacShell 优化
 
+- MacShell 0.5.3 的[按应用切换顶栏菜单](02-macshell.md#按应用切换顶栏菜单)可单独安装。运行 `python3 scripts/install-macshell-app-menus.py` 后重载 MacShell。
 - **效果**：简体中文；紧凑版“关于本机”（正确识别 Snapdragon / Adreno）；触控屏拖窗口；实时玻璃走 Vulkan；消除鼠标周期性卡顿；锁屏显示壁纸；电池图标去 `%`；不显示桌面图标；截图只用一个工具
 - **文件**：`patches/macshell-0.5.1-silky.patch`、`patches/macshell-0.5.2-silky.patch`（对 `~/.config/quickshell/{MacShell,MacLock}` 的统一 diff）、`scripts/install-macshell-optimizations.sh`
 - **关键词**：

@@ -23,6 +23,7 @@ The Control Center's new "Display" page has an Appearance switch, so you can swi
 
 ## Menu bar
 
+- The menu bar follows the foreground app, with History and Bookmarks in supported browsers and Go in Nautilus. [02 · Per-application menu bar](02-macshell.md#per-application-menu-bar)
 - Fully in Simplified Chinese; a more compact "About This Mac" ([02](02-macshell.md))
 - Three monitor buttons, network speed, CPU temperature and battery, with upload above download in the bar, each opening a glass panel: network shows per-app traffic and your IPs (click to copy), temperature shows top processes and a hardware overview, battery shows a system power chart (measurable on battery only) and battery health and lets you set a charge limit ([02 · Menu bar system monitors](02-macshell.md#menu-bar-system-monitors))
 - The battery is a narrow macOS 26 pill with only the number inside, no `%`, colored by state: charging green, running on external power the current wallpaper's accent (it follows wallpaper changes), on battery neutral, low (below 20%) red; left-click for battery details, right-click to switch power mode (power saver / balanced / performance), and the right-click panel also has a "Show battery percentage" switch ([02 · Battery icon](02-macshell.md#battery-icon))

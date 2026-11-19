@@ -87,6 +87,22 @@ hyprctl monitors
 
 只有面板确实是 `eDP-1` 且支持 `2944x1840@90` 时才应使用该片段。
 
+## 按应用切换顶栏菜单
+
+菜单栏跟着前台窗口切换。Chrome 和 Chromium 显示「历史记录」「书签」「标签页」，Firefox 显示「历史记录」「书签」「工具」，Nautilus 显示「前往」。点击历史记录可打开当前浏览器的历史页面或资料库，书签和下载等操作也由当前窗口处理。其他应用使用 MacShell 的通用菜单。
+
+从仓库根目录安装。此功能适用于 MacShell 0.5.3，依赖 Python 3、Git 和 Hyprland 的 Lua 快捷键调度接口。
+
+```bash
+python3 scripts/install-macshell-app-menus.py --check
+python3 scripts/install-macshell-app-menus.py
+qs -c MacShell ipc call macshell reload
+```
+
+[应用菜单配置](../config/macshell/app-menus/SilkyAppMenus.js)按窗口的应用 ID 匹配菜单，由 [MacBar 补丁](../config/macshell/app-menus/MacBar.patch)将菜单合入现有顶栏。各项调用应用自己的快捷键，适配范围由应用 ID 和快捷键支持决定。历史记录和书签内容在应用内查看。用 Chrome、Firefox 和 Nautilus 分别切换前台窗口检查分组，再点 Chrome 的「历史记录 → 显示所有历史记录」或 Nautilus 的「前往 → 上级文件夹」验证操作。
+
+安装到 `~/.config/quickshell/MacShell/`。回滚时，用安装器打印的备份目录中的 `MacBar.qml` 替换安装后的文件。若该目录有旧的 `SilkyAppMenus.js`，一并恢复，否则可删除新增的文件。然后再次重载 MacShell。若升级 MacShell 后顶栏恢复为通用菜单，先用 `--check` 核对已安装版本和补丁是否兼容。
+
 ## 顶栏系统监控
 
 MacShell 0.5.1–0.5.3 可单独安装网速、CPU 温度和电池面板。

@@ -87,6 +87,22 @@ hyprctl monitors
 
 Use this snippet only if your panel really is `eDP-1` and supports `2944x1840@90`.
 
+## Per-application menu bar
+
+The menu bar follows the foreground window. Chrome and Chromium show History, Bookmarks, and Tab. Firefox shows History, Bookmarks, and Tools. Nautilus shows Go. History opens the browser's history page or library, and bookmark and download commands act on the current window. Other applications use MacShell's general menus.
+
+Install from the repository root. The patch supports MacShell 0.5.3 and requires Python 3, Git, and Hyprland's Lua shortcut dispatcher.
+
+```bash
+python3 scripts/install-macshell-app-menus.py --check
+python3 scripts/install-macshell-app-menus.py
+qs -c MacShell ipc call macshell reload
+```
+
+The [menu definitions](../../config/macshell/app-menus/SilkyAppMenus.js) match window application IDs, and the [MacBar patch](../../config/macshell/app-menus/MacBar.patch) adds those menus to the existing bar. Commands use each application's shortcuts, so coverage depends on known application IDs and supported shortcuts. History and bookmark contents are viewed in the application. To verify, focus Chrome, Firefox, and Nautilus in turn, then try History → Show Full History in Chrome or Go → Parent Folder in Nautilus.
+
+The installer writes to `~/.config/quickshell/MacShell/`. To roll back, restore `MacBar.qml` from the backup directory printed by the installer. Restore `SilkyAppMenus.js` if that directory contains an earlier copy, or remove the newly installed copy. Then reload MacShell again. If a MacShell update restores the general menus, run the installer with `--check` to review compatibility.
+
 ## Menu bar system monitors
 
 Network speed, CPU temperature and battery panels can be installed separately on MacShell 0.5.1–0.5.3.

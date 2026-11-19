@@ -58,6 +58,7 @@ Merge the global configuration snippets in 01 by hand. The optional WeChat updat
 
 ## 02 MacShell refinements
 
+- The [per-application menu bar](02-macshell.md#per-application-menu-bar) installs separately on MacShell 0.5.3. Run `python3 scripts/install-macshell-app-menus.py`, then reload MacShell.
 - **Effect**: Simplified Chinese; a compact "About This Mac" (correctly identifying Snapdragon / Adreno); dragging windows by touch; live glass on Vulkan; no periodic pointer stutter; wallpaper on the lock screen; battery icon without `%`; no desktop icons; only one screenshot tool
 - **Files**: `patches/macshell-0.5.1-silky.patch` and `patches/macshell-0.5.2-silky.patch` (unified diffs against `~/.config/quickshell/{MacShell,MacLock}`), `scripts/install-macshell-optimizations.sh`
 - **Keywords**:
