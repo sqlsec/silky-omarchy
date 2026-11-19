@@ -125,7 +125,7 @@ rm -r ~/.local/share/themes/Silky-Remmina-Dark ~/.local/share/themes/Silky-Remmi
 
 Omarchy 本身就会给浮动工作区里的窗口加标题栏：`default/hypr/workspace-modes.lua` 加载它自己的插件 `omarchy-hyprland-titlebars`（`/usr/lib/omarchy-hyprland-titlebars/titlebars.so`，基于 hyprbars），右侧放三个方形按钮 × □ −（`button_rounding = 0`）。在 macOS Tahoe 主题下改成：
 
-- 统一标题栏：30 px，标题居中，深色 `#2b2b2d` / 浅色 `#ececec`，失焦时更淡
+- 统一标题栏高 30 px，标题居中。深浅主题的底色都略微透出下方的壁纸或窗口，聚焦时约 80% 不透明，失焦时约 84%。Hyprland 启用全局模糊时，标题栏背景也使用模糊。
 - 左上角两个**圆形**按钮：12 px、`button_rounding = 6`、间距 8 px，`#ff5f57` / `#28c840`
 - 指针移到灯上才显示 × − + 符号；窗口失焦时灯变灰
 - 关闭 → 关闭窗口；绿灯 → 最大化 / 还原；双击标题栏同样最大化
@@ -139,6 +139,8 @@ Omarchy 本身就会给浮动工作区里的窗口加标题栏：`default/hypr/w
 | `config/hypr/silky-macos.lua` | 排在 Omarchy 默认配置之后：覆盖标题栏样式，用原函数加两个圆形按钮，按白名单设置 `hyprbars:no_bar` 规则 |
 
 只有 Omarchy 已经加载了标题栏插件（某个工作区处于浮动模式）时才应用这些设置；否则直接跳过，不会出现 `unknown field 'hyprbars:no_bar'` 配置错误。不再自己编译 hyprbars，也就不需要在 Hyprland 更新后重新编译。
+
+通过上面的主题安装脚本更新 [标题栏配置](../config/hypr/silky-macos.lua)，脚本会重载 Hyprland。可在浮动工作区把两个 Foot 窗口叠起来，切换焦点并观察标题栏能否透出下层颜色。只回滚这项效果时，恢复安装器报告的 `~/.config/hypr/silky-macos.lua.bak.*`，或将两个标题栏颜色改回不透明并将 `bar_blur` 设为 `false`，然后运行 `hyprctl reload`。
 
 ### 踩过的坑
 

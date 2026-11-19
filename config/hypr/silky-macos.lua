@@ -24,8 +24,9 @@ hl.config({
   plugin = {
     hyprbars = {
       bar_height = 30,
-      bar_color = light and "rgb(ececec)" or "rgb(2b2b2d)",
-      bar_color_inactive = light and "rgb(f6f6f6)" or "rgb(232325)",
+      bar_color = light and "rgba(ecececcc)" or "rgba(2b2b2dcc)",
+      bar_color_inactive = light and "rgba(f6f6f6d6)" or "rgba(232325d6)",
+      bar_blur = true,
       col = { text = light and "rgba(000000d9)" or "rgba(ffffffd9)" },
       bar_title_enabled = true,
       bar_text_font = "Open Runde, Inter, sans-serif",

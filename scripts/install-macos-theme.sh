@@ -210,7 +210,16 @@ install_bars() {
   # Omarchy already draws titlebars on floating workspaces (omarchy-hyprland-titlebars). These two files restyle
   # them as macOS traffic lights; the guard must load before Omarchy's defaults to keep its square buttons out.
   install -m 644 "$repo_root/config/hypr/silky-titlebar-guard.lua" "$hypr_dir/silky-titlebar-guard.lua"
-  install -m 644 "$repo_root/config/hypr/silky-macos.lua" "$hypr_dir/silky-macos.lua"
+  local bar_source="$repo_root/config/hypr/silky-macos.lua"
+  local bar_target="$hypr_dir/silky-macos.lua"
+  if ! cmp -s "$bar_source" "$bar_target"; then
+    if [[ -e $bar_target ]]; then
+      local backup="$bar_target.bak.$(date +%Y%m%d-%H%M%S-%N)"
+      cp -a -- "$bar_target" "$backup"
+      printf 'Backed up %s to %s\n' "$bar_target" "$backup"
+    fi
+    install -m 644 "$bar_source" "$bar_target"
+  fi
   cp -a "$hypr_dir/hyprland.lua" "$hypr_dir/hyprland.lua.bak.$(date +%Y%m%d-%H%M%S)"
   python3 - "$hypr_dir/hyprland.lua" <<'PY'
 import sys

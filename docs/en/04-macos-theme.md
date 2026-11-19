@@ -125,7 +125,7 @@ Then restore the `~/.config/autostart/remmina-applet.desktop.bak.*` reported by 
 
 Omarchy already adds title bars to windows on floating workspaces: `default/hypr/workspace-modes.lua` loads its own plugin `omarchy-hyprland-titlebars` (`/usr/lib/omarchy-hyprland-titlebars/titlebars.so`, based on hyprbars) with three square buttons × □ − on the right (`button_rounding = 0`). Under the macOS Tahoe themes it becomes:
 
-- A unified title bar: 30 px, centred title, dark `#2b2b2d` / light `#ececec`, paler when unfocused
+- The 30 px bar keeps the title centred and lets some of the wallpaper or the window behind show through in both appearances. The background is about 80% opaque when focused and 84% when unfocused. The bar also blurs its backdrop when Hyprland has global blur enabled.
 - Two **round** buttons at the top left: 12 px, `button_rounding = 6`, 8 px apart, `#ff5f57` / `#28c840`
 - The × − + symbols appear only when the pointer is over the lights; the lights turn grey when the window loses focus
 - Close → close the window; green → maximize / restore; double-clicking the title bar also maximizes
@@ -139,6 +139,8 @@ Omarchy already adds title bars to windows on floating workspaces: `default/hypr
 | `config/hypr/silky-macos.lua` | Comes after Omarchy's defaults: overrides the title-bar style, adds the two round buttons with the original function, and sets `hyprbars:no_bar` rules from an allow list |
 
 These settings apply only once Omarchy has loaded the title-bar plugin (some workspace is in floating mode); otherwise they are skipped, so there is no `unknown field 'hyprbars:no_bar'` config error. hyprbars is no longer built here, so nothing needs rebuilding after a Hyprland update.
+
+The theme installer above updates the [title bar configuration](../../config/hypr/silky-macos.lua) and reloads Hyprland. To verify the effect, overlap two Foot windows in a floating workspace and switch focus to see the lower window’s colour through the bar. To revert just this effect, restore the `~/.config/hypr/silky-macos.lua.bak.*` reported by the installer, or restore opaque bar colours and set `bar_blur` to `false`, then run `hyprctl reload`.
 
 ### Pitfalls
 
