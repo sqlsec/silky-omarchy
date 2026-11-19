@@ -1,0 +1,11 @@
+[Unit]
+Description=Match Foot's frosted glass palette to the desktop appearance
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/silky-foot-glass --watch
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

@@ -80,6 +80,26 @@ Icon tweaks made earlier with ChatGPT are folded into the installer:
   - After installing a new app, run `python3 scripts/tune-app-icons.py` again. An app with no mapping yet needs an entry in the script's `ALIASES` or `BRANDS` first
 - MacShell's Dock and Spotlight read the icon theme from `QS_ICON_THEME` in `~/.config/macshell/env`
 
+<a id="foot-glass"></a>
+
+## Frosted glass in Foot
+
+Dark mode uses a smoky violet background and light mode uses frosted white. Foot applies transparency to the default background and keeps text crisp. When MacShell Appearance switches to Light, Dark, or Auto, Foot windows that have loaded the glass palettes follow the system appearance. Floating windows retain the existing traffic-light title bar.
+
+From the repository root, run:
+
+```bash
+./scripts/install-foot-glass.sh
+foot --check-config
+systemctl --user is-active silky-foot-glass.service
+```
+
+The installer backs up `~/.config/foot/foot.ini` and adds the [glass palettes](../../config/foot/silky-glass.ini) and startup appearance settings. This requires Foot with dual palettes and background blur support (verified on 1.28.0) and Hyprland with blur enabled, as in the macOS Tahoe themes. The user service watches `org.gnome.desktop.interface color-scheme`, sets the appearance for new windows, and tells running Foot processes to switch palettes.
+
+Open a fresh Foot window in front of a colorful wallpaper or window, then switch between Light and Dark in MacShell and observe the background and text in the same window. Windows opened before installation need reopening to load the palettes. If you use `foot --server`, restart its process after the existing sessions finish so new clients can load the glass palettes.
+
+To roll back, run `systemctl --user disable --now silky-foot-glass.service`, restore the contents of the backup printed by the installer to `~/.config/foot/foot.ini`, and open a new Foot window.
+
 <a id="remmina"></a>
 
 ## Remmina in Simplified Chinese with a macOS look

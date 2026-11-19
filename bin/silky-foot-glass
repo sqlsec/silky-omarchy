@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/foot"
+appearance_file="$config_dir/silky-appearance.ini"
+
+apply() {
+  local preference mode signal settings pending
+  preference=$(gsettings get org.gnome.desktop.interface color-scheme)
+  case $preference in
+    "'prefer-dark'") mode=dark; signal=USR1 ;;
+    *) mode=light; signal=USR2 ;;
+  esac
+
+  settings=$(printf '[main]\ninitial-color-theme=%s' "$mode")
+  if [[ -f $appearance_file && $(<"$appearance_file") == "$settings" ]]; then
+    return
+  fi
+
+  pending=$(mktemp "$appearance_file.XXXXXX")
+  printf '%s\n' "$settings" > "$pending"
+  mv -f -- "$pending" "$appearance_file"
+
+  if [[ ${1:-} != --initialize ]]; then
+    # Foot's documented signals switch the palette without interrupting the shell.
+    pkill "-$signal" -u "$(id -u)" -x foot || [[ $? == 1 ]]
+  fi
+}
+
+if [[ ${1:-} == --watch ]]; then
+  gsettings monitor org.gnome.desktop.interface color-scheme | {
+    apply
+    while IFS= read -r _; do
+      apply
+    done
+  }
+else
+  apply "${1:-}"
+fi

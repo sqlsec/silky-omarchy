@@ -94,6 +94,8 @@ The Control Center's new "Display" page has an Appearance switch, so you can swi
 
 ## File manager and terminal
 
+
+- Foot shows blurred colors from the wallpaper and windows behind it and follows MacShell’s light/dark appearance. See [Frosted glass in Foot](04-macos-theme.md#foot-glass).
 - With a macOS Tahoe theme active, the Nautilus sidebar picks up blurred background colors while the file area keeps text and icons crisp. See [Frosted glass in Files](04-macos-theme.md#frosted-glass-in-files).
 - Nautilus looks like Finder, with Space for Quick Look ([04](04-macos-theme.md)); its context menu has "Copy Path", "Open in Terminal" and "Extract Here" ([08](08-nautilus-actions.md))
 - The optional Simplified Chinese setup localizes menus, dates and common sidebar bookmarks. See [Simplified Chinese interface](08-nautilus-actions.md#simplified-chinese-interface).

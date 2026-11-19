@@ -94,6 +94,8 @@
 
 ## 文件管理器与终端
 
+
+- Foot 的背景可以透出虚化的壁纸和窗口色彩，随 MacShell 日间 / 夜间外观切换。见 [Foot 磨砂玻璃](04-macos-theme.md#foot-glass)。
 - macOS Tahoe 主题下，Nautilus 的侧栏透出后方已经虚化的色彩，文件区保留清晰的文字和图标。见[文件管理器磨砂玻璃](04-macos-theme.md#文件管理器磨砂玻璃)。
 - Nautilus 是 Finder 外观，空格键快速预览（[04](04-macos-theme.md)）；右键菜单有「复制路径」「在终端打开」「解压到此处」（[08](08-nautilus-actions.md)）
 - 启用简体中文后，Nautilus 的菜单、日期和常用侧栏书签会显示中文。见[文件管理器简体中文界面](08-nautilus-actions.md#简体中文界面)。

@@ -80,6 +80,26 @@ ChatGPT 之前做的图标调整已经整合进安装脚本：
   - 装好新应用后再运行一次 `python3 scripts/tune-app-icons.py` 即可；没有对应关系的新应用需要先加到脚本里的 `ALIASES` 或 `BRANDS`
 - MacShell 的 Dock 和 Spotlight 从 `~/.config/macshell/env` 中的 `QS_ICON_THEME` 读取图标主题
 
+<a id="foot-glass"></a>
+
+## Foot 磨砂玻璃
+
+夜间用烟紫底，日间用浅雾白。Foot 只给默认背景加透明度，文字保持清晰。MacShell「外观」切换到日间、夜间或自动模式后，已加载玻璃配色的 Foot 窗口会跟随系统外观。浮动窗口沿用现有红绿灯标题栏。
+
+在仓库根目录运行：
+
+```bash
+./scripts/install-foot-glass.sh
+foot --check-config
+systemctl --user is-active silky-foot-glass.service
+```
+
+安装器备份 `~/.config/foot/foot.ini` 并加入[玻璃配色](../config/foot/silky-glass.ini)和启动外观配置。需要支持双配色与背景虚化的 Foot（已在 1.28.0 验证）及开启背景虚化的 Hyprland，macOS Tahoe 主题已启用虚化。用户服务监视 `org.gnome.desktop.interface color-scheme`，写入新窗口的起始外观，并通知运行中的 Foot 切换配色。
+
+安装后打开一个新的 Foot 窗口，把它放在有明显色彩的壁纸或窗口前，再通过 MacShell 切换日间和夜间，观察同一窗口的背景和文字。安装前打开的窗口需要重新打开才能加载玻璃配色。若使用 `foot --server`，等现有会话结束后重启该服务进程，新客户端即可载入玻璃配色。
+
+回滚时运行 `systemctl --user disable --now silky-foot-glass.service`，把安装器报告的备份内容写回 `~/.config/foot/foot.ini`，然后打开新的 Foot 窗口。
+
 <a id="remmina"></a>
 
 ## Remmina 简体中文与 macOS 外观
