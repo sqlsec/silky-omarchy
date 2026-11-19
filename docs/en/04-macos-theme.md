@@ -72,6 +72,55 @@ Icon tweaks made earlier with ChatGPT are folded into the installer:
   - After installing a new app, run `python3 scripts/tune-app-icons.py` again. An app with no mapping yet needs an entry in the script's `ALIASES` or `BRANDS` first
 - MacShell's Dock and Spotlight read the icon theme from `QS_ICON_THEME` in `~/.config/macshell/env`
 
+<a id="remmina"></a>
+
+## Remmina in Simplified Chinese with a macOS look
+
+Remmina 1.4.44 ships a Simplified Chinese translation, but the system language is `en_US`, so the interface stayed in English. After installation, Remmina shows Simplified Chinese menus, column headers and dialogs whether you open it from the launcher, the Dock, an `rdp://` link or the tray applet. Under the macOS Tahoe theme the main window also changes:
+
+- Title bar buttons lose their grey circles and become borderless icons. A rounded plate appears only on hover or press. The title uses 10pt semibold.
+- The quick-connect bar is slimmer. The protocol drop-down and the address field use 7 px corners and show a soft accent halo when focused.
+- The connection list drops its grid lines and gets more row spacing. Column headers use small, regular-weight secondary text. The footer status text is also smaller and dimmer and no longer sits on its own coloured strip.
+
+From the repository root, run:
+
+```bash
+./scripts/install-remmina-mac.sh
+remmina --quit
+```
+
+Then reopen Remmina from the app menu. Remmina runs as a single instance, so any process started before installation (including the tray applet) must quit before the new language and style apply. Requires `remmina` and the `zh_CN.UTF-8` locale. The styling part also needs the [macOS Tahoe theme](#install-and-switch).
+
+### Implementation
+
+| File | Role |
+| --- | --- |
+| [`bin/silky-remmina`](../../bin/silky-remmina) | Installed as `~/.local/bin/silky-remmina`. Sets `LANGUAGE=zh_CN:en` and `LC_MESSAGES=zh_CN.UTF-8`, picks `GTK_THEME=Silky-Remmina-Dark` or `Silky-Remmina-Light` from the current `gtk-theme`, then hands off to `remmina-file-wrapper`. With any other GTK theme only the language changes |
+| [`config/remmina/silky-remmina.css`](../../config/remmina/silky-remmina.css) | Main-window styling. Colours come from MacTahoe's named colours, so both variants share one file |
+| [`scripts/install-remmina-mac.sh`](../../scripts/install-remmina-mac.sh) | Builds `~/.local/share/themes/Silky-Remmina-{Dark,Light}/gtk-3.0/` (imports MacTahoe, then the stylesheet above). Copies `org.remmina.Remmina*.desktop` to `~/.local/share/applications/` with every `Exec` rewritten, and rewrites `~/.config/autostart/remmina-applet.desktop`. Writes only on change and backs up originals as `*.bak.<timestamp>` |
+
+Remmina's main-window widgets have no CSS names, and rules in the global `~/.config/gtk-3.0/gtk.css` would hit every GTK3 app. A separate theme loaded only by the Remmina process avoids that. The appearance is fixed at launch: switching light/dark while Remmina runs takes effect on its next start. `GTK_THEME` and the language variables also pass to external tools Remmina starts. Remmina runs natively on Wayland, so XWayland plays no part; verified on native Wayland.
+
+### Verify
+
+```bash
+grep -h '^Exec' ~/.local/share/applications/org.remmina.Remmina.desktop
+tr '\0' '\n' < /proc/"$(pgrep -xn remmina)"/environ | grep -E '^(GTK_THEME|LANGUAGE)='
+hyprctl clients -j | jq -r '.[] | select(.class == "org.remmina.Remmina") | .title'
+```
+
+Expected: every `Exec` points to `~/.local/bin/silky-remmina`, the process environment has `GTK_THEME=Silky-Remmina-Dark` (or `-Light`) and `LANGUAGE=zh_CN:en`, and the window title is `Remmina 远程桌面客户端`. Confirmed on real hardware in dark mode: Chinese interface, grid-free list, flat title bar buttons and status bar. Light mode and remote-session windows are still to be verified.
+
+### Rollback
+
+```bash
+remmina --quit
+rm ~/.local/share/applications/org.remmina.Remmina.desktop ~/.local/share/applications/org.remmina.Remmina-file.desktop
+rm -r ~/.local/share/themes/Silky-Remmina-Dark ~/.local/share/themes/Silky-Remmina-Light ~/.local/bin/silky-remmina
+```
+
+Then restore the `~/.config/autostart/remmina-applet.desktop.bak.*` reported by the installer as `remmina-applet.desktop` and reopen Remmina.
+
 ## Traffic-light title bar
 
 Omarchy already adds title bars to windows on floating workspaces: `default/hypr/workspace-modes.lua` loads its own plugin `omarchy-hyprland-titlebars` (`/usr/lib/omarchy-hyprland-titlebars/titlebars.so`, based on hyprbars) with three square buttons × □ − on the right (`button_rounding = 0`). Under the macOS Tahoe themes it becomes:

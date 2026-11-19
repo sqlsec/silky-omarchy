@@ -72,6 +72,55 @@ ChatGPT 之前做的图标调整已经整合进安装脚本：
   - 装好新应用后再运行一次 `python3 scripts/tune-app-icons.py` 即可；没有对应关系的新应用需要先加到脚本里的 `ALIASES` 或 `BRANDS`
 - MacShell 的 Dock 和 Spotlight 从 `~/.config/macshell/env` 中的 `QS_ICON_THEME` 读取图标主题
 
+<a id="remmina"></a>
+
+## Remmina 简体中文与 macOS 外观
+
+Remmina 1.4.44 自带简体中文翻译，但系统语言是 `en_US`，所以界面一直是英文。安装后，从启动器、Dock、`rdp://` 链接或托盘小程序打开 Remmina，菜单、列标题和对话框都显示简体中文。macOS Tahoe 主题下，主窗口还有以下变化：
+
+- 标题栏按钮不再是灰色圆底，改成无边框图标，指针悬停或按下时才出现圆角底色；标题使用 10pt 半粗体。
+- 快速连接栏变薄，协议下拉框和地址栏都用 7 px 圆角，聚焦时有一圈柔和的强调色光晕。
+- 连接列表去掉表格网格线，行距加大；列标题改用小号常规字重的次要色；页脚状态栏的文字也缩小、变淡，不再显示单独的底色条。
+
+在仓库根目录运行：
+
+```bash
+./scripts/install-remmina-mac.sh
+remmina --quit
+```
+
+然后从应用菜单重新打开 Remmina。Remmina 是单实例程序，所以安装前已经运行的进程（包括托盘小程序）需要先退出，新语言和样式才能生效。需要 `remmina`、`zh_CN.UTF-8` locale，外观部分还需要先装 [macOS Tahoe 主题](#安装与切换)。
+
+### 实现
+
+| 文件 | 作用 |
+| --- | --- |
+| [`bin/silky-remmina`](../bin/silky-remmina) | 安装到 `~/.local/bin/silky-remmina`。设置 `LANGUAGE=zh_CN:en`、`LC_MESSAGES=zh_CN.UTF-8`，并按当前 `gtk-theme` 选择 `GTK_THEME=Silky-Remmina-Dark` 或 `Silky-Remmina-Light`，再交给 `remmina-file-wrapper`。使用其他 GTK 主题时只切换语言 |
+| [`config/remmina/silky-remmina.css`](../config/remmina/silky-remmina.css) | 主窗口样式，颜色取自 MacTahoe 的命名颜色，深浅两套共用 |
+| [`scripts/install-remmina-mac.sh`](../scripts/install-remmina-mac.sh) | 生成 `~/.local/share/themes/Silky-Remmina-{Dark,Light}/gtk-3.0/`（先导入 MacTahoe，再导入上面的样式），把 `org.remmina.Remmina*.desktop` 复制到 `~/.local/share/applications/` 并改写所有 `Exec`，同时改写 `~/.config/autostart/remmina-applet.desktop`。内容有变化时才写入，原文件备份为 `*.bak.<时间>` |
+
+Remmina 主窗口的控件没有设置 CSS 名称，写进全局 `~/.config/gtk-3.0/gtk.css` 会影响所有 GTK3 应用。因此改用只给 Remmina 进程加载的独立主题。外观在启动时确定：Remmina 运行期间切换日间 / 夜间，要等下次启动才会跟随。`GTK_THEME` 和语言变量也会传给 Remmina 启动的外部工具。Remmina 窗口不受 XWayland 影响，原生 Wayland 下已验证。
+
+### 验证
+
+```bash
+grep -h '^Exec' ~/.local/share/applications/org.remmina.Remmina.desktop
+tr '\0' '\n' < /proc/"$(pgrep -xn remmina)"/environ | grep -E '^(GTK_THEME|LANGUAGE)='
+hyprctl clients -j | jq -r '.[] | select(.class == "org.remmina.Remmina") | .title'
+```
+
+预期 `Exec` 都指向 `~/.local/bin/silky-remmina`，进程环境里有 `GTK_THEME=Silky-Remmina-Dark`（或 `-Light`）和 `LANGUAGE=zh_CN:en`，窗口标题为 `Remmina 远程桌面客户端`。已在实机深色外观下确认中文界面、无网格线列表、扁平标题栏按钮和状态栏；浅色外观和远程会话窗口待验证。
+
+### 回滚
+
+```bash
+remmina --quit
+rm ~/.local/share/applications/org.remmina.Remmina.desktop ~/.local/share/applications/org.remmina.Remmina-file.desktop
+rm -r ~/.local/share/themes/Silky-Remmina-Dark ~/.local/share/themes/Silky-Remmina-Light ~/.local/bin/silky-remmina
+```
+
+再把安装器报告的 `~/.config/autostart/remmina-applet.desktop.bak.*` 恢复为 `remmina-applet.desktop`，然后重新打开 Remmina。
+
 ## 红绿灯标题栏
 
 Omarchy 本身就会给浮动工作区里的窗口加标题栏：`default/hypr/workspace-modes.lua` 加载它自己的插件 `omarchy-hyprland-titlebars`（`/usr/lib/omarchy-hyprland-titlebars/titlebars.so`，基于 hyprbars），右侧放三个方形按钮 × □ −（`button_rounding = 0`）。在 macOS Tahoe 主题下改成：

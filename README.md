@@ -46,6 +46,7 @@
 ./scripts/install-silky-gestures.sh
 python3 scripts/install-macshell-overview.py
 ./scripts/install-macos-theme.sh && omarchy theme set macos-tahoe-dark
+./scripts/install-remmina-mac.sh  # 可选：Remmina 简体中文与 macOS 外观
 ./scripts/install-voice-overlay.sh
 ./scripts/install-zsh.sh
 ./scripts/install-maclock.sh

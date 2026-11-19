@@ -62,6 +62,7 @@ The Control Center's new "Display" page has an Appearance switch, so you can swi
 - Use `Super+T` for split tiling on the current workspace. Use `Super+Alt+T` for single-window tiling and press it again to return to floating and bring back the displaced windows. ([10 · Super+T](10-shortcuts.md#supert))
 - Switching back to floating with either shortcut keeps the window’s top edge below the menu bar. ([10 · Super+T](10-shortcuts.md#supert))
 - The Logitech mouse editor (Omalogi) is a normal window: centred floating 1280×700 (clear of the Dock), tiles / goes full screen, shows in Alt+Tab, and no longer stays on top across workspaces; opening it again only focuses it; with wired and wireless mice both connected, switch between them at the top right ([14 · A real window](14-omalogi.md#a-real-window))
+- Remmina remote desktop shows Simplified Chinese, and its main window uses borderless title bar buttons, a grid-free connection list and smaller secondary text. See [Remmina in Simplified Chinese with a macOS look](04-macos-theme.md#remmina).
 
 ## Gestures (touchpad / touchscreen)
 

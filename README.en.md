@@ -46,6 +46,7 @@ Run what you need:
 ./scripts/install-silky-gestures.sh
 python3 scripts/install-macshell-overview.py
 ./scripts/install-macos-theme.sh && omarchy theme set macos-tahoe-dark
+./scripts/install-remmina-mac.sh  # Optional: Remmina in Simplified Chinese with a macOS look
 ./scripts/install-voice-overlay.sh
 ./scripts/install-zsh.sh
 ./scripts/install-maclock.sh

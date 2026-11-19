@@ -26,6 +26,7 @@ A general prompt for the AI:
 ./scripts/install-silky-gestures.sh           # 03: workspace gesture plugin
 python3 scripts/install-macshell-overview.py  # 13: four fingers up / down window overview (needs 02, 03)
 ./scripts/install-macos-theme.sh              # 04: macOS Tahoe theme
+./scripts/install-remmina-mac.sh              # 04: optional Remmina in Chinese with a macOS look
 omarchy theme set macos-tahoe-dark
 ./scripts/install-voice-overlay.sh            # 05: voice overlay
 ./scripts/install-zsh.sh                      # 06: terminal
