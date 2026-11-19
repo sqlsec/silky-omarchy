@@ -60,6 +60,14 @@ Omarchy 自己的主题机制只会设置 Adwaita 和图标主题。hook 在 `ma
 
 Nautilus 侧边栏使用 MacTahoe 原有的符号图标，并显示为蓝色；项目文件夹复用主题内的代码文件夹符号图标。
 
+### 文件管理器磨砂玻璃
+
+Nautilus 会把后方窗口和壁纸虚化成柔和的色块。侧栏透色更强，并带有细高光，文件区使用更厚的底色以保持文件名和图标清晰。
+
+[GTK 4 覆盖](../config/gtk-4.0/nautilus-glass.css)随主题安装脚本写入 `~/.local/share/themes/Silky-MacTahoe-{Dark,Light}/gtk-4.0/`。已安装 MacTahoe GTK 主题时，可在仓库根目录运行 `./scripts/install-macos-theme.sh --no-icons --no-gtk --no-bars` 更新。使用任一 macOS Tahoe 主题，保存工作并退出 Nautilus 的进程后重新打开。桌面虚化需要 GTK 的 Wayland 背景效果支持和开启虚化的 Hyprland。验证环境为 Nautilus 51.1、GTK 4.24.1、Hyprland 0.57.2。
+
+验证时让文件窗口和另一扇含文字的窗口重叠。侧栏应能透出后方色调，同时把后方文字化开，前景文件名仍清晰。要回退玻璃样式，从安装器打印的 `gtk.css.bak.*` 和 `gtk-dark.css.bak.*` 恢复更新前的对应文件，再退出并重新打开 Nautilus。
+
 ChatGPT 之前做的图标调整已经整合进安装脚本：
 
 - 为 Omarchy 自带应用补上图标别名：`omacalc → calc`、`omawrite → text-editor`、`omarchy-discord → discord`

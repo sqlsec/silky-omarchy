@@ -167,18 +167,31 @@ install_gtk() {
   done
 }
 
-install_sidebar_style() {
-  local variant target css
+install_gtk_overlay() {
+  local variant target css staged backup
   for variant in Dark Light; do
     target="$gtk_themes_dir/Silky-MacTahoe-$variant/gtk-4.0"
     mkdir -p "$target"
     ln -sfn "../../MacTahoe-$variant/gtk-4.0/assets" "$target/assets"
     ln -sfn "../../MacTahoe-$variant/gtk-4.0/windows-assets" "$target/windows-assets"
     for css in gtk.css gtk-dark.css; do
-      cat > "$target/$css" <<EOF
-@import url("file://$gtk_themes_dir/MacTahoe-$variant/gtk-4.0/$css");
-.nautilus-window placessidebar image.sidebar-icon { color: #0a84ff; opacity: 1; }
-EOF
+      staged=$(mktemp "$target/.$css.XXXXXX")
+      {
+        printf '@import url("file://%s/MacTahoe-%s/gtk-4.0/%s");\n' "$gtk_themes_dir" "$variant" "$css"
+        printf '.nautilus-window placessidebar image.sidebar-icon { color: #0a84ff; opacity: 1; }\n\n'
+        cat "$repo_root/config/gtk-4.0/nautilus-glass.css"
+      } > "$staged"
+      if cmp -s "$staged" "$target/$css"; then
+        rm -- "$staged"
+        continue
+      fi
+      if [[ -e $target/$css ]]; then
+        backup="$target/$css.bak.$(date +%Y%m%d-%H%M%S-%N)"
+        cp -a -- "$target/$css" "$backup"
+        printf 'Backed up %s to %s\n' "$target/$css" "$backup"
+      fi
+      chmod 644 "$staged"
+      mv -f -- "$staged" "$target/$css"
     done
   done
 }
@@ -240,7 +253,7 @@ PY
 
 $with_icons && install_icons
 $with_gtk && install_gtk
-install_sidebar_style
+install_gtk_overlay
 install_themes
 install_hook
 $with_bars && install_bars

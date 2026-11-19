@@ -60,6 +60,14 @@ When you switch to any other theme, the hook removes the GTK 4 links it made (a 
 
 The Nautilus sidebar uses MacTahoe's own symbolic icons, shown in blue; the Projects folder reuses the theme's code-folder symbolic icon.
 
+### Frosted glass in Files
+
+Nautilus softens windows and wallpaper behind it into broad patches of color. The sidebar lets more color through and has a thin highlight along its edge. The file area uses a denser tint to keep names and icons readable.
+
+The theme installer writes the [GTK 4 overlay](../../config/gtk-4.0/nautilus-glass.css) into `~/.local/share/themes/Silky-MacTahoe-{Dark,Light}/gtk-4.0/`. If the base MacTahoe GTK theme is installed, run `./scripts/install-macos-theme.sh --no-icons --no-gtk --no-bars` from the repository root to update it. With either macOS Tahoe theme active, save your work, quit the Nautilus process, and reopen Files. Background blur requires GTK's Wayland background effects support and Hyprland with blur enabled. Tested with Nautilus 51.1, GTK 4.24.1, and Hyprland 0.57.2.
+
+To check the effect, overlap Files with another window containing text. The sidebar should pick up the colors while softening the text behind it, and filenames should stay crisp. To revert the glass styling, restore the corresponding `gtk.css.bak.*` and `gtk-dark.css.bak.*` backup files printed by the installer, then quit and reopen Nautilus.
+
 Icon tweaks made earlier with ChatGPT are folded into the installer:
 
 - Icon aliases for Omarchy's bundled apps: `omacalc → calc`, `omawrite → text-editor`, `omarchy-discord → discord`
