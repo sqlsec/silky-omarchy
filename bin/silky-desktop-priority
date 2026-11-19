@@ -1,0 +1,318 @@
+#!/usr/bin/env python3
+"""Give the desktop UI (Hyprland, Xwayland, MacShell, input method) CPU priority.
+
+Runs as root. Every few seconds it finds new threads of the configured
+processes and applies a negative nice value plus a uclamp.min floor, so the
+compositor and shell win CPU contention and schedutil ramps the clock as soon
+as they wake. Threads that the application already moved to another policy or
+nice level (disk cache workers, rtkit threads, ...) are left alone. On AC power
+it can also hold a minimum GPU devfreq floor. Everything is reverted on stop.
+"""
+
+import argparse
+import configparser
+import ctypes
+import os
+import platform
+import signal
+import struct
+import sys
+import time
+
+DEFAULT_CONFIG = "/etc/silky/desktop-priority.conf"
+GPU_DEVFREQ_GLOB = "/sys/class/devfreq"
+POWER_SUPPLY = "/sys/class/power_supply"
+
+SCHED_OTHER = 0
+SCHED_RESET_ON_FORK = 0x40000000
+SCHED_FLAG_UTIL_CLAMP_MIN = 0x20
+SYS_SCHED_SETATTR = {"aarch64": 274, "x86_64": 314}.get(platform.machine())
+SYS_SCHED_GETATTR = {"aarch64": 275, "x86_64": 315}.get(platform.machine())
+
+libc = ctypes.CDLL(None, use_errno=True)
+running = True
+
+
+def log(message):
+    print(message, flush=True)
+
+
+def load_config(path):
+    parser = configparser.ConfigParser(inline_comment_prefixes=("#", ";"))
+    parser.optionxform = str  # process names are case sensitive
+    if not parser.read(path):
+        raise SystemExit(f"Cannot read config: {path}")
+    general = parser["general"] if parser.has_section("general") else {}
+    targets = {}
+    for comm, value in (parser["targets"].items() if parser.has_section("targets") else []):
+        parts = value.split()
+        nice = int(parts[0])
+        uclamp = int(parts[1]) if len(parts) > 1 else 0
+        if not -15 <= nice <= 0:
+            raise SystemExit(f"{comm}: nice must be between -15 and 0")
+        if not 0 <= uclamp <= 1024:
+            raise SystemExit(f"{comm}: uclamp_min must be between 0 and 1024")
+        targets[comm[:15]] = (nice, uclamp)
+    return {
+        "interval": float(general.get("interval", 2)),
+        "min_uid": int(general.get("min_uid", 1000)),
+        "gpu_ac_min_mhz": int(parser.get("gpu", "ac_min_freq_mhz", fallback="0")),
+        "targets": targets,
+    }
+
+
+def sched_attr(nice, uclamp_min):
+    # struct sched_attr (56 bytes, SCHED_ATTR_SIZE_VER1)
+    return struct.pack("IIQiIQQQII", 56, SCHED_OTHER, SCHED_FLAG_UTIL_CLAMP_MIN,
+                       nice, 0, 0, 0, 0, uclamp_min, 1024)
+
+
+def set_thread(tid, nice, uclamp_min):
+    if SYS_SCHED_SETATTR is None:
+        os.setpriority(os.PRIO_PROCESS, tid, nice)
+        return
+    buf = ctypes.create_string_buffer(sched_attr(nice, uclamp_min), 56)
+    if libc.syscall(SYS_SCHED_SETATTR, tid, buf, 0) != 0:
+        err = ctypes.get_errno()
+        raise OSError(err, os.strerror(err))
+
+
+def get_uclamp_min(tid):
+    if SYS_SCHED_GETATTR is None:
+        return None
+    buf = ctypes.create_string_buffer(56)
+    if libc.syscall(SYS_SCHED_GETATTR, tid, buf, 56, 0) != 0:
+        return None
+    return struct.unpack("IIQiIQQQII", buf.raw)[8]
+
+
+def read(path):
+    try:
+        with open(path) as handle:
+            return handle.read().strip()
+    except OSError:
+        return None
+
+
+def thread_state(pid, tid):
+    """Return (starttime, nice, policy) or None if the thread is gone."""
+    stat = read(f"/proc/{pid}/task/{tid}/stat")
+    if not stat:
+        return None
+    fields = stat[stat.rindex(")") + 2:].split()
+    # fields[0] is field 3 (state); nice is field 19, starttime field 22.
+    try:
+        policy = os.sched_getscheduler(tid)
+    except OSError:
+        return None
+    return fields[19], int(fields[16]), policy
+
+
+class Booster:
+    def __init__(self, config, dry_run=False):
+        self.config = config
+        self.dry_run = dry_run
+        self.pids = {}      # pid -> (starttime, target or None)
+        self.applied = {}   # tid -> starttime
+        self.gpu_saved = {}  # devfreq path -> original min_freq
+        self.warned = set()
+
+    def match(self, pid):
+        stat = read(f"/proc/{pid}/stat")
+        if not stat:
+            return None, None
+        start = stat[stat.rindex(")") + 2:].split()[19]
+        cached = self.pids.get(pid)
+        if cached and cached[0] == start:
+            return start, cached[1]
+        target = None
+        comm = read(f"/proc/{pid}/comm")
+        if comm in self.config["targets"]:
+            try:
+                if os.stat(f"/proc/{pid}").st_uid >= self.config["min_uid"]:
+                    target = (comm, *self.config["targets"][comm])
+            except OSError:
+                pass
+        self.pids[pid] = (start, target)
+        return start, target
+
+    def scan(self):
+        live = set()
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            pid = int(entry)
+            live.add(pid)
+            _, target = self.match(pid)
+            if target:
+                self.boost_process(pid, target)
+        for pid in set(self.pids) - live:
+            del self.pids[pid]
+        live_tids = {tid for tid in self.applied if os.path.exists(f"/proc/{tid}")}
+        self.applied = {tid: s for tid, s in self.applied.items() if tid in live_tids}
+
+    def boost_process(self, pid, target):
+        comm, nice, uclamp = target
+        try:
+            tids = [int(t) for t in os.listdir(f"/proc/{pid}/task")]
+        except OSError:
+            return
+        for tid in tids:
+            state = thread_state(pid, tid)
+            if not state:
+                continue
+            start, current_nice, policy = state
+            if self.applied.get(tid) == start:
+                continue
+            # Leave threads the app already tuned (SCHED_BATCH/IDLE, RT,
+            # reset-on-fork rtkit threads, or a deliberate nice value).
+            if policy != SCHED_OTHER or current_nice not in (0, nice):
+                self.applied[tid] = start
+                continue
+            if self.dry_run:
+                log(f"would set {comm} pid {pid} tid {tid}: nice {current_nice} -> {nice}, uclamp.min {uclamp}")
+            else:
+                try:
+                    set_thread(tid, nice, uclamp)
+                except OSError as exc:
+                    if (comm, exc.errno) not in self.warned:
+                        self.warned.add((comm, exc.errno))
+                        log(f"cannot boost {comm} tid {tid}: {exc}")
+                    continue
+            self.applied[tid] = start
+
+    def on_ac(self):
+        try:
+            supplies = os.listdir(POWER_SUPPLY)
+        except OSError:
+            return True
+        has_battery = False
+        for name in supplies:
+            kind = read(f"{POWER_SUPPLY}/{name}/type")
+            if kind == "Battery":
+                has_battery = True
+            elif read(f"{POWER_SUPPLY}/{name}/online") == "1":
+                return True
+        return not has_battery
+
+    def gpu_devices(self):
+        try:
+            names = os.listdir(GPU_DEVFREQ_GLOB)
+        except OSError:
+            return []
+        return [f"{GPU_DEVFREQ_GLOB}/{n}" for n in names if "gpu" in n]
+
+    def update_gpu(self):
+        floor_mhz = self.config["gpu_ac_min_mhz"]
+        if floor_mhz <= 0:
+            return
+        want_floor = self.on_ac()
+        for dev in self.gpu_devices():
+            available = sorted(int(f) for f in (read(f"{dev}/available_frequencies") or "").split())
+            current = read(f"{dev}/min_freq")
+            if not available or current is None:
+                continue
+            if want_floor:
+                floor = next((f for f in available if f >= floor_mhz * 1_000_000), available[-1])
+                if current != str(floor) and self.write_gpu(dev, floor):
+                    self.gpu_saved.setdefault(dev, current)
+            elif dev in self.gpu_saved:
+                self.write_gpu(dev, self.gpu_saved.pop(dev))
+
+    def write_gpu(self, dev, value):
+        if self.dry_run:
+            log(f"would set {dev}/min_freq = {value}")
+            return False
+        try:
+            with open(f"{dev}/min_freq", "w") as handle:
+                handle.write(str(value))
+            log(f"{dev}/min_freq = {value}")
+            return True
+        except OSError as exc:
+            if (dev, exc.errno) not in self.warned:
+                self.warned.add((dev, exc.errno))
+                log(f"cannot set {dev}/min_freq: {exc}")
+            return False
+
+    def restore(self):
+        for pid, (_, target) in list(self.pids.items()):
+            if not target:
+                continue
+            try:
+                tids = [int(t) for t in os.listdir(f"/proc/{pid}/task")]
+            except OSError:
+                continue
+            for tid in tids:
+                state = thread_state(pid, tid)
+                if state and state[2] == SCHED_OTHER and state[1] == target[1]:
+                    try:
+                        set_thread(tid, 0, 0)
+                    except OSError:
+                        pass
+        for dev in list(self.gpu_saved):
+            self.write_gpu(dev, self.gpu_saved.pop(dev))
+        log("restored default priorities")
+
+
+def status(config):
+    print(f"{'process':<16}{'pid':>8}{'threads':>9}{'boosted':>9}  nice  uclamp.min")
+    for entry in sorted(os.listdir("/proc"), key=lambda e: (len(e), e)):
+        if not entry.isdigit():
+            continue
+        comm = read(f"/proc/{entry}/comm")
+        if comm not in config["targets"]:
+            continue
+        nice, uclamp = config["targets"][comm]
+        try:
+            tids = [int(t) for t in os.listdir(f"/proc/{entry}/task")]
+        except OSError:
+            continue
+        boosted = 0
+        for tid in tids:
+            state = thread_state(int(entry), tid)
+            if state and state[1] == nice and nice != 0:
+                boosted += 1
+        main = thread_state(int(entry), int(entry))
+        print(f"{comm:<16}{entry:>8}{len(tids):>9}{boosted:>9}  {main[1] if main else '?':>4}  "
+              f"{get_uclamp_min(int(entry))}")
+    for dev in Booster(config).gpu_devices():
+        print(f"{dev}: governor={read(dev + '/governor')} min={read(dev + '/min_freq')} "
+              f"cur={read(dev + '/cur_freq')}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--config", default=DEFAULT_CONFIG)
+    parser.add_argument("--dry-run", action="store_true", help="print what would change")
+    parser.add_argument("--once", action="store_true", help="apply once and exit")
+    parser.add_argument("--status", action="store_true", help="show current priorities")
+    args = parser.parse_args()
+    config = load_config(args.config)
+
+    if args.status:
+        status(config)
+        return
+    booster = Booster(config, dry_run=args.dry_run)
+    if args.once or args.dry_run:
+        booster.scan()
+        booster.update_gpu()
+        return
+
+    def stop(*_):
+        global running
+        running = False
+
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    log(f"boosting {', '.join(config['targets'])} every {config['interval']}s")
+    try:
+        while running:
+            booster.scan()
+            booster.update_gpu()
+            time.sleep(config["interval"])
+    finally:
+        booster.restore()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

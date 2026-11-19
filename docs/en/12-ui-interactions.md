@@ -53,6 +53,7 @@ The Control Center's new "Display" page has an Appearance switch, so you can swi
 - Fixed the misaligned dark band at the edges of popup panels (weaker refraction, narrower bevel) ([02](02-macshell.md#misaligned-glass-panel-edges))
 - Removed the periodic pointer stutter; 90 Hz built-in screen ([02](02-macshell.md#periodic-pointer-stutter))
 - No more two menu bars / two Docks after a crash; the menu bar, Dock and wheel direction survive a reboot ([02](02-macshell.md))
+- Window animations, the menu bar, the Dock and the pointer stay smooth while background programs max out the CPU: Hyprland, MacShell and the input method are scheduled first, and on AC the GPU no longer starts from its lowest clock ([16](16-desktop-priority.md))
 
 ## Windows
 

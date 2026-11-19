@@ -40,6 +40,7 @@ omarchy theme set macos-tahoe-dark
 ./scripts/install-shortcuts.sh                # 10：快捷键冲突 + Super+K 面板
 ./scripts/install-menu-glass.sh               # 11：Omarchy 菜单玻璃 + 深浅色
 ./scripts/install-obsidian-theme.sh           # 15：Obsidian 主题 + 打字淡入插件
+./scripts/install-desktop-priority.sh         # 16：桌面优先调度（需要 sudo）
 ```
 
 01 的全局配置片段手动合并。可选的微信适配更新使用独立脚本。
@@ -176,6 +177,14 @@ omarchy theme set macos-tahoe-dark
 - **关键词**：`appearance.json` 的 `cssTheme` / `theme: "system"`、`community-plugins.json`、`.nav-file-title[data-path$=".pdf" i]`、`.nav-file-title-content::before`、`.cm-cursor` 的 `left/top` 过渡、`.cm-cursorLayer` 的 `cm-blink`、`registerEditorExtension`、`StateField` + `Decoration.mark`、`isUserEvent("input.type.compose")`、`compositionend`、`view.composing`
 - **坑**：Obsidian 的半透明窗口只在 macOS 生效，玻璃只能模糊应用内部；安全模式开关存在 localStorage，脚本不改，要用户手动关；相邻 mark 会被 CodeMirror 合并，导致动画重播，所以每个 mark 要带唯一属性；组字期间不能改 DOM，否则会打断输入法；Obsidian 默认不显示未知后缀的文件，要开「检测所有类型文件」；DevTools 测试别用 9333 端口（本机已被占用）；软件包的 `obsidian.desktop` 写的是 `StartupWMClass=obsidian`，但 Wayland 窗口的 app id 是 `md.obsidian.Obsidian`，Dock 认不出窗口，点图标会一直跳，所以脚本要写一份用户级入口来修正
 - **验证**：独立实例 `obsidian --user-data-dir=<临时目录> --remote-debugging-port=<端口>` 打开测试库，检查 `app.customCss.theme`、`.silky-typed` 的数量，用 `Input.insertText` / `Input.imeSetComposition` 模拟输入；切换 `color-scheme` 看 Obsidian 是否跟着变
+
+## 16 桌面优先调度
+
+- **效果**：root 服务每 2 秒给 `Hyprland`（nice -11，uclamp.min 512）、`qs` / `quickshell`（-8，384）、`Xwayland`、`fcitx5`（-6，256）的新线程提权；接电时 Adreno devfreq 最低 550 MHz，电池时恢复
+- **文件**：`bin/silky-desktop-priority`、`config/silky/desktop-priority.conf`（→ `/etc/silky/`）、`config/systemd/system/silky-desktop-priority.service`、`scripts/install-desktop-priority.sh`（`--uninstall` 回滚）、`docs/16-desktop-priority.md`
+- **关键词**：`sched_setattr`（aarch64 274 / x86_64 314）、`SCHED_FLAG_UTIL_CLAMP_MIN`、`CAP_SYS_NICE`、`/sys/class/devfreq/*gpu*/min_freq`、`power_supply/*/online`
+- **坑**：nice 按线程生效，要遍历 `/proc/<pid>/task`；跳过非 `SCHED_OTHER` 和 nice 不为 0 的线程（Mesa `disk$` 缓存线程是 `SCHED_BATCH`）；读 `/proc/…/stat` 要从最后一个 `)` 之后切字段，`[pango] fontcon` 这类线程名带空格，用 awk 数列会错位；Hyprland 在 greetd 的 `session-N.scope` 里，和直接从会话拉起的 Chromium 同一个 cgroup，所以不能用 scope 的 `CPUWeight`；aquamarine 已拿到高优先级 EGL 上下文；不要用实时调度
+- **验证**：`/usr/local/bin/silky-desktop-priority --config /etc/silky/desktop-priority.conf --status`、`ps -L -o tid,ni,cls,comm -p "$(pgrep -x Hyprland)"`；无 root 预览用 `--dry-run`
 
 ## 杂项
 

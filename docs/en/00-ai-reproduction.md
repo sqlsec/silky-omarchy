@@ -40,6 +40,7 @@ omarchy theme set macos-tahoe-dark
 ./scripts/install-shortcuts.sh                # 10: shortcut clashes + Super+K panel
 ./scripts/install-menu-glass.sh               # 11: Omarchy menu glass + light/dark
 ./scripts/install-obsidian-theme.sh           # 15: Obsidian theme + typing-fade plugin
+./scripts/install-desktop-priority.sh         # 16: desktop priority (needs sudo)
 ```
 
 Merge the global configuration snippets in 01 by hand. The optional WeChat update uses its own installer.
@@ -176,6 +177,14 @@ Merge the global configuration snippets in 01 by hand. The optional WeChat updat
 - **Keywords**: `cssTheme` / `theme: "system"` in `appearance.json`, `community-plugins.json`, `.nav-file-title[data-path$=".pdf" i]`, `.nav-file-title-content::before`, `left/top` transition on `.cm-cursor`, `cm-blink` on `.cm-cursorLayer`, `registerEditorExtension`, `StateField` + `Decoration.mark`, `isUserEvent("input.type.compose")`, `compositionend`, `view.composing`
 - **Pitfalls**: Obsidian's translucent window only works on macOS, so the glass can only blur the app itself. Restricted mode lives in localStorage; the script leaves it alone and the user turns it off by hand. CodeMirror merges neighbouring marks, which replays the animation, so each mark needs a unique attribute. The DOM must not change during composition, or the input method breaks. Obsidian hides unknown extensions unless "Detect all file extensions" is on. Don't use port 9333 for DevTools tests (it is already taken on this machine). The packaged `obsidian.desktop` says `StartupWMClass=obsidian` while the Wayland window's app id is `md.obsidian.Obsidian`, so the Dock doesn't recognise the window and its icon keeps bouncing; the script writes a user-level entry to fix this
 - **Verify**: start a separate instance with `obsidian --user-data-dir=<temp dir> --remote-debugging-port=<port>` on a test vault, check `app.customCss.theme` and the number of `.silky-typed` marks, and simulate input with `Input.insertText` / `Input.imeSetComposition`. Switch `color-scheme` and check that Obsidian follows
+
+## 16 Desktop priority
+
+- **Effect**: a root service boosts new threads every 2 s: `Hyprland` (nice -11, uclamp.min 512), `qs` / `quickshell` (-8, 384), `Xwayland` and `fcitx5` (-6, 256). On AC the Adreno devfreq floor is 550 MHz; on battery it is restored
+- **Files**: `bin/silky-desktop-priority`, `config/silky/desktop-priority.conf` (→ `/etc/silky/`), `config/systemd/system/silky-desktop-priority.service`, `scripts/install-desktop-priority.sh` (`--uninstall` rolls back), `docs/en/16-desktop-priority.md`
+- **Keywords**: `sched_setattr` (aarch64 274 / x86_64 314), `SCHED_FLAG_UTIL_CLAMP_MIN`, `CAP_SYS_NICE`, `/sys/class/devfreq/*gpu*/min_freq`, `power_supply/*/online`
+- **Pitfalls**: nice is per thread, so walk `/proc/<pid>/task`. Skip threads that are not `SCHED_OTHER` or whose nice is not 0 (Mesa's `disk$` cache threads are `SCHED_BATCH`). Split `/proc/…/stat` after the last `)`: thread names such as `[pango] fontcon` contain spaces, so counting columns with awk goes wrong. Hyprland lives in greetd's `session-N.scope`, the same cgroup as Chromium launched straight from the session, so the scope's `CPUWeight` is the wrong lever. aquamarine already has a high-priority EGL context. Don't use realtime scheduling
+- **Verify**: `/usr/local/bin/silky-desktop-priority --config /etc/silky/desktop-priority.conf --status`, `ps -L -o tid,ni,cls,comm -p "$(pgrep -x Hyprland)"`; preview without root with `--dry-run`
 
 ## Miscellaneous
 

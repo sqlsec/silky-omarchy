@@ -26,6 +26,7 @@ To see every interface and interaction change grouped by where you feel it (menu
 | 13 | Window overview | ✅ | Four fingers up on the touchpad or touch screen shows every window of the workspace, four fingers down every window of the current app; linear, follows the fingers, interruptible and reversible (plugin + MacShell component) |
 | 14 | [Logitech mouse](docs/en/14-omalogi.md) | ✅ | Standalone Omalogi window with a Chinese UI, G604 button diagrams, onboard profiles, a manual key picker, Super+K system shortcuts, and an ARM source build |
 | 15 | [Obsidian](docs/en/15-obsidian.md) | ✅ | macOS 27 theme: glass menus and floating sidebars, follows light / dark, Finder blue folders and per-extension file icons, gliding caret and typing fade-in (input methods included), Terminal-window code blocks |
+| 16 | [Desktop priority](docs/en/16-desktop-priority.md) | ✅ | Hyprland, MacShell, Xwayland and input-method threads get the CPU first (negative nice + uclamp clock floor), and the GPU stays at 550 MHz or more on AC; animations and the pointer stay smooth under full background load |
 
 ## Quick start
 
@@ -63,6 +64,7 @@ python3 scripts/install-macshell-overview.py
 ./scripts/install-menu-glass.sh
 ./scripts/install-omalogi.sh
 ./scripts/install-obsidian-theme.sh
+./scripts/install-desktop-priority.sh   # needs sudo
 ```
 
 Every script backs up the files it changes first. After installing or upgrading, run the self-check: it confirms item by item that the menu bar, Dock, plugins, lock screen, voice overlay and so on are in the expected state, and prints the fix for anything that is not:
@@ -122,3 +124,4 @@ docs/             One document per module (English in docs/en/)
 - [13 · Four fingers up / down: window overview](docs/en/13-window-overview.md)
 - [14 · Omalogi: G604 buttons, onboard profiles, and system shortcuts](docs/en/14-omalogi.md)
 - [15 · Obsidian: macOS 27 theme, file icons and smooth typing](docs/en/15-obsidian.md)
+- [16 · Desktop priority: Hyprland and MacShell get the CPU / GPU first](docs/en/16-desktop-priority.md)

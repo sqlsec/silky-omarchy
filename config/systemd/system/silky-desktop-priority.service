@@ -1,0 +1,22 @@
+[Unit]
+Description=Prioritise Hyprland, MacShell and the input method on CPU and GPU (Silky Omarchy)
+After=systemd-user-sessions.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/silky-desktop-priority --config /etc/silky/desktop-priority.conf
+Restart=on-failure
+RestartSec=3
+Nice=5
+CapabilityBoundingSet=CAP_SYS_NICE
+AmbientCapabilities=CAP_SYS_NICE
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/sys/devices
+ProtectHome=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+MemoryMax=64M
+
+[Install]
+WantedBy=multi-user.target
