@@ -1,6 +1,6 @@
-// Silky Voice: a frosted-glass waveform pill for WowType's voice input.
+// Silky Voice: a frosted-glass waveform pill for WowType and vinput.
 //
-// bridge.py owns WowType's overlay D-Bus name and streams its State signals here as JSON lines. While you speak,
+// bridge.py sends WowType and vinput recording events here as JSON lines. While you speak,
 // three overlapping curves (blue, violet, pink) swell with your real input level; while WowType recognizes, they
 // settle into a soft shimmer; the result flashes in the pill and it folds away.
 //
@@ -28,6 +28,7 @@ ShellRoot {
     property real voice: 0            // smoothed
     property real time: 0
     property bool shown: demo
+    property bool ambientPulse: false
 
     // WowType's level is 0..100 (-60 dB .. -10 dB); a quiet room sits below ~20.
     function levelToVoice(level) {
@@ -38,6 +39,7 @@ ShellRoot {
     function defaultLabel(s) {
         if (s === stListening) return "正在听…";
         if (s === stRecognizing) return "识别中…";
+        if (s === stDone) return "已输入";
         if (s === stError) return "出错了";
         return "";
     }
@@ -45,10 +47,11 @@ ShellRoot {
     function onState(m) {
         staleTimer.restart();
         if (m.s === stHide) {
-            if (root.state !== stDone) root.shown = false;
+            if (root.state !== stDone && root.state !== stError) root.shown = false;
             return;
         }
         root.state = m.s;
+        root.ambientPulse = m.pulse === true;
         root.label = (m.t && m.t.length) ? m.t : defaultLabel(m.s);
         root.voiceTarget = m.s === stListening ? levelToVoice(m.l || 0) : 0;
         root.shown = true;
@@ -90,8 +93,11 @@ ShellRoot {
             var dt = Math.min(0.05, frameTime);
             root.time += dt;
             // fast attack, slower release, like a VU meter
-            var rate = root.voiceTarget > root.voice ? 18 : 6;
-            root.voice += (root.voiceTarget - root.voice) * (1 - Math.exp(-rate * dt));
+            var target = root.ambientPulse
+                ? 0.38 + 0.20 * Math.sin(root.time * 4.6) + 0.10 * Math.sin(root.time * 7.7)
+                : root.voiceTarget;
+            var rate = target > root.voice ? 18 : 6;
+            root.voice += (target - root.voice) * (1 - Math.exp(-rate * dt));
             wave.requestPaint();
         }
     }
@@ -117,12 +123,12 @@ ShellRoot {
             anchors.verticalCenter: parent.verticalCenter
             height: 52
             width: Math.min(parent.width - 24, 26 + badge.width + 12 + wave.width + 14 + labelText.implicitWidth + 24)
-            Behavior on width { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            Behavior on width { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
             opacity: root.shown ? 1 : 0
-            scale: root.shown ? 1 : 0.86
-            Behavior on opacity { NumberAnimation { duration: root.shown ? 180 : 240; easing.type: Easing.OutCubic } }
-            Behavior on scale { NumberAnimation { duration: root.shown ? 360 : 240; easing.type: root.shown ? Easing.OutBack : Easing.InCubic; easing.overshoot: 1.6 } }
+            scale: root.shown ? 1 : 0.96
+            Behavior on opacity { NumberAnimation { duration: root.shown ? 180 : 120; easing.type: Easing.OutCubic } }
+            Behavior on scale { NumberAnimation { duration: root.shown ? 180 : 120; easing.type: Easing.OutCubic } }
 
             // glass body: Hyprland blurs what is behind (layer rule "silky-voice"), this tints it
             Rectangle {
@@ -196,7 +202,7 @@ ShellRoot {
                 // the waveform
                 Canvas {
                     id: wave
-                    width: 132; height: 40
+                    width: 168; height: 40
                     anchors.verticalCenter: parent.verticalCenter
                     renderTarget: Canvas.FramebufferObject
                     readonly property var layers: [
@@ -255,6 +261,7 @@ ShellRoot {
                     id: labelText
                     anchors.verticalCenter: parent.verticalCenter
                     width: Math.min(implicitWidth, 260)
+                    textFormat: Text.PlainText
                     text: root.label || root.defaultLabel(root.state)
                     elide: Text.ElideRight
                     color: root.state === root.stError ? "#ff6961"

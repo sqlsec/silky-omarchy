@@ -1,4 +1,4 @@
-# 05 · Waveform overlay for WowType voice input
+# 05 · Waveform overlay for WowType and vinput
 
 [简体中文](../05-voice-overlay.md) | English
 
@@ -49,6 +49,20 @@ The name should be owned by `python3`. Then hold Right Alt in WowType and speak.
 WowType's voice key is Right Alt, while Omarchy binds Right Alt, Alt+Space, F9 and Super+Ctrl+X to "system dictation" by default, backed by Superwhisper. Pressing Right Alt triggered both, and Superwhisper was launched every time.
 
 Fix: `~/.config/omarchy/defaults/dictation` is emptied (the old value is backed up), so Omarchy no longer binds those dictation keys or loads Superwhisper's shortcut bridge; Superwhisper's autostart is turned off too. To bring Omarchy's dictation back, choose it again under Omarchy menu → Setup → Defaults → Dictation.
+
+## Streaming vinput and its waveform
+
+These changes target **fcitx5-vinput 2.4.2** with Sherpa-ONNX 1.13.8. If vinput is already installed, rerun the overlay installer above to connect it to the recording states. The pill appears at the bottom while recording and closes after commit or cancellation. vinput presents the draft inside the input method.
+
+The [local 2.4.2 patch](../../voice-overlay/vinput-2.4.2.patch) pads the streaming audio with one second of silence at the end so the model can decode the last frame. It also calculates the level of the audio vinput is already capturing every 50 ms and sends it to the overlay as a D-Bus `AudioLevel` signal. A stock daemon drives the recording animation. A patched daemon makes the waveform follow your actual voice level.
+
+Apply the patch to the vinput `v2.4.2` source tree and build its `daemon` target. Set `CMAKE_INSTALL_PREFIX` to the installed user prefix and point CMake at the release bundle's Sherpa libraries and the 1.13.8 headers. Install the result under the name `vinput-daemon-silky` and override `ExecStart` in `~/.config/systemd/user/vinput-daemon.service.d/50-silky-voice.conf`. Run `systemctl --user daemon-reload` and `systemctl --user restart vinput-daemon.service`.
+
+The installation here uses the [X-ASR 480 ms Chinese-English streaming model](https://huggingface.co/GilgameshWind/X-ASR-zh-en) with hotwords. Its token and BPE model files match those in the 960 ms variant. If the 960 ms model is installed, put the 480 ms model in a sibling directory, copy the original `vinput-model.json` and `bpe.vocab`, and set `recognizer.decoding_method`, `max_active_paths`, and `hotwords_score` to `modified_beam_search`, `6`, and `2.2`, respectively. Use `vinput model list` and `vinput model use <model ID>` to verify and activate it.
+
+Run `busctl --user introspect org.fcitx.Vinput /org/fcitx/Vinput` to verify that the `AudioLevel` signal is available. Hold Right Alt to verify the overlay, live text, and sound-reactive waveform. To restore the packaged daemon, remove the systemd override, reload systemd, and restart the service. You can switch the ASR model back to 960 ms independently.
+
+Local verification replayed a synthetic Mandarin-English recording through PipeWire. It checked live text, the complete final result without silence added to the test input, and the visible overlay with changing audio levels. Edit technical terms in `~/.config/vinput/hotwords.txt`.
 
 ## Rollback
 

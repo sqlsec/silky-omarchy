@@ -1,0 +1,125 @@
+--- a/src/daemon/asr/backends/sherpa_streaming_backend.cpp
++++ b/src/daemon/asr/backends/sherpa_streaming_backend.cpp
+@@ -1,3 +1,4 @@
++#include <array>
+ #include "daemon/asr/backends/sherpa_streaming_backend.h"
+ 
+ #include <cmath>
+@@ -134,6 +135,12 @@
+     }
+ 
+     finished_ = true;
++    if (total_samples_ != 0) {
++      // Give the encoder a complete final chunk, including its right context.
++      static constexpr std::array<float, 16000> tail_padding{};
++      SherpaOnnxOnlineStreamAcceptWaveform(stream_, 16000, tail_padding.data(),
++                                           static_cast<int32_t>(tail_padding.size()));
++    }
+     SherpaOnnxOnlineStreamInputFinished(stream_);
+     DecodeAvailable();
+ 
+--- a/src/daemon/runtime/daemon_runtime_controller.cpp
++++ b/src/daemon/runtime/daemon_runtime_controller.cpp
+@@ -423,6 +423,7 @@
+       recording_started_at_ = std::chrono::steady_clock::now();
+       first_non_silent_at_.reset();
+       first_partial_logged_ = false;
++      next_audio_level_at_ = {};
+       accepting_chunks_.store(true, std::memory_order_relaxed);
+       phase_ = vinput::dbus::Status::Recording;
+       start_recording_in_progress_ = false;
+@@ -486,6 +487,19 @@
+       vinput::audio::ApplyGainI16(gained_pcm, current_input_gain_);
+     }
+     const std::span<const int16_t> pcm_view(gained_pcm);
++    const auto now = std::chrono::steady_clock::now();
++    if (!pcm_view.empty() && now >= next_audio_level_at_) {
++      double squares = 0.0;
++      for (const int16_t sample : pcm_view) {
++        const double value = sample / 32768.0;
++        squares += value * value;
++      }
++      const double mean = squares / pcm_view.size();
++      const double db = 10.0 * std::log10(std::max(mean, 1e-10));
++      const auto level = static_cast<uint32_t>(std::lround(2.0 * std::clamp(db + 60.0, 0.0, 50.0)));
++      dbus_->EmitAudioLevel(level);
++      next_audio_level_at_ = now + std::chrono::milliseconds(50);
++    }
+ 
+     if (!first_non_silent_at_.has_value() && HasNonSilentAudio(pcm_view)) {
+       first_non_silent_at_ = std::chrono::steady_clock::now();
+--- a/src/daemon/runtime/daemon_runtime_controller.h
++++ b/src/daemon/runtime/daemon_runtime_controller.h
+@@ -92,6 +92,7 @@
+   float current_input_gain_ = 1.0f;
+   std::string latest_final_text_;
+   std::optional<std::chrono::steady_clock::time_point> recording_started_at_;
++  std::chrono::steady_clock::time_point next_audio_level_at_{};
+   std::optional<std::chrono::steady_clock::time_point> first_non_silent_at_;
+   bool first_partial_logged_ = false;
+   bool start_recording_in_progress_ = false;
+--- a/src/daemon/runtime/dbus_service.cpp
++++ b/src/daemon/runtime/dbus_service.cpp
+@@ -63,6 +63,7 @@
+     SD_BUS_SIGNAL(kSignalRecognitionResult, "s", 0),
+     SD_BUS_SIGNAL(kSignalRecognitionPartial, "s", 0),
+     SD_BUS_SIGNAL(kSignalStatusChanged, "s", 0),
++    SD_BUS_SIGNAL("AudioLevel", "u", 0),
+     SD_BUS_SIGNAL(kSignalDaemonNotification, kErrorInfoSignature, 0),
+     SD_BUS_VTABLE_END,
+ };
+@@ -143,6 +144,8 @@
+     } else if (item.type == PendingEmit::Type::Status) {
+       sd_bus_emit_signal(bus_, kObjectPath, kInterface, kSignalStatusChanged, "s",
+                          item.payload.c_str());
++    } else if (item.type == PendingEmit::Type::AudioLevel) {
++      sd_bus_emit_signal(bus_, kObjectPath, kInterface, "AudioLevel", "u", item.level);
+     } else {
+       sd_bus_emit_signal(bus_, kObjectPath, kInterface, kSignalDaemonNotification,
+                          kErrorInfoSignature, item.notification.code.c_str(),
+@@ -165,6 +168,15 @@
+   {
+     std::lock_guard<std::mutex> lock(emit_mutex_);
+     emit_queue_.push_back({PendingEmit::Type::Partial, text, {}});
++  }
++  uint64_t val = 1;
++  (void)write(notify_fd_, &val, sizeof(val));
++}
++
++void DbusService::EmitAudioLevel(uint32_t level) {
++  {
++    std::lock_guard<std::mutex> lock(emit_mutex_);
++    emit_queue_.push_back({PendingEmit::Type::AudioLevel, {}, {}, level});
+   }
+   uint64_t val = 1;
+   (void)write(notify_fd_, &val, sizeof(val));
+--- a/src/daemon/runtime/dbus_service.h
++++ b/src/daemon/runtime/dbus_service.h
+@@ -1,5 +1,6 @@
+ #pragma once
+ 
++#include <cstdint>
+ #include <functional>
+ #include <mutex>
+ #include <string>
+@@ -41,6 +42,7 @@
+   void FlushEmitQueue(); // main thread only
+   void EmitRecognitionResult(const std::string& text);
+   void EmitRecognitionPartial(const std::string& text);
++  void EmitAudioLevel(uint32_t level);
+   void EmitStatusChanged(const std::string& status);
+   void EmitNotification(const vinput::dbus::ErrorInfo& notification);
+ 
+@@ -70,10 +72,11 @@
+   int notify_fd_ = -1;
+ 
+   struct PendingEmit {
+-    enum class Type { Result, Partial, Status, Notification };
++    enum class Type { Result, Partial, Status, Notification, AudioLevel };
+     Type type;
+     std::string payload;
+     vinput::dbus::ErrorInfo notification;
++    uint32_t level = 0;
+   };
+   std::mutex emit_mutex_;
+   std::vector<PendingEmit> emit_queue_;

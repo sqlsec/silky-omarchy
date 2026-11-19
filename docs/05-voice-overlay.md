@@ -1,4 +1,4 @@
-# 05 · WowType 语音输入的声波浮条
+# 05 · WowType 和 vinput 的声波浮条
 
 简体中文 | [English](en/05-voice-overlay.md)
 
@@ -49,6 +49,20 @@ busctl --user list | grep VoiceOverlay
 WowType 的语音键是右 Alt，而 Omarchy 默认把右 Alt、Alt+Space、F9、Super+Ctrl+X 绑定为“系统听写”，后端是 Superwhisper。按右 Alt 会同时触发两者，Superwhisper 每次都会被拉起来。
 
 处理方式：清空 `~/.config/omarchy/defaults/dictation`（原值已备份），Omarchy 就不再绑定这些听写键，也不再加载 Superwhisper 的快捷键桥；同时关闭了 Superwhisper 的开机自启。想恢复 Omarchy 的听写，在 Omarchy 菜单 Setup → Defaults → Dictation 里重新选择即可。
+
+## vinput 的流式识别与声波
+
+下面的改动适用于 **fcitx5-vinput 2.4.2** 和 Sherpa-ONNX 1.13.8。在已经安装 vinput 的机器上重新执行上面的安装脚本即可接入录音状态。屏幕底部的声波在录音时亮起，提交或取消后收起。流式草稿由 vinput 在输入法里显示。
+
+[2.4.2 本机补丁](../voice-overlay/vinput-2.4.2.patch) 消除流式录音的句尾截断。它在结束前给模型补一秒静音，以解码最后一帧音频。从 vinput 已采集的音频每 50 毫秒计算一次音量，通过 D-Bus 的 `AudioLevel` 信号驱动声波。官方原版 daemon 可驱动浮条的录音状态动画。使用补丁版时，波形会跟随真实音量。
+
+在 vinput 的 `v2.4.2` 源码目录应用补丁，再按该版本的构建步骤编译 `daemon` 目标。以当前用户已安装的 vinput 前缀设置 `CMAKE_INSTALL_PREFIX`，并让 CMake 使用上游发行包自带的 Sherpa 库和 1.13.8 头文件。把编译结果另存为 `vinput-daemon-silky`，用 `~/.config/systemd/user/vinput-daemon.service.d/50-silky-voice.conf` 覆盖 `ExecStart`，随后执行 `systemctl --user daemon-reload` 和 `systemctl --user restart vinput-daemon.service`。
+
+本机使用 [X-ASR 480 ms 中英流式模型](https://huggingface.co/GilgameshWind/X-ASR-zh-en) 并开启热词。960 ms 版实测可用同一份词表和 BPE 模型。若已经有 960 ms 模型，可将 480 ms 版的模型文件放到同级新目录，复用原来的 `vinput-model.json` 和 `bpe.vocab`，把 `recognizer.decoding_method`、`max_active_paths` 和 `hotwords_score` 分别设为 `modified_beam_search`、`6`、`2.2`，通过 `vinput model list` 和 `vinput model use <模型 ID>` 确认并启用。
+
+用 `busctl --user introspect org.fcitx.Vinput /org/fcitx/Vinput` 确认 `AudioLevel` 信号存在。按住右 Alt 后检查浮条、实时文本和语音音量变化。要恢复原 daemon，移除上述 systemd 覆盖并重新载入、重启服务。识别模型可单独切回 960 ms。
+
+本机使用合成中英录音，通过 PipeWire 测试了实时文字、未加尾部静音时的完整定稿，以及录音期间浮条显示和音量数值变化。技术词可以在 `~/.config/vinput/hotwords.txt` 中调整。
 
 ## 回滚
 
