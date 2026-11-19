@@ -35,7 +35,7 @@ Item {
         visible: root.mode === "network"
         spacing: -1
         Repeater {
-            model: ["down", "up"]
+            model: ["up", "down"]
             Row {
                 spacing: 2
                 required property string modelData

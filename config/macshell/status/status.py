@@ -1,4 +1,5 @@
 """Read local Linux telemetry and stream JSON lines to MacShell."""
+import colorsys
 import ipaddress
 import json
 import os
@@ -15,6 +16,7 @@ CLOCK_TICKS = os.sysconf("SC_CLK_TCK")
 QCOM_BATTERY = SYS / "power_supply/qcom-battmgr-bat"
 QCOM_LIMIT = QCOM_BATTERY / "charge_control_end_threshold"
 LIMIT_MIN, LIMIT_MAX = 55, 100
+WALLPAPER = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "omarchy/current/background"
 
 
 def read(path):
@@ -244,6 +246,41 @@ HEALTH_LOG_HEADER = "time,battery,model,full_wh,design_wh,health_pct,cycles"
 _health_logged = None
 
 
+def wallpaper_accent(cache={}):
+    """Most vivid dominant color of the current Omarchy wallpaper, toned for dark and light menus."""
+    try:
+        path = WALLPAPER.resolve(strict=True)
+        key = (str(path), path.stat().st_mtime_ns)
+    except OSError:
+        return None
+    if cache.get("key") == key:
+        return cache["value"]
+    value = None
+    try:
+        histogram = subprocess.run(["magick", f"{path}[0]", "-thumbnail", "96x96!", "-colors", "16", "-depth", "8",
+                                    "-format", "%c", "histogram:info:-"],
+                                   capture_output=True, text=True, timeout=20).stdout
+    except (OSError, subprocess.SubprocessError):
+        histogram = ""
+    best = None
+    for count, *channels in re.findall(r"(\d+):\s*\(\s*(\d+),\s*(\d+),\s*(\d+)", histogram):
+        rgb = [int(channel) / 255 for channel in channels]
+        chroma = max(rgb) - min(rgb)
+        # Weight by area and by chroma squared, so a large grey sky loses to a smaller vivid region.
+        score = int(count) * chroma ** 2
+        if best is None or score > best[0]:
+            best = (score, chroma, rgb)
+    if best and best[1] >= 0.12:
+        hue, _, saturation = colorsys.rgb_to_hls(*best[2])
+        saturation = min(max(saturation, 0.5), 0.85)
+
+        def tone(lightness):
+            return "#" + "".join(f"{round(c * 255):02x}" for c in colorsys.hls_to_rgb(hue, lightness, saturation))
+        value = {"dark": tone(0.72), "light": tone(0.38)}
+    cache.update(key=key, value=value)
+    return value
+
+
 def log_battery_health():
     """Append a row per internal battery once a day, and whenever the gauge's full capacity changes."""
     global _health_logged
@@ -436,6 +473,7 @@ def stream(mode):
                     log_battery_health()
                 battery_sample_at = boot_time
             sample["batteryPowerHistory"] = list(battery_power_history)
+            sample["wallpaperAccent"] = wallpaper_accent()
             previous = counters
         elif mode == "network":
             current = sockets()

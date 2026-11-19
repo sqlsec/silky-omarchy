@@ -40,11 +40,14 @@ Item {
     readonly property color thermalColor: palette.dark ? "#ffb36d" : "#a8551a"
     readonly property bool batteryPowered: power.sample?.onBattery ?? UPower.onBattery
     // Four power states, shared with the menu-bar battery. Color marks only what is worth noticing: charging green,
-    // external power without charging (e.g. held at the charge limit) a calm blue, on battery neutral like macOS,
+    // external power without charging (e.g. held at the charge limit) the wallpaper's accent, on battery neutral like macOS,
     // low battery red. Charging wins over low so a plugged-in low battery shows it is recovering.
     readonly property color batteryColor: palette.dark ? "#e6e8ef" : "#3b4252"
     readonly property color chargingColor: palette.dark ? "#72e5a7" : "#167748"
-    readonly property color externalColor: palette.dark ? "#6cb8ff" : "#0b62c4"
+    // external power takes the wallpaper's dominant hue (sampled by status.py), blue when it has none
+    readonly property var wallpaperAccent: summary?.wallpaperAccent
+    readonly property color externalColor: wallpaperAccent ? wallpaperAccent[palette.dark ? "dark" : "light"]
+                                                           : palette.dark ? "#6cb8ff" : "#0b62c4"
     readonly property color lowColor: palette.dark ? "#ff8279" : "#a62b25"
     // the power chart is data, not state: its own hue so it never reads as a warning
     readonly property color powerPlotColor: palette.dark ? "#b9a6ff" : "#5f43b2"

@@ -161,14 +161,23 @@ BATTERY_INDICATOR_V2 = '''                            readonly property color in
                                                     : (bpal.dark ? "#ffd60a" : "#8a6a00")
 '''
 
-# Same four states as the status panel. Only noteworthy states get a color: charging green, external power
-# without charging (held at the charge limit) blue, low battery (< 20%, macOS's threshold) red. On battery is
-# the everyday state and stays neutral like macOS. Charging wins over low.
-BATTERY_INDICATOR = '''                            readonly property color indicatorColor: root.bat.state === UPowerDeviceState.Charging
+BATTERY_INDICATOR_V3 = '''                            readonly property color indicatorColor: root.bat.state === UPowerDeviceState.Charging
                                 ? (bpal.dark ? "#30d158" : "#187b45")
                                 : root.batPct < 20 ? (bpal.dark ? "#ff6057" : "#b72a2a")
                                 : UPower.onBattery ? bpal.fg
                                                     : (bpal.dark ? "#5eb4ff" : "#0a64d6")
+'''
+
+# Same four states as the status panel. Only noteworthy states get a color: charging green, external power
+# without charging (held at the charge limit) the wallpaper's accent from status.py (blue if it has none), low
+# battery (< 20%, macOS's threshold) red. On battery is the everyday state and stays neutral like macOS.
+# Charging wins over low.
+BATTERY_INDICATOR = '''                            readonly property color indicatorColor: root.bat.state === UPowerDeviceState.Charging
+                                ? (bpal.dark ? "#30d158" : "#187b45")
+                                : root.batPct < 20 ? (bpal.dark ? "#ff6057" : "#b72a2a")
+                                : UPower.onBattery ? bpal.fg
+                                : silkyStatusSummary.sample?.wallpaperAccent?.[bpal.dark ? "dark" : "light"]
+                                  ?? (bpal.dark ? "#5eb4ff" : "#0a64d6")
 '''
 
 # A shorter battery pill (28 -> 24 px body): the number inside is two digits most of the time, and macOS keeps
@@ -185,7 +194,7 @@ def integrate(text):
     previous_color_placement = "                            id: silkyBatteryButton\n" + BATTERY_INDICATOR
     if previous_color_placement in text:
         text = text.replace(previous_color_placement, "                            id: silkyBatteryButton\n", 1)
-    for old_indicator in (BATTERY_INDICATOR_V1, BATTERY_INDICATOR_V2):
+    for old_indicator in (BATTERY_INDICATOR_V1, BATTERY_INDICATOR_V2, BATTERY_INDICATOR_V3):
         if old_indicator in text:
             text = text.replace(old_indicator, BATTERY_INDICATOR, 1)
     for old_kind in (TRAY_KIND_V1, TRAY_KIND_V2, TRAY_KIND_V3):
