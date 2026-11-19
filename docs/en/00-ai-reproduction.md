@@ -42,7 +42,7 @@ omarchy theme set macos-tahoe-dark
 ./scripts/install-obsidian-theme.sh           # 15: Obsidian theme + typing-fade plugin
 ```
 
-01 is a config snippet merged by hand; it has no script.
+Merge the global configuration snippets in 01 by hand. The optional WeChat update uses its own installer.
 
 ---
 
@@ -53,6 +53,7 @@ omarchy theme set macos-tahoe-dark
 - **Keywords**: `input.touchpad.natural_scroll`, `input.natural_scroll` (mouse), `drag_3fg = 1`, `hl.gesture({ fingers = 4, direction = "horizontal", action = "workspace" })`, `workspace_swipe_create_new = false`, `hl.animation({ leaf = "workspaces", style = "slide" })`
 - **Pitfalls**: Omarchy turns the workspaces animation off by default; it must be turned back on for a finger-tracking slide. Three-finger drag and a three-finger switch would fight, so switching uses four fingers
 - **Verify**: `hyprctl getoption input:touchpad:natural_scroll`, `hyprctl getoption input:natural_scroll`
+- **Optional WeChat update**: run `./scripts/install-wechat-touch-scroll.sh` with the existing Wayland touch launcher, then restart WeChat. See [WeChat touchscreen scrolling](01-touchpad-gestures.md#touchscreen-scrolling-in-wechats-conversation-list).
 
 ## 02 MacShell refinements
 

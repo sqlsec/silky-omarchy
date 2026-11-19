@@ -67,6 +67,8 @@ The Control Center's new "Display" page has an Appearance switch, so you can swi
 
 ## Gestures (touchpad / touchscreen)
 
+- WeChat’s main window lets less wallpaper show through, and dragging the conversation list on the touchscreen produces continuous scrolling ([01](01-touchpad-gestures.md#touchscreen-scrolling-in-wechats-conversation-list))
+
 - Touchpad: natural scrolling (mouse too), three-finger drag, four-finger horizontal swipe between workspaces with smoother transitions ([01](01-touchpad-gestures.md))
 - Touchscreen: three-finger and single-finger edge swipes between workspaces with rubber-band at the ends; touch drag and two-finger resize of floating windows; dragging terminal title bars ([03](03-silky-gestures.md))
 - Four- / five-finger pinch recognition; rapid repeated clicks are not lost ([03](03-silky-gestures.md))

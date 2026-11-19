@@ -42,7 +42,7 @@ omarchy theme set macos-tahoe-dark
 ./scripts/install-obsidian-theme.sh           # 15：Obsidian 主题 + 打字淡入插件
 ```
 
-01 是手动合并的配置片段，没有脚本。
+01 的全局配置片段手动合并。可选的微信适配更新使用独立脚本。
 
 ---
 
@@ -53,6 +53,7 @@ omarchy theme set macos-tahoe-dark
 - **关键词**：`input.touchpad.natural_scroll`、`input.natural_scroll`（鼠标）、`drag_3fg = 1`、`hl.gesture({ fingers = 4, direction = "horizontal", action = "workspace" })`、`workspace_swipe_create_new = false`、`hl.animation({ leaf = "workspaces", style = "slide" })`
 - **坑**：Omarchy 默认关掉了 workspaces 动画，必须重新打开才有跟手滑动；三指拖移和三指切换会抢手势，所以切换用四指
 - **验证**：`hyprctl getoption input:touchpad:natural_scroll`、`hyprctl getoption input:natural_scroll`
+- **可选微信更新**：已配置 Wayland 触屏启动器时，运行 `./scripts/install-wechat-touch-scroll.sh`，然后重启微信。见 [微信触屏滚动](01-touchpad-gestures.md#微信会话列表触屏滚动)。
 
 ## 02 MacShell 优化
 

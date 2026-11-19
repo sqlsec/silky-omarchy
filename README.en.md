@@ -48,6 +48,7 @@ python3 scripts/install-macshell-overview.py
 ./scripts/install-macos-theme.sh && omarchy theme set macos-tahoe-dark
 ./scripts/install-foot-glass.sh   # Optional: Foot frosted glass follows light/dark appearance
 ./scripts/install-remmina-mac.sh  # Optional: Remmina in Simplified Chinese with a macOS look
+./scripts/install-wechat-touch-scroll.sh  # Optional: existing WeChat Wayland touch launcher
 ./scripts/install-voice-overlay.sh
 ./scripts/install-zsh.sh
 ./scripts/install-maclock.sh

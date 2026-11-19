@@ -60,6 +60,23 @@ hl.animation({
 
 `speed = 4.0` means the animation after release takes at most about 400 ms; while dragging, your fingers control the progress directly.
 
+### Touchscreen scrolling in WeChat’s conversation list
+
+The local WeChat Wayland adapter used to accumulate 34 logical pixels of touch movement into one mouse-wheel notch. Slow drags paused and then jumped. The updated [touch adapter](../../plugins/wechat-wayland/touch-scroll.c) sends continuous scroll deltas after recognising a vertical drag and ends the scroll on release or cancellation. Taps still go to WeChat, and the native touchpad and mouse wheel keep their own input paths. The WeChat main window uses 91% opacity with backdrop blur.
+
+If `~/.local/bin/wechat-wayland-touch` is already set up with `touch-scroll.so` enabled, run this from the repository root.
+
+```bash
+./scripts/install-wechat-touch-scroll.sh
+```
+
+The installer requires GCC or a compatible C compiler, `pkg-config`, the Wayland client development files and Hyprland Lua configuration. The local setup uses the existing native Wayland launcher for WeChat 4.1.13.26 on ARM64. The installer updates the adapter and reloads Hyprland. Quit WeChat from the tray and reopen it from the app launcher to load the new scrolling logic.
+
+To verify, drag slowly over a short distance in the conversation list with one finger, reverse direction, then release and tap a conversation. An isolated test covered small deltas, reversal, release, cancellation and taps. The restarted WeChat process loaded the new library on this machine. Physical touchscreen feel still needs to be checked.
+
+To roll back, quit WeChat and restore the installer’s `*.bak.*` copies of `touch-scroll.c` and `touch-scroll.so` in `~/.local/share/wechat-wayland/` and `~/.config/hypr/silky-wechat-glass.lua`. Run `hyprctl reload`, then reopen WeChat.
+
+
 ## Apply and verify
 
 ```bash

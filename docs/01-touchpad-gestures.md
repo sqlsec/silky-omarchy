@@ -60,6 +60,23 @@ hl.animation({
 
 `speed = 4.0` 表示松手后的动画最长约为 400ms；拖动过程中仍由手指实时控制进度。
 
+### 微信会话列表触屏滚动
+
+本机微信的 Wayland 触屏适配曾每累计 34 个逻辑像素才发一格滚轮，慢滑会停顿后跳动。更新后的 [触屏适配](../plugins/wechat-wayland/touch-scroll.c) 在识别出纵向拖动后，按每次手指移动的距离发送连续滚动事件，松手或取消时结束滚动。轻点继续交给微信，原生触控板和鼠标滚轮仍走各自的输入路径。微信主窗口也调为 91% 不透明，保留背景模糊。
+
+已配置 `~/.local/bin/wechat-wayland-touch` 且启用了 `touch-scroll.so` 的用户可以从仓库根目录运行：
+
+```bash
+./scripts/install-wechat-touch-scroll.sh
+```
+
+需要 GCC 或兼容的 C 编译器、`pkg-config`、Wayland 客户端开发文件和 Hyprland Lua 配置。本机使用微信 4.1.13.26 ARM64 的现有原生 Wayland 启动器。安装器升级适配库并重载 Hyprland。通过托盘退出微信，再从应用启动器打开，新的滚动逻辑才会生效。
+
+验证时在左侧会话列表上用触屏单指短距离慢滑、反向拖动，再松手并轻点一个会话。隔离测试覆盖了小幅位移、反向、松手、取消和轻点。本机已确认微信重新启动后加载新库，实物触屏手感仍待验证。
+
+回滚时退出微信，从安装器报告的 `*.bak.*` 恢复 `~/.local/share/wechat-wayland/` 下的 `touch-scroll.c` 和 `touch-scroll.so`，以及 `~/.config/hypr/silky-wechat-glass.lua`。执行 `hyprctl reload` 后重新打开微信。
+
+
 ## 应用与验证
 
 ```bash
