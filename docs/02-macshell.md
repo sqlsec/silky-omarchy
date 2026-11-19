@@ -118,6 +118,113 @@ python3 scripts/install-macshell-status.py
 
 托盘图标统一成和菜单栏其他图标一样的单色线条（跟随深浅色）：按托盘项的 id 换成 `SilkyStatusIcon` 里手绘的图标，目前覆盖 Chrome、ChatGPT、Clippy、Netcatty、Remmina、Clash Verge 和微信（id `wechat`，两个叠在一起的对话气泡）。其他应用保持原图标；需要提醒（`NeedsAttention`）时也显示原图标。查托盘 id：`busctl --user get-property <服务> /StatusNotifierItem org.kde.StatusNotifierItem Id`。装完后执行 `qs -c MacShell ipc call macshell reload` 让 MacShell 重新加载。
 
+## 通知中心小组件
+
+点顶栏铃铛打开的「通知系统」面板里，通知列表下面是一组 macOS 风格的小组件。每个都有小（172×172）、中（356×172）、大（356×356）三种尺寸，两个小组件并排正好是一个中组件的宽度。小组件的强调色取自当前壁纸（和[电池图标](#电池图标)同一个 `wallpaperAccent`），换壁纸后跟着变。
+
+| 小组件 | 小 | 中 | 大 | 数据来源 |
+| --- | --- | --- | --- | --- |
+| 天气 | 城市、气温、天气、最高 / 最低 | 加体感、湿度、风速和未来 6 小时 | 再加 6 天预报和温度区间条 | [Open-Meteo](https://open-meteo.com/)，无需密钥，15 分钟刷新 |
+| 股市 | 第一只代码的走势、价格和涨跌 | 3 只 | 6 只 | A 股、港股、美股用腾讯行情（`qt.gtimg.cn`），其他市场（东京、欧洲、全球指数、加密货币、期货）用 Yahoo Finance，每分钟刷新 |
+| 屏幕使用时间 | 今天总时长和前 3 个应用 | 加按小时分布、和昨天对比 | 再加本周 7 天和前 6 个应用 | 本机记录，见下文 |
+| 电池 | 本机和设备的圆环（最多 4 个） | 4 个圆环带名称 | 设备列表 | UPower：本机电池、蓝牙鼠标 / 键盘 / 耳机等 |
+| 日历 | 星期、日期、农历或节日 | 加本月月历 | 带农历、节日和调休「休 / 班」的整月 | 本地日期和 [`ChinaCalendar.js`](../config/macshell/calendar/ChinaCalendar.js) |
+| 系统 | CPU、内存、磁盘进度条 | 三个圆环和用量 | 再加最近 5 分钟 CPU 曲线、运行时间、负载 | `/proc`、`statvfs("/")` |
+| AI 用量 | Claude、Codex、DeepSeek 各一行：主数字、说明，Codex 的额度条在说明同一行、主数字下方 | 三栏，结构相同：图标和名称、主数字、说明、两行明细 | 再加每小时 tokens（Claude、Codex 叠加）和 Codex 5 小时 / 本周额度条与重置时间 | 见下文「AI 用量」 |
+
+小组件卡片和控制中心的方块用同一种材质：在面板的液态玻璃上再叠一层同样的玻璃（`GGlass`，玻璃上下文 `notifPopGlass.ctx`）和细边框（`CornerBorder`），再加一层很淡的深色，所以比面板本身深一点。玻璃关闭时退回深色半透明底。天气卡只在上半部叠一层很淡的天色（晴、阴、雨、夜），文字跟随面板深浅色；中、大尺寸里天气描述和最高 / 最低温合成一行，不再和逐小时预报重叠。
+
+股票颜色默认中文界面红涨绿跌、英文界面绿涨红跌，可在右键菜单里切换。走势图在交易时段画当天分时线，虚线为昨收；取不到分时数据时改画近一月日线。关注列表最多 12 项，每项可以是：
+
+| 输入 | 解析为 | 行情来源 |
+| --- | --- | --- |
+| `sh000001`、`hkHSI`、`usIXIC` 等带前缀代码 | 原样使用 | 腾讯 |
+| 6 位数字，如 `600519` | `6` / `9` 开头为沪市，`0` / `3` 为深市，`4` / `8` 为北交所 | 腾讯 |
+| 4–5 位数字，如 `00700` | 港股 | 腾讯 |
+| 1–5 个字母，如 `AAPL` | 美股 | 腾讯 |
+| 含 `^ . = -` 的代码，如 `^N225`、`^GDAXI`、`7203.T`、`SAP.DE`、`BTC-USD`、`GC=F` | Yahoo 代码 | Yahoo Finance |
+| 名称，如 `茅台`、`英伟达`、`toyota` | 先查腾讯搜索（中文名），再查 Yahoo 搜索 | 解析出的来源 |
+
+解析结果在数据进程运行期间缓存；查不到的条目在菜单里只显示原文，下一轮再试。在右键菜单里上下拖动某一行（或左侧的 ≡）可以调整顺序，小组件按这个顺序显示，小尺寸显示第一项。
+
+### 安装
+
+需要 MacShell 0.5.1–0.5.3，并且已安装[顶栏系统监控](#顶栏系统监控)（取壁纸强调色）和农历日历（`ChinaCalendar.js`）。
+
+```bash
+python3 scripts/install-macshell-widgets.py --check
+python3 scripts/install-macshell-widgets.py
+qs -c MacShell ipc call macshell reload
+```
+
+安装脚本把 [`config/macshell/widgets/`](../config/macshell/widgets/) 下的 QML 复制到 `~/.config/quickshell/MacShell/`，把 [`widgets.py`](../config/macshell/widgets/widgets.py) 复制成 `assets/silky-widgets.py`，并给 `MacBar.qml` 打三处补丁：面板高度加上小组件区、在通知列表下放 `SilkyWidgetDeck`、右键菜单编辑天气城市或股票代码时让弹层窗口接收键盘（`WlrKeyboardFocus.OnDemand`）。改 `MacBar.qml` 前会备份为 `MacBar.qml.bak.silky-widgets-*`，重复运行不会再改。
+
+### 使用
+
+- 在任意小组件上点右键，弹出菜单：切换「小 / 中 / 大」，移除小组件。天气的菜单里可以填城市（中文、英文都可以，留空按 IP 定位），回车或点别处保存，下方显示当前定位到的城市；股市的菜单里列出关注的代码（显示解析出的名称），点「−」删除，在输入框里输入代码或名称后回车添加，并可切换红涨绿跌 / 绿涨红跌。菜单本身也是磨砂玻璃（同一个液态玻璃材质加一层半透明底）。打开菜单时面板会临时接收键盘输入，按 `Esc` 关闭。
+- 点面板底部「编辑小组件」进入编辑：小组件会轻微晃动，点一下按「小 → 中 → 大」切换尺寸，拖动调整顺序，点左上角「−」删除。
+- 编辑时下方是「添加小组件」：选类型和尺寸，预览就是实际效果，点预览或「＋ 添加小组件」加入。城市和股票代码在右键菜单里设置。
+- 布局和设置保存在 `~/.config/silky/widgets.json`，可以直接编辑，MacShell 会自动读取。
+
+### 屏幕使用时间怎么算
+
+数据进程每 5 秒通过 Hyprland 套接字读一次当前聚焦窗口的 `class`，把这段时间记到该应用和当前小时上。以下时间不计：连续 2 分钟没有键鼠操作（Quickshell `IdleMonitor`，视频播放器等发出的空闲抑制视为在用）、锁屏（`hyprlock` / `swaylock` / `gtklock` 在运行）、休眠。记录按天保存在 `~/.local/state/silky/screen-time/YYYY-MM-DD.json`，每分钟写一次，保留 30 天。应用名和图标按 `class` 匹配桌面入口（`DesktopEntries.heuristicLookup`），匹配不到时显示 `class`。只从安装后开始统计，MacShell 没运行时也不统计。
+
+### AI 用量
+
+「AI 用量」小组件显示今天（本地时间）的用量，按 30 秒刷新。三家用同一种结构：白色圆角底上的官方 logo（品牌色：Claude `#D97757`、Codex `#7A6CFF`、DeepSeek `#4D6BFE`）、一个主数字、一行说明、两行明细。主数字分别是 Claude 今日 tokens、Codex 5 小时额度剩余、DeepSeek 今日消费；明细分别是请求数和输出 tokens、本周剩余和重置时间、余额。
+
+- **Claude Code**：读取 `~/.claude/projects/**/*.jsonl`（设置了 `CLAUDE_CONFIG_DIR` 时读它下面的 `projects`，也会读 `~/.config/claude/projects`），把今天每条回复的 `usage` 加起来，按消息 ID 和请求 ID 去重。tokens 合计包括输入、输出、缓存读取和缓存写入，其中缓存读取通常占绝大部分，所以大尺寸里单独列出输出和缓存。Claude Code 只在请求因额度用完被拒时，才在日志里记下 `rate_limit_info`（类型和重置时间）；小组件读到尚未到重置时间的这类记录时，Claude 一栏改为「5 小时剩余 0%」「已达上限」和重置时间。平时的额度百分比只能通过 Anthropic 的 OAuth 用量接口查询，需要 Claude Code 命令行的登录凭据；Claude 桌面应用自己管理登录，本机没有这份凭据，所以目前不显示。
+- **Codex**：读取 `~/.codex/sessions` 和 `~/.codex/archived_sessions` 里今天改动过的会话，tokens 取每个会话今天的 `total_token_usage` 增量；5 小时和每周额度取最新一条 `token_count` 事件里的 `rate_limits`，和 Codex 应用一样显示「剩余」百分比（100 − `used_percent`）。Codex 只在回复后写入额度，所以如果记录里的重置时间（`resets_at`）已经过了，就按该窗口已重置处理，显示剩余 100%、「窗口已重置」；之前直接显示旧记录，会出现「5h 12% · 0 分钟后重置」而 Codex 应用里是剩余 100% 的情况。重置时间显示为钟点（当天）或日期加钟点。
+- **DeepSeek**：DeepSeek 没有账号授权登录，需要在右键菜单里粘贴 API Key（在 [DeepSeek 开放平台](https://platform.deepseek.com/api_keys) 创建），回车保存。Key 通过标准输入交给数据进程，写到 `~/.config/silky/ai-keys.json`（权限 `0600`），不进 `widgets.json`，也不出现在进程参数里。数据进程每 10 分钟调用一次 [`GET /user/balance`](https://api-docs.deepseek.com/api/get-user-balance)，以当天第一次读到的余额为基准，「今日消费」= 基准 − 当前余额；余额变多（充值）时重设基准。在右键菜单里点「删除 Key」会删掉 Key 和基准。
+
+日志按增量读取（只读新追加的行），第一次扫描约 0.1 秒，之后约 1 毫秒。AI 用量小组件不放在面板上时，这些文件和接口都不会被读取。
+
+logo 来自 [LobeHub Icons](https://github.com/lobehub/lobe-icons) 的 npm 包 `@lobehub/icons-static-svg`（MIT 许可，固定 1.104.0 版）：`claude-color.svg`、`codex-color.svg`、`deepseek-color.svg`。logo 本身是各公司的商标，所以不放进仓库，由安装脚本在首次安装时从 jsDelivr 下载到 `~/.config/quickshell/MacShell/assets/ai-logos/`，只接受不含脚本和外链的纯 SVG。下载失败时小组件用品牌色字母方块代替；之后重新运行安装脚本会补下载。
+
+### 离屏预览
+
+[`scripts/preview-macshell-widgets.sh`](../scripts/preview-macshell-widgets.sh) 用一份真实数据快照（天气取缓存，没有 DeepSeek Key 时用示例余额），在 `QT_QPA_PLATFORM=offscreen` 下把小组件渲染成 PNG，不在屏幕上显示任何东西，也不改面板布局。脚本会打印 QML 报错（`TypeError`、`ReferenceError`、属性冲突等）。
+
+```bash
+scripts/preview-macshell-widgets.sh /tmp/widgets.png              # 默认：AI 小 / 中 / 大、天气中 / 大、股市小
+scripts/preview-macshell-widgets.sh /tmp/ai.png ai:small ai:large
+SILKY_PREVIEW_LANG=en scripts/preview-macshell-widgets.sh /tmp/en.png
+```
+
+预览用的面板配色、玻璃材质是近似值（没有液态玻璃），只用来检查排版和数据。
+
+
+### 实现与限制
+
+- 数据进程 `assets/silky-widgets.py` 由 `SilkyWidgetDeck` 启动，常驻运行（屏幕使用时间需要持续记录），每 5 秒输出一行 JSON；退出后 5 秒自动重启。天气和股市只在对应小组件放在面板上时才联网，天气结果缓存在 `~/.cache/silky/widgets-weather.json`，离线时显示上次结果。
+- 面板关着时数据不送进 QML，打开时才刷新界面。
+- 走代理时 IP 定位会定到代理出口（例如显示 Los Angeles），这时请在编辑面板里填城市。
+- 腾讯行情和 Yahoo Finance 都是公开网页接口，不保证稳定；美股盘前盘后显示的是上一交易日收盘。Yahoo 的价格以交易所本币显示，不做换算。
+- 面板高度不超过屏幕，小组件多时可以在小组件区内滚动。
+
+### 验证
+
+```bash
+# 数据进程：约 15 秒后应看到天气、股票、屏幕时间和系统数据
+(sleep 14; echo refresh) | timeout 16 python3 -I config/macshell/widgets/widgets.py | tail -1 | python3 -m json.tool | head -40
+# 打开通知面板
+qs -c MacShell ipc call notifications open
+```
+
+实机验证（Yoga Slim 7x，MacShell 0.5.3，Quickshell 0.3.2）：面板中通知下方显示小组件，强调色为 Monterey 壁纸的紫色；编辑模式的晃动、「−」、提示和添加面板正常显示；用户在面板里调整过顺序和尺寸。股市和天气的右键菜单（通过临时代码直接打开）显示正常，股票代码在数据进程里实测解析：`600519`、`00700`、`AAPL`、`^N225`、`7203.T`、`SAP.DE`、`BTC-USD`、`GC=F`、`茅台`、`英伟达`、`toyota` 都能取到价格和分时线。面板截图确认卡片已换成液态玻璃加细边框，天气改为南京后正常显示。AI 用量的数据在数据进程里实测（当天 Claude Code 约 3172 万 tokens、217 次请求，Codex 约 627 万 tokens、5 小时额度 12%、每周 37%）。AI 用量的小 / 中 / 大三种尺寸用离屏预览检查过中英文排版，Codex 额度和 Codex 应用一致（5 小时剩余 100%、本周剩余 63%）。股票拖动排序、菜单里的文字输入和 DeepSeek Key 还需要在面板里实际操作确认。
+
+```bash
+# AI 用量（在仓库根目录运行）
+python3 -I -c 'import importlib.util as u; s=u.spec_from_file_location("w", "config/macshell/widgets/widgets.py"); m=u.module_from_spec(s); s.loader.exec_module(m); r=m.AiUsage().summary(); print(r["claude"] and r["claude"]["tokens"], r["codex"] and (r["codex"]["tokens"], r["codex"]["primary"]))'
+# 代码解析与行情（在仓库根目录运行）
+python3 -I -c 'import importlib.util as u; s=u.spec_from_file_location("w", "config/macshell/widgets/widgets.py"); m=u.module_from_spec(s); s.loader.exec_module(m); [print(q["entry"], q.get("symbol"), q["name"], q.get("price")) for q in m.stocks(["600519", "^N225", "SAP.DE", "茅台"])]'
+```
+
+### 回滚
+
+恢复安装脚本打印的 `MacBar.qml.bak.silky-widgets-*`，删除 `~/.config/quickshell/MacShell/` 下的 `SilkyWidget*.qml`、`SilkyW*.qml`、`SilkyWidgetsFormat.js` 和 `assets/silky-widgets.py`，然后执行 `qs -c MacShell ipc call macshell reload`。数据文件 `~/.config/silky/widgets.json`、`~/.config/silky/ai-keys.json`、`~/.local/state/silky/screen-time/`、`~/.local/state/silky/deepseek-balance.json` 和 `~/.cache/silky/widgets-weather.json` 可以按需删除。
+
 ## 应用程序面板交互
 
 [`tune-apps-panel.py`](../scripts/tune-apps-panel.py)：应用程序面板的鼠标滚轮每格移动 320 像素，触控板和触摸屏松手后使用平滑减速；玻璃面板与图标一起跟随点击或捏合进度渐显。安装脚本会在现有安装上应用这些调整，滚动距离仍受列表边界限制。触控屏拖动时手指只移动滚动目标，列表按 1.1 倍手指距离、按屏幕帧平滑跟随（和触控板同一套逐帧动画），松手后无论快慢都按同一条减速曲线滑行，不再按触摸事件一跳一跳地移动、慢速松手也不会戛然而止。

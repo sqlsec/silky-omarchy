@@ -46,6 +46,7 @@ Run what you need:
 ./scripts/install-macshell-optimizations.sh
 ./scripts/install-silky-gestures.sh
 python3 scripts/install-macshell-overview.py
+python3 scripts/install-macshell-widgets.py  # optional: Notification Center widgets (needs the menu bar system monitors)
 ./scripts/install-macos-theme.sh && omarchy theme set macos-tahoe-dark
 ./scripts/install-foot-glass.sh   # Optional: Foot frosted glass follows light/dark appearance
 ./scripts/install-remmina-mac.sh  # Optional: Remmina in Simplified Chinese with a macOS look

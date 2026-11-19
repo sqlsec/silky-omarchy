@@ -59,6 +59,7 @@ Merge the global configuration snippets in 01 by hand. The optional WeChat updat
 ## 02 MacShell refinements
 
 - The [per-application menu bar](02-macshell.md#per-application-menu-bar) installs separately on MacShell 0.5.3. Run `python3 scripts/install-macshell-app-menus.py`, then reload MacShell.
+- [Notification Center widgets](02-macshell.md#notification-center-widgets) (weather, stocks, screen time, batteries, calendar, system, AI usage; small / medium / large) install separately: install the menu bar system monitors first, then run `python3 scripts/install-macshell-widgets.py` and reload MacShell. Files are in `config/macshell/widgets/`; the data process `widgets.py` is installed as `assets/silky-widgets.py`, the layout lives in `~/.config/silky/widgets.json` and screen time in `~/.local/state/silky/screen-time/`. Stock entries are resolved by `resolve()` in `widgets.py`: A-shares / Hong Kong / US use Tencent quotes, every other market uses Yahoo Finance.
 - **Effect**: Simplified Chinese; a compact "About This Mac" (correctly identifying Snapdragon / Adreno); dragging windows by touch; live glass on Vulkan; no periodic pointer stutter; wallpaper on the lock screen; battery icon without `%`; no desktop icons; only one screenshot tool
 - **Files**: `patches/macshell-0.5.1-silky.patch` and `patches/macshell-0.5.2-silky.patch` (unified diffs against `~/.config/quickshell/{MacShell,MacLock}`), `scripts/install-macshell-optimizations.sh`
 - **Keywords**:

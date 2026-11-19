@@ -46,6 +46,7 @@
 ./scripts/install-macshell-optimizations.sh
 ./scripts/install-silky-gestures.sh
 python3 scripts/install-macshell-overview.py
+python3 scripts/install-macshell-widgets.py  # 可选：通知中心小组件（需要顶栏系统监控）
 ./scripts/install-macos-theme.sh && omarchy theme set macos-tahoe-dark
 ./scripts/install-foot-glass.sh   # 可选：Foot 磨砂玻璃，跟随日夜外观
 ./scripts/install-remmina-mac.sh  # 可选：Remmina 简体中文与 macOS 外观

@@ -118,6 +118,113 @@ Click the temperature to see the 10 processes using the most CPU right now, plus
 
 Tray icons are unified as monochrome line icons like the rest of the menu bar (following light/dark): each tray item is matched by id to a hand-drawn icon in `SilkyStatusIcon`, currently Chrome, ChatGPT, Clippy, Netcatty, Remmina, Clash Verge and WeChat (id `wechat`, two overlapping speech bubbles). Other apps keep their own icons, and so does any item that needs attention (`NeedsAttention`). To find a tray id: `busctl --user get-property <service> /StatusNotifierItem org.kde.StatusNotifierItem Id`. After installing, run `qs -c MacShell ipc call macshell reload` so MacShell reloads.
 
+## Notification Center widgets
+
+The "Notification system" panel that opens from the bell in the menu bar now has macOS-style widgets under the notification list. Each comes in small (172×172), medium (356×172) and large (356×356); two small widgets side by side are exactly one medium wide. The widgets' accent color comes from the current wallpaper (the same `wallpaperAccent` as the [battery icon](#battery-icon)) and follows wallpaper changes.
+
+| Widget | Small | Medium | Large | Data |
+| --- | --- | --- | --- | --- |
+| Weather | City, temperature, conditions, high / low | Adds feels-like, humidity, wind and the next 6 hours | Adds a 6-day forecast with temperature range bars | [Open-Meteo](https://open-meteo.com/), no key, refreshed every 15 min |
+| Stocks | Chart, price and change of the first symbol | 3 symbols | 6 symbols | Tencent quotes (`qt.gtimg.cn`) for A-shares, Hong Kong and US; Yahoo Finance for every other market (Tokyo, Europe, global indices, crypto, futures); refreshed every minute |
+| Screen Time | Today's total and top 3 apps | Adds an hourly chart and the change vs yesterday | Adds the last 7 days and the top 6 apps | Recorded locally, see below |
+| Batteries | Rings for this laptop and devices (up to 4) | 4 rings with names | A device list | UPower: laptop battery, Bluetooth mice / keyboards / headphones… |
+| Calendar | Weekday, date, lunar date or festival (Chinese UI) | Adds this month | The whole month with lunar dates, festivals and make-up workday marks | Local date and [`ChinaCalendar.js`](../../config/macshell/calendar/ChinaCalendar.js) |
+| System | CPU, memory and disk bars | Three rings with usage | Adds a 5-minute CPU chart, uptime and load | `/proc`, `statvfs("/")` |
+| AI usage | One row each for Claude, Codex and DeepSeek: main figure and caption, with Codex's quota bar on the caption line under the figure | Three columns with the same structure: icon and name, main figure, caption, two detail lines | Adds tokens per hour (Claude and Codex stacked) and Codex 5-hour / weekly quota bars with reset times | See "AI usage" below |
+
+Widget cards use the Control Center tiles' material: another layer of the panel's liquid glass (`GGlass` with the `notifPopGlass.ctx` context) with the same thin border (`CornerBorder`) and a faint dark veil, so they sit a little darker than the panel. With the glass off they fall back to a dark translucent tile. The weather card adds only a faint sky tint (clear, cloudy, rain, night) over its top half, and its text follows the panel's light / dark colors; in medium and large the condition and high / low share one line, so they no longer overlap the hourly forecast.
+
+Stock colors default to red up / green down in the Chinese UI and green up / red down otherwise; switch them in the right-click menu. During trading hours the chart is today's intraday line with the previous close dashed; when intraday data is unavailable it shows the last month of daily closes. You can follow up to 12 entries, each one of:
+
+| Entry | Resolves to | Quotes from |
+| --- | --- | --- |
+| A prefixed code such as `sh000001`, `hkHSI`, `usIXIC` | Used as is | Tencent |
+| 6 digits, such as `600519` | Shanghai if it starts with `6` / `9`, Shenzhen for `0` / `3`, Beijing for `4` / `8` | Tencent |
+| 4–5 digits, such as `00700` | Hong Kong | Tencent |
+| 1–5 letters, such as `AAPL` | US listing | Tencent |
+| A code containing `^ . = -`, such as `^N225`, `^GDAXI`, `7203.T`, `SAP.DE`, `BTC-USD`, `GC=F` | Yahoo symbol | Yahoo Finance |
+| A name, such as `茅台`, `nvidia`, `toyota` | Tencent's search first (Chinese names), then Yahoo's | Whichever it resolved to |
+
+Resolutions are cached while the data process runs; an entry that cannot be resolved shows as typed in the menu and is retried next round. Drag a row (or its ≡ handle) up or down in the right-click menu to reorder; the widget shows entries in that order, and the small size shows the first one.
+
+### Install
+
+Requires MacShell 0.5.1–0.5.3 with the [menu bar system monitors](#menu-bar-system-monitors) (for the wallpaper accent) and the lunar calendar (`ChinaCalendar.js`) installed.
+
+```bash
+python3 scripts/install-macshell-widgets.py --check
+python3 scripts/install-macshell-widgets.py
+qs -c MacShell ipc call macshell reload
+```
+
+The installer copies the QML in [`config/macshell/widgets/`](../../config/macshell/widgets/) to `~/.config/quickshell/MacShell/`, copies [`widgets.py`](../../config/macshell/widgets/widgets.py) to `assets/silky-widgets.py`, and patches `MacBar.qml` in three places: the panel height includes the widget area, `SilkyWidgetDeck` sits under the notification list, and the popup window accepts keyboard input while the right-click menu edits the weather city or stock symbols (`WlrKeyboardFocus.OnDemand`). It backs up `MacBar.qml` as `MacBar.qml.bak.silky-widgets-*` before changing it and does nothing on a repeat run.
+
+### Use
+
+- Right-click any widget for a menu: switch Small / Medium / Large or remove the widget. The weather menu takes a city (any language; empty = locate by IP), saved with Enter or by clicking elsewhere, and shows the city currently shown. The stocks menu lists the followed entries with their resolved names; click "−" to drop one, type a code or name and press Enter to add one, and switch the up/down colors. The menu itself is frosted glass (the same liquid-glass material under a translucent veil). While the menu is open the panel accepts keyboard input; `Esc` closes it.
+- Click "Edit Widgets" at the bottom of the panel. The widgets wiggle; click one to cycle Small → Medium → Large, drag to reorder, and click the "−" at the top-left to remove it.
+- Below them, "Add Widget" lets you pick a kind and a size. The preview is the real widget; click it or "＋ Add Widget" to add it. The city and stock symbols are set from the right-click menu.
+- Layout and settings live in `~/.config/silky/widgets.json`; you can edit it directly and MacShell picks it up.
+
+### How Screen Time is counted
+
+Every 5 s the data process reads the focused window's `class` over the Hyprland socket and adds that time to the app and the current hour. Not counted: 2 minutes without keyboard or mouse input (Quickshell `IdleMonitor`; idle inhibitors from video players count as use), a locked screen (`hyprlock` / `swaylock` / `gtklock` running), and suspend. Days are stored in `~/.local/state/silky/screen-time/YYYY-MM-DD.json`, written once a minute and kept for 30 days. App names and icons come from desktop entries matched by `class` (`DesktopEntries.heuristicLookup`), falling back to the `class`. Counting starts at install and only runs while MacShell runs.
+
+### AI usage
+
+The AI usage widget shows today's usage (local time), refreshed every 30 s. All three providers share one structure: the official logo on a white rounded tile (brand colors: Claude `#D97757`, Codex `#7A6CFF`, DeepSeek `#4D6BFE`), one main figure, a caption and two detail lines. The main figures are Claude's tokens today, Codex's 5-hour quota left and DeepSeek's spend today; the details are requests and output tokens, the weekly quota left and the reset time, and the balance.
+
+- **Claude Code**: reads `~/.claude/projects/**/*.jsonl` (the `projects` directory under `CLAUDE_CONFIG_DIR` when that is set, and also `~/.config/claude/projects`) and adds up today's `usage` per reply, de-duplicated by message ID and request ID. The token total covers input, output, cache reads and cache writes. Cache reads are usually most of it, so the large size lists output and cache separately. Claude Code only logs `rate_limit_info` (type and reset time) when a request is refused because the plan limit is used up; while such a record's reset time is still ahead, the Claude column shows "5-hour quota left 0%", "Limit reached" and the reset time. The running percentage is only available from Anthropic's OAuth usage endpoint, which needs the Claude Code CLI's sign-in credentials; the Claude desktop app manages its own sign-in and this machine has no such credentials, so it is not shown for now.
+- **Codex**: reads the sessions changed today under `~/.codex/sessions` and `~/.codex/archived_sessions`. Tokens are each session's `total_token_usage` increase today; the 5-hour and weekly quotas come from `rate_limits` in the latest `token_count` event and are shown as "left", like the Codex app (100 − `used_percent`). Codex only writes them after a reply, so when the recorded reset time (`resets_at`) has passed, that window counts as reset: 100% left, "Fresh window". Before this, the widget showed the stale record, for example "5h 12% · resets in 0 min" while the Codex app showed 100% left. Reset times are shown as a clock time (today) or a date and time.
+- **DeepSeek**: DeepSeek has no account sign-in, so paste an API key (created on the [DeepSeek platform](https://platform.deepseek.com/api_keys)) in the right-click menu and press Enter. The key is handed to the data process on stdin and written to `~/.config/silky/ai-keys.json` (mode `0600`); it never goes into `widgets.json` or a process argument. Every 10 minutes the data process calls [`GET /user/balance`](https://api-docs.deepseek.com/api/get-user-balance). The first balance read each day is the baseline, and "spent today" = baseline − current balance; a higher balance (a top-up) resets the baseline. "Remove key" in the menu deletes the key and the baseline.
+
+Logs are read incrementally (only newly appended lines): about 0.1 s for the first scan, about 1 ms after that. Nothing is read or called while the AI usage widget is not on the panel.
+
+The logos come from [LobeHub Icons](https://github.com/lobehub/lobe-icons), npm package `@lobehub/icons-static-svg` (MIT, pinned at 1.104.0): `claude-color.svg`, `codex-color.svg`, `deepseek-color.svg`. The logos themselves are their companies' trademarks, so they are not kept in this repository: the installer downloads them from jsDelivr into `~/.config/quickshell/MacShell/assets/ai-logos/` on first install and only accepts plain SVG without scripts or external links. If the download fails the widget shows brand-colored letter tiles; re-running the installer fetches them later.
+
+### Offscreen preview
+
+[`scripts/preview-macshell-widgets.sh`](../../scripts/preview-macshell-widgets.sh) renders widgets into a PNG under `QT_QPA_PLATFORM=offscreen`, with a snapshot of real data (weather from the cache, a sample balance when no DeepSeek key is set). Nothing appears on screen and the panel layout is untouched. The script prints QML errors (`TypeError`, `ReferenceError`, property clashes and so on).
+
+```bash
+scripts/preview-macshell-widgets.sh /tmp/widgets.png              # default: AI small / medium / large, weather medium / large, stocks small
+scripts/preview-macshell-widgets.sh /tmp/ai.png ai:small ai:large
+SILKY_PREVIEW_LANG=en scripts/preview-macshell-widgets.sh /tmp/en.png
+```
+
+The preview's panel colors and glass are approximations (no liquid glass); use it to check layout and data.
+
+
+### Implementation and limitations
+
+- `SilkyWidgetDeck` starts the data process `assets/silky-widgets.py`. It stays running (Screen Time needs continuous recording), prints one JSON line every 5 s, and is restarted 5 s after it exits. Weather and stocks only go online while those widgets are on the panel; weather is cached in `~/.cache/silky/widgets-weather.json` and shown offline.
+- Data is not pushed into QML while the panel is closed; the widgets update when it opens.
+- Behind a proxy, IP location resolves to the proxy's exit (for example Los Angeles); set a city in the edit panel.
+- Tencent quotes and Yahoo Finance are public web endpoints with no stability guarantee; outside US trading hours, US symbols show the last close. Yahoo prices are in the exchange's currency, without conversion.
+- The panel never grows past the screen; with many widgets the widget area scrolls.
+
+### Verify
+
+```bash
+# data process: after about 15 s it prints weather, stocks, screen time and system data
+(sleep 14; echo refresh) | timeout 16 python3 -I config/macshell/widgets/widgets.py | tail -1 | python3 -m json.tool | head -40
+# open the notification panel
+qs -c MacShell ipc call notifications open
+```
+
+Verified on the machine (Yoga Slim 7x, MacShell 0.5.3, Quickshell 0.3.2): widgets appear under the notifications with the Monterey wallpaper's violet accent; edit mode shows the wiggle, "−" badges, hint and add panel; the user has reordered and resized widgets in the panel. The stocks and weather right-click menus (opened directly by temporary code) render correctly, and symbol resolution was tested in the data process: `600519`, `00700`, `AAPL`, `^N225`, `7203.T`, `SAP.DE`, `BTC-USD`, `GC=F`, `茅台`, `英伟达` and `toyota` all return a price and an intraday line. A panel screenshot confirms the cards now use the liquid glass with a thin border, and weather shows 南京 after the city was set. AI usage data was tested in the data process (that day: Claude Code about 31.7M tokens over 217 requests; Codex about 6.27M tokens, 12% of the 5-hour limit and 37% of the week). The AI usage widget's small, medium and large layouts were checked in Chinese and English with the offscreen preview, and the Codex quotas match the Codex app (5 hours 100% left, week 63% left). Dragging stock rows, typing in the menu and the DeepSeek key still need to be confirmed in the panel.
+
+```bash
+# AI usage (run from the repository root)
+python3 -I -c 'import importlib.util as u; s=u.spec_from_file_location("w", "config/macshell/widgets/widgets.py"); m=u.module_from_spec(s); s.loader.exec_module(m); r=m.AiUsage().summary(); print(r["claude"] and r["claude"]["tokens"], r["codex"] and (r["codex"]["tokens"], r["codex"]["primary"]))'
+# symbol resolution and quotes (run from the repository root)
+python3 -I -c 'import importlib.util as u; s=u.spec_from_file_location("w", "config/macshell/widgets/widgets.py"); m=u.module_from_spec(s); s.loader.exec_module(m); [print(q["entry"], q.get("symbol"), q["name"], q.get("price")) for q in m.stocks(["600519", "^N225", "SAP.DE", "茅台"])]'
+```
+
+### Roll back
+
+Restore the `MacBar.qml.bak.silky-widgets-*` backup the installer printed, delete `SilkyWidget*.qml`, `SilkyW*.qml`, `SilkyWidgetsFormat.js` and `assets/silky-widgets.py` from `~/.config/quickshell/MacShell/`, then run `qs -c MacShell ipc call macshell reload`. Remove `~/.config/silky/widgets.json`, `~/.config/silky/ai-keys.json`, `~/.local/state/silky/screen-time/`, `~/.local/state/silky/deepseek-balance.json` and `~/.cache/silky/widgets-weather.json` if you no longer want the data.
+
 ## Applications panel interaction
 
 [`tune-apps-panel.py`](../../scripts/tune-apps-panel.py): the mouse wheel moves the Applications panel 320 px per notch, and touchpad and touchscreen flicks decelerate smoothly after release; the glass panel fades in together with the icons, following the click or pinch progress. The installer applies these changes to existing installs, and scrolling is still limited by the list bounds. On the touchscreen the finger only moves the scroll target and the list follows it frame by frame at 1.1× the finger distance (the same per-frame animation as the touchpad); on release, fast or slow, it glides on along the same deceleration curve, instead of stepping with each touch event or stopping dead after a slow release.

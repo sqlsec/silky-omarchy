@@ -59,6 +59,7 @@ omarchy theme set macos-tahoe-dark
 ## 02 MacShell 优化
 
 - MacShell 0.5.3 的[按应用切换顶栏菜单](02-macshell.md#按应用切换顶栏菜单)可单独安装。运行 `python3 scripts/install-macshell-app-menus.py` 后重载 MacShell。
+- [通知中心小组件](02-macshell.md#通知中心小组件)（天气、股市、屏幕使用时间、电池、日历、系统、AI 用量，小 / 中 / 大）可单独安装：先装顶栏系统监控，再运行 `python3 scripts/install-macshell-widgets.py` 并重载 MacShell。文件在 `config/macshell/widgets/`，数据进程 `widgets.py` 安装为 `assets/silky-widgets.py`，布局存 `~/.config/silky/widgets.json`，屏幕时间存 `~/.local/state/silky/screen-time/`。股票条目由 `widgets.py` 的 `resolve()` 解析：A 股 / 港股 / 美股走腾讯行情，其他市场走 Yahoo Finance。
 - **效果**：简体中文；紧凑版“关于本机”（正确识别 Snapdragon / Adreno）；触控屏拖窗口；实时玻璃走 Vulkan；消除鼠标周期性卡顿；锁屏显示壁纸；电池图标去 `%`；不显示桌面图标；截图只用一个工具
 - **文件**：`patches/macshell-0.5.1-silky.patch`、`patches/macshell-0.5.2-silky.patch`（对 `~/.config/quickshell/{MacShell,MacLock}` 的统一 diff）、`scripts/install-macshell-optimizations.sh`
 - **关键词**：
