@@ -60,6 +60,12 @@ Use `Super+Alt+T` to tile a window on its own. Silky moves the other windows to 
 
 Silky skips windows that have since been closed, moved to another workspace, pinned, or grouped with unrelated windows. It records the moves when you tile the window and clears that history when Hyprland reloads its configuration or restarts.
 
+### WeChat's image viewer always floats
+
+Even with the main WeChat window floating, the `图片和视频` ("Images and Videos") window that opens when you click a picture or video was tiled next to other windows on a tiling workspace. [`config/hypr/silky-app-windows.lua`](../../config/hypr/silky-app-windows.lua) matches it by `class` `wechat` and title `图片和视频`, floats it and centres it as it opens, and leaves the size to WeChat. It is registered through `o.window` as an app that floats on its own, so floating-workspace layouts no longer resize it either. WeChat does not destroy the viewer when you close it; the next picture reuses the same window (same address, no `openwindow` event), so the open-time rule only reaches viewers created after it was loaded. The same file also hooks `config.reloaded`: every `hyprctl reload` floats and centres any viewer that is still tiled. `Super+T` still tiles it on demand.
+
+The title comes from WeChat 4.1.13 with the Chinese UI (a native Wayland window, not XWayland). With the English UI, or if a later version renames the window, the rule will not match; look up the new title with the command below and adjust the pattern.
+
 ## How it works
 
 | File | Role |
@@ -68,6 +74,7 @@ Silky skips windows that have since been closed, moved to another workspace, pin
 | `config/hypr/silky-shortcuts.lua` | Loaded **last** in `hyprland.lua` (after `hypr.macshell`). Unbinds the clashing keys, binds only MacShell's functions on them, and binds Omarchy's actions to the new keys |
 | `config/hypr/silky-keys.lua` | Starts the panel at login; `o.rebind("SUPER + K", …)`; adds background blur to the `silky-keys` layer |
 | `keys-panel/shell.qml` → `~/.config/quickshell/SilkyKeys/` | The panel itself (a resident Quickshell process, IPC target `keys`) |
+| `config/hypr/silky-app-windows.lua` | Per-app window rules: WeChat's `图片和视频` window always floats, centred |
 
 Why a registry:
 
@@ -92,7 +99,7 @@ The panel:
 ./scripts/install-shortcuts.sh
 ```
 
-The script backs up `hyprland.lua`, inserts the registry right after Omarchy's bootstrap line, moves `silky-shortcuts` / `silky-keys` to the end of the file, then runs `hyprctl reload` and restarts the panel.
+The script backs up `hyprland.lua`, inserts the registry right after Omarchy's bootstrap line, moves `silky-shortcuts` / `silky-keys` to the end of the file, adds a `require` for `silky-app-windows` if missing, then runs `hyprctl reload` and restarts the panel.
 
 ## Verify
 
@@ -101,6 +108,14 @@ The script backs up `hyprland.lua`, inserts the registry right after Omarchy's b
 qs -c SilkyKeys ipc call keys search 截图                   # open the panel with a search already typed
 hyprctl dispatch 'function() silky_keys.dump("/tmp/k.json") end' && jq length /tmp/k.json
 ```
+
+WeChat image viewer: click a picture in WeChat, then run
+
+```bash
+hyprctl clients -j | jq -c '.[] | select(.class=="wechat") | {title, floating}'
+```
+
+The `图片和视频` line should read `"floating":true`, and the window should be centred. Confirmed on this machine on 2026-11-18: `hyprctl configerrors` is empty, and after `hyprctl reload` the already-open viewer became floating and centred. A viewer newly created after restarting WeChat, floated by the open-time rule, is still to be checked.
 
 The doctor's clash check exports every bind from the registry, groups them by "modifiers + key", and reports any key that has a MacShell/MacLock description plus some other description. If an Omarchy or MacShell update adds a new clash, it shows up here; move it in `silky-shortcuts.lua` the same way.
 
@@ -120,5 +135,7 @@ rm ~/.config/hypr/silky-keys-registry.lua ~/.config/hypr/silky-shortcuts.lua ~/.
 pkill -x -f 'qs -c SilkyKeys( -d)?'; rm -r ~/.config/quickshell/SilkyKeys
 hyprctl reload
 ```
+
+To undo only the floating WeChat image viewer, delete `~/.config/hypr/silky-app-windows.lua` and the `require("hypr.silky-app-windows")` line in `hyprland.lua`, and run `hyprctl reload`. A viewer that is already floating stays floating; press `Super+T` or restart WeChat to tile it again.
 
 Super+K goes back to Omarchy's own menu, and the clashing keys trigger both sides again.

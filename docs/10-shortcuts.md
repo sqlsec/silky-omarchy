@@ -60,6 +60,12 @@ Hyprland 切回浮动时会还原窗口的浮动尺寸和位置，微信曾因�
 
 已关闭、手动移到其他工作区、后来被置顶或与无关窗口重新分组的窗口会跳过。移窗记录从切入平铺时开始，Hyprland 重载配置或重启后会清除。
 
+### 微信图片查看器始终浮动
+
+微信主窗口浮动时，点开图片或视频弹出的「图片和视频」窗口仍会在平铺工作区里和其他窗口分屏。[`config/hypr/silky-app-windows.lua`](../config/hypr/silky-app-windows.lua) 按 `class` `wechat`、标题 `图片和视频` 匹配这个窗口，打开时就浮动并居中，大小由微信自己决定。它通过 `o.window` 注册为自带浮动的应用，浮动工作区布局也不会再改它的尺寸。微信关闭查看器后并不销毁窗口，下一张图片复用同一个窗口（地址不变，也不发 `openwindow` 事件），所以打开时的规则只对规则加载之后新建的查看器生效；同一文件里还挂了 `config.reloaded`，每次 `hyprctl reload` 时把仍在平铺的查看器切为浮动并居中。打开后仍可用 `Super+T` 临时平铺。
+
+标题来自微信 4.1.13 中文界面（Wayland 原生窗口，非 XWayland）。界面语言切成英文或以后版本改了标题时，规则不会命中，用下面的命令查新标题后改正则。
+
 ## 原理
 
 | 文件 | 作用 |
@@ -68,6 +74,7 @@ Hyprland 切回浮动时会还原窗口的浮动尺寸和位置，微信曾因�
 | `config/hypr/silky-shortcuts.lua` | 在 `hyprland.lua` **最后**加载（在 `hypr.macshell` 之后）。先 `hl.unbind` 冲突键，再只绑 MacShell 的功能，把 Omarchy 的动作绑到新键 |
 | `config/hypr/silky-keys.lua` | 登录时启动面板；`o.rebind("SUPER + K", …)`；给 `silky-keys` 图层加背景模糊 |
 | `keys-panel/shell.qml` → `~/.config/quickshell/SilkyKeys/` | 面板本体（常驻 Quickshell，IPC 目标 `keys`） |
+| `config/hypr/silky-app-windows.lua` | 按应用的窗口规则：微信「图片和视频」窗口始终浮动、居中 |
 
 为什么要 registry：
 
@@ -92,7 +99,7 @@ Hyprland 切回浮动时会还原窗口的浮动尺寸和位置，微信曾因�
 ./scripts/install-shortcuts.sh
 ```
 
-脚本会备份 `hyprland.lua`，把 registry 插到 Omarchy bootstrap 那一行后面，把 `silky-shortcuts` / `silky-keys` 移到文件最后，然后 `hyprctl reload` 并重启面板。
+脚本会备份 `hyprland.lua`，把 registry 插到 Omarchy bootstrap 那一行后面，把 `silky-shortcuts` / `silky-keys` 移到文件最后，没有 `silky-app-windows` 时补上它的 `require`，然后 `hyprctl reload` 并重启面板。
 
 ## 验证
 
@@ -101,6 +108,14 @@ Hyprland 切回浮动时会还原窗口的浮动尺寸和位置，微信曾因�
 qs -c SilkyKeys ipc call keys search 截图                   # 带着搜索词打开面板
 hyprctl dispatch 'function() silky_keys.dump("/tmp/k.json") end' && jq length /tmp/k.json
 ```
+
+微信图片查看器：在微信里点开一张图片，然后执行
+
+```bash
+hyprctl clients -j | jq -c '.[] | select(.class=="wechat") | {title, floating}'
+```
+
+「图片和视频」一行应为 `"floating":true`，窗口居中显示。2026-11-18 在本机实机确认：`hyprctl configerrors` 为空，`hyprctl reload` 后已打开的查看器变为浮动并居中。重启微信后新建查看器由打开时的规则浮动，这一步待验证。
 
 doctor 的冲突检查：从 registry 导出所有绑定，按“修饰键+键”分组，只要某个键既有 MacShell/MacLock 的说明又有别的说明就报错。Omarchy 或 MacShell 升级后新增了冲突，就会在这里看到，到 `silky-shortcuts.lua` 里照样挪走即可。
 
@@ -120,5 +135,7 @@ rm ~/.config/hypr/silky-keys-registry.lua ~/.config/hypr/silky-shortcuts.lua ~/.
 pkill -x -f 'qs -c SilkyKeys( -d)?'; rm -r ~/.config/quickshell/SilkyKeys
 hyprctl reload
 ```
+
+只撤销微信图片查看器浮动：删除 `~/.config/hypr/silky-app-windows.lua` 和 `hyprland.lua` 里的 `require("hypr.silky-app-windows")`，执行 `hyprctl reload`。已经浮动的查看器会保持浮动，按 `Super+T` 或重启微信即恢复平铺。
 
 Super+K 回到 Omarchy 自带的菜单，冲突键恢复成同时触发两边。

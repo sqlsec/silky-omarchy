@@ -5,6 +5,7 @@ set -euo pipefail
 #   - silky-keys-registry.lua  records every bind (required first in hyprland.lua)
 #   - silky-shortcuts.lua      MacShell wins shared keys; Omarchy's actions move to free keys (required last)
 #   - silky-keys.lua + keys-panel/shell.qml   Super+K: searchable macOS 27-style shortcut panel (Silky Keys)
+#   - silky-app-windows.lua    per-app window placement (WeChat's image viewer always floats)
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 hypr_dir="$HOME/.config/hypr"
 panel_dir="$HOME/.config/quickshell/SilkyKeys"
@@ -18,7 +19,7 @@ grep -q 'require("hypr.macshell")' "$config" || printf 'Note: MacShell is not lo
 
 mkdir -p "$panel_dir"
 install -m 644 "$repo_root/keys-panel/shell.qml" "$panel_dir/shell.qml"
-for name in silky-keys-registry silky-shortcuts silky-keys; do
+for name in silky-keys-registry silky-shortcuts silky-keys silky-app-windows; do
   source_file="$repo_root/config/hypr/$name.lua"
   destination="$hypr_dir/$name.lua"
   if [[ -f $destination ]] && ! cmp -s "$source_file" "$destination"; then
@@ -38,6 +39,8 @@ if 'require("hypr.silky-keys-registry")' not in text:
     if boot not in text:
         sys.exit("Could not find Omarchy's bootstrap line in hyprland.lua; add require(\"hypr.silky-keys-registry\") right after it by hand.")
     text = text.replace(boot, boot + '\n-- Silky Omarchy: remember every keybinding for the Super+K panel. Keep this before Omarchy\'s defaults.\nrequire("hypr.silky-keys-registry")\n', 1)
+if 'require("hypr.silky-app-windows")' not in text:
+    text = text.rstrip() + '\n\n-- Silky Omarchy: per-app window placement (WeChat image viewer floats).\nrequire("hypr.silky-app-windows")\n'
 # These two must come after everything else (silky-shortcuts overrides hypr.macshell): drop and re-append them.
 lines = [l for l in text.splitlines() if l.strip() not in (
     'require("hypr.silky-shortcuts")', 'require("hypr.silky-keys")',
