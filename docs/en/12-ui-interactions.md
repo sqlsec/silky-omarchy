@@ -42,6 +42,7 @@ The Control Center's new "Display" page has an Appearance switch, so you can swi
 ## Dock and Applications panel
 
 - The menu bar, Control Center, Notification Center, Applications panel and Dock use Hyprland blur: the glass follows dragged windows in the same frame, with a light Liquid-Glass-like tint and top sheen in both light and dark mode, and the menu bar is almost fully clear; About This Mac's "More Info…" button is quieter ([02](02-macshell.md#hyprland-blur-instead-of-liquid-glass-normal-blur))
+- (Prototype, optional) A Hyprland plugin draws the Dock as Liquid Glass: bevel refraction and edge light that follow dragged windows in the same frame ([02](02-macshell.md#liquid-glass-dock-plugin-prototype))
 - Only MacShell's Dock; Omarchy's own Dock is turned off for good ([02](02-macshell.md#only-macshells-dock))
 - Optical icon scaling is centred, so icons no longer drift to one side when magnified ([02 · Dock](02-macshell.md#dock-icons-and-the-settings-window))
 - After you click a Dock icon, its name label waits until the pointer moves 4 px before showing again (as on macOS), so repeated clicks no longer stall for 60–70 ms ([02](02-macshell.md#applications-panel-interaction))

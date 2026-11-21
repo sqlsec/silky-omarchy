@@ -42,6 +42,7 @@
 ## Dock 与应用程序面板
 
 - 菜单栏、控制中心、通知中心、应用程序面板和 Dock 改用 Hyprland 模糊：拖动窗口时玻璃同帧跟随，深浅色外观都有接近 Liquid Glass 的浅色调和顶部光泽，菜单栏背后几乎完全透明；「关于本机」的「更多信息…」按钮变淡（[02](02-macshell.md#改用-hyprland-模糊普通模糊)）
+- （原型，可选）Dock 由 Hyprland 插件画成液态玻璃：有斜面折射和边缘高光，拖动窗口经过时同帧跟随（[02](02-macshell.md#dock-液态玻璃插件原型)）
 - 只保留 MacShell 的 Dock，Omarchy 自带的 Dock 永久关闭（[02](02-macshell.md#只保留-macshell-的-dock)）
 - 图标的光学缩放以中心为基准，悬停放大时不再往一边偏（[02 · Dock](02-macshell.md#dock-图标与设置窗口)）
 - 点过 Dock 图标后，名称标签要等指针再移动 4 px 才出现（和 macOS 一样），连续点击不再卡 60–70 ms（[02](02-macshell.md#应用程序面板交互)）

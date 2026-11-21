@@ -300,6 +300,52 @@ python3 -I -c 'import importlib.util as u; s=u.spec_from_file_location("w", "con
 - **验证**：浅色外观下 Dock 玻璃应为白色半透明着色，深色下回到原来的深色。Hyprland 0.57.2、MacShell 0.5.3 实机验证：浅色外观重载后截图，Dock 玻璃变亮，与壁纸和浅色模式一致。
 - **回滚**：从 `~/.local/state/silky-omarchy/backup-dock-appearance-<时间>/MacDock.qml` 恢复（安装脚本场景用 `~/.local/state/macshell/silky-backup-*/MacShell/`），重载 MacShell。
 
+## Dock 液态玻璃插件（原型）
+
+**效果**：Dock 恢复 Liquid Glass 的斜面折射、色散和边缘高光，但由 Hyprland 在合成同一帧时画出，拖动窗口经过 Dock 时玻璃里的画面和窗口同步，没有延迟。MacShell 不再抓取窗口，拖动期间几乎不占 CPU。这是原型，只覆盖 Dock，需要 Dock 处于普通模糊样式（见上一节）。插件 0.2 曾把菜单栏的玻璃（下拉菜单、控制中心、通知中心、应用程序面板）也交给它画，试用后撤回，菜单栏保持普通模糊。标记格式（每个图层最多 16 个矩形，带不透明度和种类）和按种类区分的参数仍保留在插件和 [`SilkyGlassMarker.qml`](../config/macshell/SilkyGlassMarker.qml) 里，以后可以再扩展。
+
+**为什么能做到无延迟**：macOS 的 Liquid Glass 由合成器 WindowServer 在合成一帧时直接读取刚画好的下层像素，所以没有延迟。Wayland 不允许客户端读取自己下面的画面，MacShell 只能截取窗口、轮询位置，再交给合成器显示，至少慢 1–2 帧。所以要做到无延迟，只能在合成器里实现：[`plugins/silky-dock-glass`](../plugins/silky-dock-glass/main.cpp) 是一个 Hyprland 插件，做法如下：
+
+1. Hyprland 0.57 在 aarch64 上不支持函数钩子，插件只用公开的渲染阶段事件：在 `RENDER_POST_WINDOWS`（窗口已排进渲染队列，Top 层还没有）插入一个渲染元素。
+2. 这个元素执行时，帧缓冲里正好是这一帧 Dock 下面的画面。插件把 Dock 输入区域附近的一段以半分辨率复制出来（`glBlitFramebuffer`），生成 mipmap。注意 Hyprland 只绑定绘制帧缓冲，读取帧缓冲必须手动绑到同一个，否则读到的是上一帧的旧缓冲（会把 Dock 图标自己折射进去）。
+3. 着色器移植自 MacShell 的 `dockglass.frag`：圆角矩形斜面、按 Snell 定律折射、边缘色散、从 mipmap 采样的模糊、自适应着色和边缘高光。默认值按 macOS 27 的 Dock 调过：模糊只有 6 px、着色 10%（深色外观 22%，与 macOS 的深色玻璃一样略深），透明度高，能看清背后的内容；边缘弯折带宽 14 px、折射强度 20：只有这条窄带有透镜效果，中间是只模糊不变形的平面玻璃。边缘的折射保持背景连续：位移在玻璃边缘和斜面内侧都是 0，在斜面中间最大，方向朝外，所以边缘附近的内容被拉伸到整个斜面上，像透镜一样；位移的变化率小于 1，画面不会折返。最初照搬 `dockglass.frag`：按 Snell 定律在斜面上折射，位移在最外缘最大（约 50 px），边缘两侧的像素显示相距 50 px 的内容，于是玻璃边缘处画面跳变，玻璃外紧挨着的一条背景又被压扁着在斜面里出现一次（例如壁纸的斜线进入 Dock 时出现重复的亮带）。只把方向改成向外也只是换了一边重复。`thickness` 控制拉伸强度（峰值位移为它的 0.32 倍，最多为斜面宽度的 30%），负值向另一侧拉伸。
+
+对照方法：把参数全部设为中性（`blur`、`tint`、`thickness`、`dispersion`、`magnify`、`lift`、`rim` 为 0，`saturation` 为 1）时，Dock 下的画面和卸载插件时逐像素一致，说明采样位置正确，剩下的观感差别都来自光学效果。拿壁纸原图对照时，斜线穿过 Dock 会弯成 S 形，原因是整块玻璃的纵向放大（`magnify` 0.04）加上上下边缘方向相反的拉伸。默认值因此改为 `magnify = 0`、`thickness = 20`（原为 0.04 和 52），斜线基本保持笔直，只在边缘有轻微弯曲。斜面深度不超过 Dock 半高的 80%：之前斜面最深约 46 px，而 Dock 只有约 70 px 高，上下两条斜面在中线重叠，中线处“最近的边”从上沿换成下沿，位移从“向上拉”突然变成“向下拉”，Dock 中间出现一条横向撕裂，看起来像上下分层（叠在窗口上时最明显）。现在中线附近没有位移，是完整的平面玻璃。之后又发现窗口滑过时 Dock 中部也在变形：`bezel` 原来还要乘 1.45，即使有上限也占到半高的 80%，上下两条弯折带合起来覆盖了 Dock 的大部分。现在 `bezel` 就是弯折带的实际宽度（默认 14 px，最多半高的 60%），中间约六成高度不再变形。同时把色彩上的改动减到最小（`saturation` 1.05、`lift` 0.015、`dispersion` 0.06，原为 1.15、0.03、0.10），玻璃下的壁纸颜色和周围基本一致。之后 Hyprland 照常在上面画 Dock 图层（图标）。
+4. Dock 放大图标时形状每帧都变。MacDock 把玻璃的位置、尺寸、圆角和深浅色写进自己图层最底一行的 45 个像素里（每个像素 alpha 为 1–4 / 255，表示 2 bit，肉眼看不见）。插件的顶点着色器直接从 Hyprland 即将绘制的同一个缓冲里解码，所以形状和折射总在同一帧。
+5. 复制的背景必须全部来自这一帧：只要玻璃折射范围内有变化，插件就把整块玻璃区域加进这一帧的损伤区域（不是整个屏幕，整屏重绘会让 Hyprland 重新模糊所有表面）。
+
+**性能**（实机，Snapdragon X Elite、2944×1840 @ 90 Hz，和[上一节](#改用-hyprland-模糊普通模糊)同样的拖动测试，每种 3 次取平均）：
+
+| 拖动窗口经过 Dock | MacShell CPU | MacShell GPU | Hyprland CPU | Hyprland GPU | 延迟 |
+| --- | --- | --- | --- | --- | --- |
+| MacShell Liquid Glass（旧） | 23–28% | 7% | 21% | 53% | 50–90 ms |
+| 普通模糊 | 约 1% | 0% | 24% | 54% | 0 |
+| 插件 Liquid Glass | 约 1% | 0% | 25% | 63% | 0 |
+
+画面静止时（只有别处的窗口在更新），插件只多约 1 个百分点的 Hyprland GPU（45.4% 对 44.4%）。原型最初请求整屏损伤，拖动时 GPU 为 78%，静止时也多 18 个百分点；改为只损伤玻璃区域后降到上表的数值。半分辨率复制和只在边缘做色散对 GPU 没有可测的影响，保留是因为更省显存。和旧 Liquid Glass 相比，GPU 总量相当（旧方案 MacShell 7% + Hyprland 53%），但 MacShell 的 CPU 从 25% 左右降到 1%，并且没有延迟。
+
+**安装**：先用 `install-native-blur.sh` 切到普通模糊，再从仓库根目录运行：
+
+```bash
+./scripts/install-dock-glass-plugin.sh
+```
+
+脚本按已安装的 Hyprland 头文件编译插件，装到 `~/.local/lib/silky-omarchy/silky-dock-glass-<版本>.so`，安装 [`config/hypr/silky-dock-glass.lua`](../config/hypr/silky-dock-glass.lua) 并在 `hyprland.lua` 里 `require`（登录时自动加载），立即加载插件。它还会运行 [`tune-dock-glass-plugin.py`](../scripts/tune-dock-glass-plugin.py)（MacDock 写隐藏标记、不再画自己的着色），并在 `~/.config/macshell/env` 里加上 `export SILKY_DOCK_GLASS_PLUGIN=1`。改动的 `MacDock.qml` 和 `env` 备份在 `~/.local/state/macshell/silky-backup-dock-glass-<时间>/`。之后从「设置 > 工具 > 重新启动」重启 MacShell。Hyprland 更新后要重跑脚本。依赖 `g++`、`make`、`pkg-config` 和 Hyprland 头文件。
+
+**调参**：安装脚本在 `~/.config/silky-omarchy/dock-glass.conf` 不存在时放一份带注释的[默认配置](../config/silky-omarchy/dock-glass.conf)，以后不会覆盖。每行一个 `键 = 值`：`blur`（模糊半径，逻辑像素）、`tint`（浅色外观的着色，0–1）、`tint_dark`（深色外观的着色，默认 0.22，比浅色略深）、`bezel`（斜面最宽）、`thickness`（折射强度）、`dispersion`（色散）、`magnify`（整体纵向放大）、`saturation`、`lift`（提亮）、`rim`（边缘高光）。保存后插件在 1 秒内重新读取，不用重载 Hyprland。删掉某行即恢复默认值。调到默认值后，拖动测试中 Hyprland GPU 约为 57%（测试窗口比上表略大），模糊半径越小越省。
+
+**限制**：
+
+- 只覆盖 Dock。右键菜单、悬停标签仍是普通模糊。
+- 玻璃参数不跟随 MacShell 的玻璃滑块，改在 `~/.config/silky-omarchy/dock-glass.conf` 里调（见下方「调参」）。
+- 依赖 Hyprland 0.57 的内部渲染接口（渲染阶段事件、渲染元素、`requiresFullDamage`），升级 Hyprland 后可能需要改代码。
+- 设置了 `SILKY_DOCK_GLASS_PLUGIN=1` 但插件没加载时，Dock 没有玻璃底（只有图标）。
+- 只在单显示器、无旋转、缩放 2 的内屏上验证过。
+
+**验证**：先在嵌套 Hyprland（窗口里再跑一个 Hyprland，用一个写同样标记的测试 Dock）里反复加载、卸载插件，确认不会崩溃，再装到实机。实机验证：`hyprctl plugin list` 能看到 `silky-dock-glass`，Dock 显示斜面折射和边缘高光。用 `hyprctl` 拖动窗口穿过 Dock 时截图，玻璃里窗口边缘的位置和玻璃外完全对齐（同一帧），玻璃里没有残留的 Dock 图标。设置环境变量 `SILKY_DOCK_GLASS_DEBUG=1` 启动 Hyprland 时，标记解码失败的位置显示品红色；`SILKY_DOCK_GLASS_RAW=1` 显示未处理的复制画面。
+
+**回滚**：从 `hyprland.lua` 删掉 `require("hypr.silky-dock-glass")`，运行 `hyprctl plugin unload ~/.local/lib/silky-omarchy/silky-dock-glass-<版本>.so`。从备份目录恢复 `MacDock.qml` 和 `~/.config/macshell/env`（或删掉 `SILKY_DOCK_GLASS_PLUGIN=1` 一行），然后重启 MacShell，Dock 回到普通模糊。
+
 ## 默认玻璃参数
 
 安装脚本会合并以下值，不会覆盖 Dock 图标、组件排序等其他个人设置：

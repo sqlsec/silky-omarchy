@@ -84,7 +84,7 @@ config/macshell/  MacShell 玻璃参数、GPU 环境变量、窗口总览组件
 config/zsh/       ~/.zshrc
 config/obsidian/  Obsidian 主题 Silky macOS、打字淡入插件 silky-typing、图标生成脚本
 patches/          MacShell 0.5.1 / 0.5.2 + MacLock + Omalogi 汉化的补丁
-plugins/          Hyprland C++ 插件 silky-gestures
+plugins/          Hyprland C++ 插件 silky-gestures、silky-dock-glass（原型）
 themes/           Omarchy 主题 macos-tahoe-dark / macos-tahoe-light
 hooks/            Omarchy theme-set 钩子
 bin/              silky-lock、silky-sleep-lock（MacLock 锁屏入口）、silky-menu-glass、silky-omalogi

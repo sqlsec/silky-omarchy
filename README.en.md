@@ -84,7 +84,7 @@ config/macshell/  MacShell glass settings, GPU environment variables, window ove
 config/zsh/       ~/.zshrc
 config/obsidian/  Obsidian theme Silky macOS, typing-fade plugin silky-typing, icon generator
 patches/          Patches for MacShell 0.5.1 / 0.5.2, MacLock and the Omalogi translation
-plugins/          Hyprland C++ plugin silky-gestures
+plugins/          Hyprland C++ plugins silky-gestures, silky-dock-glass (prototype)
 themes/           Omarchy themes macos-tahoe-dark / macos-tahoe-light
 hooks/            Omarchy theme-set hook
 bin/              silky-lock, silky-sleep-lock (MacLock entry points), silky-menu-glass, silky-omalogi
