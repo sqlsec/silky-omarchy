@@ -115,6 +115,8 @@ python3 "$repo_root/scripts/tune-dock-hover-label.py" "$staged_shell/MacDock.qml
 python3 "$repo_root/scripts/tune-dock-smart-hide.py" "$staged_shell/MacDock.qml"
 # The right-click menu uses the same see-through glass as the Dock (tint / blur follow the Dock's glass settings).
 python3 "$repo_root/scripts/tune-dock-menu-glass.py" "$staged_shell"
+# Normal Blur (Hyprland blur) tints close to Liquid Glass; quieter About button.
+python3 "$repo_root/scripts/tune-native-blur.py" "$staged_shell"
 
 # Keep the Applications panel interaction tuning current on existing installations too.
 python3 "$repo_root/scripts/tune-apps-panel.py" "$staged_shell/MacBar.qml"
@@ -187,9 +189,9 @@ update_json() {
 }
 
 update_json "$bar_settings" \
-  '.barStyle = "liquid" | .ccStyle = "macos" | .glassOpacity = 0.38 | .glassBlur = 24 | .glassRealtime = true | .language = "zh-CN" | .screenshotNotify = false'
+  '.barStyle = "blur" | .ccStyle = "macos" | .glassOpacity = 0.38 | .glassBlur = 24 | .glassRealtime = true | .language = "zh-CN" | .screenshotNotify = false'
 update_json "$dock_settings" \
-  '.dockStyle = "liquid" | .glassOpacity = 0.38 | .glassBlur = 24 | .glassLive = true | .windowCapture = false | .desktopIcons = false'
+  '.dockStyle = "blur" | .glassOpacity = 0.38 | .glassBlur = 24 | .glassLive = true | .windowCapture = false | .desktopIcons = false'
 
 mkdir -p "$(dirname -- "$env_file")"
 touch "$env_file"
@@ -244,6 +246,13 @@ hl.layer_rule({ name = "macshot",  match = { namespace = "macshot"  }, no_anim =
 LUA
     printf 'Restored MacShell autostart in %s\n' "$hypr_dir/hyprland.lua"
   fi
+fi
+
+# Hyprland blur behind the menu bar's popovers, switcher, wallpaper picker and OSD (barStyle / dockStyle "blur").
+if [[ -f "$HOME/.config/hypr/hyprland.lua" ]]; then
+  install -m 644 "$repo_root/config/hypr/silky-native-blur.lua" "$HOME/.config/hypr/silky-native-blur.lua"
+  grep -q 'require("hypr.silky-native-blur")' "$HOME/.config/hypr/hyprland.lua" \
+    || printf '\n-- Silky Omarchy: Hyprland blur behind MacShell popovers, switcher, wallpaper picker and OSD.\nrequire("hypr.silky-native-blur")\n' >> "$HOME/.config/hypr/hyprland.lua"
 fi
 
 # macshell-start: never start a second MacShell next to a running one (-n), so a crash can not leave two menu bars.

@@ -249,6 +249,57 @@ A spring advanced by real frame time drives the animation; on the 90 Hz built-in
 
 Clicking the Dock's Applications icon rapidly makes the spring reverse immediately on every click (velocity stays continuous, no stop-and-restart). This relies on the `silky-gestures` plugin re-resolving the window under the pointer on button press, see [03 · Touchscreen workspace gestures](03-silky-gestures.md#rapid-repeated-clicks).
 
+## Hyprland blur instead of Liquid Glass (Normal Blur)
+
+**Effect**: the menu bar's dropdown menus, Control Center, Notification Center, Applications panel, Spotlight and the Dock all use MacShell's "Normal Blur" style (`barStyle` / `dockStyle` = `"blur"`). Hyprland does the blur while compositing, so when you drag a window past the Dock or an open panel, the glass moves with the window in the same frame instead of trailing it. The colours follow the old Liquid Glass maths: the blurred backdrop keeps its full brightness, and dark mode adds only about a 21% tint plus a white sheen that fades from the top. In light mode it is a translucent white with the same sheen. Both follow the system appearance. The trade-off is no bevel refraction or dispersion.
+
+**Cause**: Liquid Glass does not use compositor blur. MacShell captures every window behind the glass, then blurs and refracts the captures in QML. Window positions come from polling Hyprland every 33 ms. So the glass always trails the real window by about 50–90 ms, and MacShell redraws every frame while a window moves. With the menu bar's `glassRealtime` set to `false`, the backdrop behind menus was a periodic snapshot, not live at all.
+
+**Performance comparison**: same machine (Snapdragon X Elite, Adreno X1-85, 2944×1840 @ 90 Hz). `hyprctl` dragged a 700×300 floating window back and forth across the Dock in 192 steps (about 3.1 s), twice per style. MacShell frame times come from `QT_LOGGING_RULES="qt.scenegraph.time.renderloop=true"`, GPU time from `drm-engine-gpu` in `/proc/<pid>/fdinfo`:
+
+| Metric | Liquid Glass | Normal Blur |
+| --- | --- | --- |
+| MacShell redraws | 90–106 frames/s | about 1 frame/s (nothing to redraw while dragging) |
+| MacShell frame time | mean 9–11 ms, p95 22 ms, max 23 ms | under 1 ms |
+| MacShell CPU | 23–28% | 0.6% |
+| MacShell GPU | 7.2–7.5% | 0% |
+| Hyprland CPU | 21% | 24–25% |
+| Hyprland GPU | 53% | 61% |
+
+A frame at 90 Hz has 11.1 ms. Liquid Glass's p95 of 22 ms means a good share of frames missed that budget while dragging, so the glass skipped frames. With Normal Blur, MacShell does almost no work during the drag and Hyprland blurs in the same frame. Hyprland itself spends about 8 more percentage points of GPU time, so total GPU use is roughly the same. What you save is MacShell's CPU time and the 50–90 ms delay.
+
+**Install**: from the repository root (safe to run repeatedly):
+
+```bash
+./scripts/install-native-blur.sh
+```
+
+The script installs [`config/hypr/silky-native-blur.lua`](../../config/hypr/silky-native-blur.lua) and `require`s it from `~/.config/hypr/hyprland.lua`. That file turns on blur for the `macbar` (dropdown menus, Control Center, notifications), `macswitch` (window switcher), `macwall` (wallpaper picker) and `macosd` (volume / brightness OSD) layers. `macdock`, `macspot` and `macbarbg` are already covered by MacShell's install block. It also sets `barStyle` in `~/.config/macbar/settings.json` and `dockStyle` in `~/.config/macdock/settings.json` to `"blur"`, backing each file up as `settings.json.bak.<timestamp>`. Then restart MacShell from Settings > Tools > Restart. `install-macshell-optimizations.sh` now defaults to Normal Blur too.
+
+[`tune-native-blur.py`](../../scripts/tune-native-blur.py) adjusts the Normal Blur tints. Both `install-native-blur.sh` and `install-macshell-optimizations.sh` run it; the former first backs up the QML files it changes to `~/.local/state/macshell/silky-backup-native-blur-<timestamp>/`; you can also run it on its own with `python3 scripts/tune-native-blur.py ~/.config/quickshell/MacShell`.
+
+- The dark tint of the Dock and panels (`GGlass`) drops from 100% to 55% of Glass Opacity, the same as the Liquid Glass shader's `tintMix` (about 21% by default).
+- Dropdown menus (`LGlass`) drop from 0.30 + 0.9 × opacity to 0.10 + 0.5 × (dark) or 0.12 + 0.45 × (light).
+- The fade behind a clear menu bar (`barFeather`) used to peak at 30%; it now peaks at 4.5%. It sits on the `macbar` layer, and anything above that layer's `ignore_alpha` gets blurred by Hyprland into a dark band. Kept below 0.05, the menu bar is almost fully clear, with only a very faint layer.
+- All three get a white sheen fading downward: 7% → 1.5% in dark mode, 12% → 3% in light mode.
+- It also turns About This Mac's "More Info…" button from a 75% white slab in light mode into a 4.5% grey fill (8% white in dark mode), matching macOS secondary buttons.
+
+The dark theme's Hyprland blur used to dim the backdrop to 82% (`decoration:blur:brightness = 0.82`), so the blurred background was darkened before the tint went on and looked much darker than Liquid Glass (which blurs on its own and skips that step). The dark theme now uses `1.0`, like the light theme; see [04](04-macos-theme.md).
+
+**Limitations**: blur strength comes from Hyprland's global `decoration:blur` (here `size = 7`, `passes = 3`, `vibrancy = 0.45`). MacShell's Blur slider has no effect on Normal Blur. It requires `decoration:blur:enabled = true`. Desktop widgets (`MacWidgets`) and the glass switches and sliders inside the Settings window are still Liquid Glass. Desktop widgets are not enabled on this machine, and the Settings glass only runs while Settings is open.
+
+**Verify**: verified on Hyprland 0.57.2 with MacShell 0.5.3: `hyprctl configerrors` is empty. Screenshots of the Dock, Control Center and Applications panel in both light and dark mode show the windows and wallpaper behind them blurred. In the drag test above, MacShell no longer redraws every frame.
+
+**Roll back**: set `barStyle` / `dockStyle` back to `"liquid"` in the two `settings.json` files, or restore their `.bak.<timestamp>` copies. Delete the `require("hypr.silky-native-blur")` line from `hyprland.lua`. To bring back the darker dark-mode blur, set `brightness` back to `0.82` in `~/.config/omarchy/themes/macos-tahoe-dark/hyprland.lua` and `~/.local/state/omarchy/current/theme/hyprland.lua`. Then run `hyprctl reload`. To undo the tint changes, restore `MacBar.qml`, `MacDock.qml` and `AboutApp.qml` from the installer's backup (`~/.local/state/macshell/silky-backup-*/MacShell/`). Then restart MacShell.
+
+## Dock glass follows the light / dark appearance
+
+[`tune-dock-follow-appearance.py`](../../scripts/tune-dock-follow-appearance.py): MacDock used to pin `dockDark` to `true`, so the Dock glass stayed dark for good — the `dark` tint of dockglass.frag, the Normal Blur fallback rectangle, the launch preview bar and the edge highlights never changed with the appearance, while the theme switch only reached the right-click menu, hover labels and the indicator dots. `dockDark` now follows `darkMode`: whenever the Menu Bar's appearance changes (the theme hook, the Dock's own Appearance setting, "auto" mode and the `color-scheme` watcher all keep it in step), the whole Dock glass switches between light and dark.
+
+- **Install**: `install-macshell-optimizations.sh` applies it automatically. Standalone: `python3 scripts/tune-dock-follow-appearance.py ~/.config/quickshell/MacShell`, then reload MacShell (Settings > Tools > Restart, or `qs -c MacShell ipc call macshell reload`).
+- **Verify**: in light mode the Dock glass should show the translucent white tint; in dark mode it returns to the original dark tint. Verified on Hyprland 0.57.2 with MacShell 0.5.3: after reloading in light mode, a screenshot shows the Dock glass turned light, matching the wallpaper and light appearance.
+- **Roll back**: restore `MacDock.qml` from `~/.local/state/silky-omarchy/backup-dock-appearance-<timestamp>/` (installer scenario: `~/.local/state/macshell/silky-backup-*/MacShell/`), then reload MacShell.
+
 ## Default glass settings
 
 The installer merges these values without overwriting other personal settings such as Dock icons or widget order:

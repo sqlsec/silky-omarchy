@@ -16,7 +16,7 @@
 | 部分 | 文件 | 说明 |
 | --- | --- | --- |
 | 配色 | `themes/macos-tahoe-*/colors.toml` | Apple 系统色。浅色版终端文字用的是高对比度变体，否则黄色、绿色在白底上看不清 |
-| 窗口外观 | `themes/macos-tahoe-*/hyprland.lua` | 1 px 半透明描边、14 px 圆角（`rounding_power = 2.6` 接近 Apple 的连续曲率）、阴影、3 次模糊 |
+| 窗口外观 | `themes/macos-tahoe-*/hyprland.lua` | 1 px 半透明描边、14 px 圆角（`rounding_power = 2.6` 接近 Apple 的连续曲率）、阴影、3 次模糊；深浅色的模糊亮度都是 `1.0`（深色原为 `0.82`，会让 MacShell 玻璃比 Liquid Glass 深，见 [02](02-macshell.md#改用-hyprland-模糊普通模糊)） |
 | 图标 | `themes/macos-tahoe-*/icons.theme` | `Silky-MacTahoe-dark` / `Silky-MacTahoe-light`（继承 MacTahoe，统一侧边栏符号图标） |
 | GTK / Finder | MacTahoe GTK 主题 | 上游预编译的 release，不需要 sassc |
 | 联动 | `hooks/theme-set-silky-macos` | Omarchy 的 theme-set hook |

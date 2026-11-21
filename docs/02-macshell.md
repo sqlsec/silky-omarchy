@@ -249,6 +249,57 @@ python3 -I -c 'import importlib.util as u; s=u.spec_from_file_location("w", "con
 
 连续快速点击 Dock 的“应用程序”图标时，每一次点击都会让弹簧立即反向（速度连续，不会停顿重来）。这依赖 `silky-gestures` 插件在按键按下时重新确定指针下的窗口，见 [03 · 触控屏工作区手势](03-silky-gestures.md#快速连续点击)。
 
+## 改用 Hyprland 模糊（普通模糊）
+
+**效果**：菜单栏的下拉菜单、控制中心、通知中心、应用程序面板、Spotlight 和 Dock 都改用 MacShell 的「普通模糊」样式（`barStyle` / `dockStyle` 为 `"blur"`）。模糊由 Hyprland 在合成时完成，拖动窗口经过 Dock 或打开的面板时，玻璃和窗口在同一帧移动，不再慢半拍。颜色按原来 Liquid Glass 的算法调：背景模糊保持原亮度，深色外观下只叠约 21% 的着色和一层由亮到淡的白色光泽。浅色外观下是白色半透明底加同样的光泽。两种外观随系统切换。代价是没有斜面折射和色散。
+
+**原因**：Liquid Glass 不靠合成器模糊。MacShell 自己抓取玻璃后面每个窗口的画面，在 QML 里模糊、折射后再画出来，窗口位置靠每 33 ms 轮询一次 Hyprland 得到。所以玻璃总比真实窗口落后约 50–90 ms，而且窗口一动 MacShell 就要逐帧重画。菜单栏的 `glassRealtime` 为 `false` 时，菜单背后只是定时截图，根本不是实时的。
+
+**性能对比**：同一台机器（Snapdragon X Elite、Adreno X1-85、2944×1840 @ 90 Hz），用 `hyprctl` 把一个 700×300 的浮动窗口沿 Dock 来回拖 192 步（约 3.1 秒），各测两次。MacShell 的帧时间来自 `QT_LOGGING_RULES="qt.scenegraph.time.renderloop=true"`，GPU 时间来自 `/proc/<pid>/fdinfo` 的 `drm-engine-gpu`：
+
+| 指标 | Liquid Glass | 普通模糊 |
+| --- | --- | --- |
+| MacShell 重绘 | 90–106 帧/秒 | 约 1 帧/秒（拖动时不用重画） |
+| MacShell 帧耗时 | 平均 9–11 ms，p95 22 ms，最长 23 ms | 不到 1 ms |
+| MacShell CPU | 23–28% | 0.6% |
+| MacShell GPU | 7.2–7.5% | 0% |
+| Hyprland CPU | 21% | 24–25% |
+| Hyprland GPU | 53% | 61% |
+
+90 Hz 下每帧只有 11.1 ms。Liquid Glass 的 p95 是 22 ms，也就是说拖动时有相当一部分帧赶不上，玻璃会跳帧。改用普通模糊后，MacShell 在拖动期间几乎不工作，模糊交给 Hyprland 在同一帧完成。Hyprland 自己多了约 8 个百分点的 GPU 时间，两者加起来 GPU 总量基本持平，但省掉了 MacShell 的 CPU 和那 50–90 ms 的延迟。
+
+**安装**：从仓库根目录运行（可重复执行）：
+
+```bash
+./scripts/install-native-blur.sh
+```
+
+脚本会安装 [`config/hypr/silky-native-blur.lua`](../config/hypr/silky-native-blur.lua)，并在 `~/.config/hypr/hyprland.lua` 里 `require` 它。这个文件给 `macbar`（下拉菜单、控制中心、通知）、`macswitch`（窗口切换）、`macwall`（壁纸选择）和 `macosd`（音量 / 亮度提示）图层打开模糊。`macdock`、`macspot`、`macbarbg` 已经由 MacShell 的安装块覆盖。脚本还会把 `~/.config/macbar/settings.json` 的 `barStyle` 和 `~/.config/macdock/settings.json` 的 `dockStyle` 设为 `"blur"`，原文件备份为 `settings.json.bak.<时间>`。之后从「设置 > 工具 > 重新启动」重启 MacShell。`install-macshell-optimizations.sh` 现在也默认使用普通模糊。
+
+[`tune-native-blur.py`](../scripts/tune-native-blur.py) 调整普通模糊的着色（`install-native-blur.sh` 和 `install-macshell-optimizations.sh` 都会调用，前者先把改动的 QML 备份到 `~/.local/state/macshell/silky-backup-native-blur-<时间>/`；也可以单独运行 `python3 scripts/tune-native-blur.py ~/.config/quickshell/MacShell`）：
+
+- Dock 和各面板（`GGlass`）的深色着色从「玻璃不透明度」的 100% 降到 55%，和 Liquid Glass 着色器的 `tintMix` 相同（默认约 21%）。
+- 下拉菜单（`LGlass`）从 0.30 + 0.9 × 不透明度降到 0.10 + 0.5 ×（深色）或 0.12 + 0.45 ×（浅色）。
+- 菜单栏透明时背后那条渐变（`barFeather`）原来最深 30%，现在最高 4.5%。它在 `macbar` 图层上，高于 `ignore_alpha` 就会被 Hyprland 模糊成一条深色带，压到 0.05 以下后菜单栏几乎完全透明，只剩极淡的一层。
+- 三者都加上从上往下变淡的白色光泽，深色 7% → 1.5%，浅色 12% → 3%。
+- 顺带把「关于本机」的「更多信息…」按钮从浅色下 75% 的白色块改成 4.5% 的淡灰底（深色下 8% 白），和 macOS 的次要按钮一致。
+
+深色主题的 Hyprland 模糊原来把亮度压到 82%（`decoration:blur:brightness = 0.82`），模糊后的背景先整体变暗，再叠着色，看起来比 Liquid Glass 深很多（Liquid Glass 自己模糊，不经过这一步）。现在深色主题和浅色主题一样用 `1.0`，见 [04](04-macos-theme.md)。
+
+**限制**：模糊强度由 Hyprland 全局的 `decoration:blur`（本机 `size = 7`、`passes = 3`、`vibrancy = 0.45`）决定，MacShell 的「模糊」滑块对普通模糊不起作用。需要 `decoration:blur:enabled = true`。桌面小组件（`MacWidgets`）和设置窗口里的玻璃开关、滑块仍是 Liquid Glass，本机没有启用桌面小组件，设置窗口里的玻璃只在设置打开时运行。
+
+**验证**：Hyprland 0.57.2、MacShell 0.5.3 实机验证：`hyprctl configerrors` 为空。浅色和深色外观下截图检查过 Dock、控制中心和应用程序面板，背后的窗口和壁纸都被模糊。上面的拖动测试中 MacShell 不再逐帧重画。
+
+**回滚**：把两个 `settings.json` 的 `barStyle` / `dockStyle` 改回 `"liquid"`，或用 `.bak.<时间>` 恢复。从 `hyprland.lua` 删掉 `require("hypr.silky-native-blur")` 一行。想恢复深色模糊的压暗，把 `~/.config/omarchy/themes/macos-tahoe-dark/hyprland.lua` 和 `~/.local/state/omarchy/current/theme/hyprland.lua` 里的 `brightness` 改回 `0.82`。然后运行 `hyprctl reload`。着色调整可从安装脚本备份目录（`~/.local/state/macshell/silky-backup-*/MacShell/`）恢复 `MacBar.qml`、`MacDock.qml` 和 `AboutApp.qml`。最后重启 MacShell。
+
+## Dock 玻璃跟随深浅色
+
+[`tune-dock-follow-appearance.py`](../scripts/tune-dock-follow-appearance.py)：MacDock 原来把 `dockDark` 写死为 `true`，Dock 玻璃固定深色——dockglass.frag 的 `dark` 着色、普通模糊的备用矩形、启动预览条和边缘高光都不随外观变，深浅切换只影响右键菜单、悬停标签和指示点。现在 `dockDark` 跟随 `darkMode`：菜单栏的外观一变（主题切换 hook、Dock 设置里的「外观」、「自动」模式和 `color-scheme` 监听都会同步它），Dock 玻璃就在浅色 / 深色之间整体切换。
+
+- **安装**：`install-macshell-optimizations.sh` 会自动应用。单独应用：`python3 scripts/tune-dock-follow-appearance.py ~/.config/quickshell/MacShell`，然后重载 MacShell（设置 > 工具 > 重新启动，或 `qs -c MacShell ipc call macshell reload`）。
+- **验证**：浅色外观下 Dock 玻璃应为白色半透明着色，深色下回到原来的深色。Hyprland 0.57.2、MacShell 0.5.3 实机验证：浅色外观重载后截图，Dock 玻璃变亮，与壁纸和浅色模式一致。
+- **回滚**：从 `~/.local/state/silky-omarchy/backup-dock-appearance-<时间>/MacDock.qml` 恢复（安装脚本场景用 `~/.local/state/macshell/silky-backup-*/MacShell/`），重载 MacShell。
+
 ## 默认玻璃参数
 
 安装脚本会合并以下值，不会覆盖 Dock 图标、组件排序等其他个人设置：

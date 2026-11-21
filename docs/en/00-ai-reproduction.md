@@ -38,6 +38,7 @@ omarchy theme set macos-tahoe-dark
 ./scripts/install-nautilus-wallpaper.py        # 08: Optional Set as Background action for Nautilus
 ./scripts/install-wowtype-glass.sh            # 09: WowType candidate skin
 ./scripts/install-shortcuts.sh                # 10: shortcut clashes + Super+K panel
+./scripts/install-native-blur.sh              # 02: MacShell uses Hyprland blur
 ./scripts/install-menu-glass.sh               # 11: Omarchy menu glass + light/dark
 ./scripts/install-obsidian-theme.sh           # 15: Obsidian theme + typing-fade plugin
 ./scripts/install-desktop-priority.sh         # 16: desktop priority (needs sudo)

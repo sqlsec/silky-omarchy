@@ -1,13 +1,13 @@
 {
   "macbar": {
-    "barStyle": "liquid",
+    "barStyle": "blur",
     "glassOpacity": 0.38,
     "glassBlur": 24,
     "glassRealtime": true,
     "language": "zh-CN"
   },
   "macdock": {
-    "dockStyle": "liquid",
+    "dockStyle": "blur",
     "glassOpacity": 0.38,
     "glassBlur": 24,
     "glassLive": true,

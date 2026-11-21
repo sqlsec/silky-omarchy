@@ -16,7 +16,7 @@
 | Part | File | Notes |
 | --- | --- | --- |
 | Colours | `themes/macos-tahoe-*/colors.toml` | Apple system colours. The light variant uses high-contrast terminal colours, otherwise yellow and green are unreadable on white |
-| Window look | `themes/macos-tahoe-*/hyprland.lua` | 1 px translucent border, 14 px corners (`rounding_power = 2.6` is close to Apple's continuous curvature), shadow, 3 blur passes |
+| Window look | `themes/macos-tahoe-*/hyprland.lua` | 1 px translucent border, 14 px corners (`rounding_power = 2.6` is close to Apple's continuous curvature), shadow, 3 blur passes; blur brightness `1.0` in both light and dark (dark used to be `0.82`, which made MacShell glass darker than Liquid Glass, see [02](02-macshell.md#hyprland-blur-instead-of-liquid-glass-normal-blur)) |
 | Icons | `themes/macos-tahoe-*/icons.theme` | `Silky-MacTahoe-dark` / `Silky-MacTahoe-light` (inherit MacTahoe, unify the sidebar symbolic icons) |
 | GTK / Finder | MacTahoe GTK theme | The upstream prebuilt release, no sassc needed |
 | Sync | `hooks/theme-set-silky-macos` | Omarchy theme-set hook |

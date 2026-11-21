@@ -41,7 +41,7 @@ hl.config({
       new_optimizations = true,
       xray = false,
       contrast = 1.05,
-      brightness = 0.82,
+      brightness = 1.0,         -- same as the light theme: MacShell glass looks like Liquid Glass (no extra darkening)
       noise = 0.012,
       vibrancy = 0.45,
       vibrancy_darkness = 0.45,
