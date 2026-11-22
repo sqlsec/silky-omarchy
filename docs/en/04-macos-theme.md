@@ -62,11 +62,11 @@ The Nautilus sidebar uses MacTahoe's own symbolic icons, shown in blue; the Proj
 
 ### Frosted glass in Files
 
-Nautilus softens windows and wallpaper behind it into broad patches of color. The sidebar lets more color through and has a thin highlight along its edge. The file area uses a denser tint to keep names and icons readable.
+Nautilus softens windows and wallpaper behind it into broad patches of color. The sidebar lets more color through and has a thin highlight along its edge. The file area uses the theme’s solid view color so names and icons stay readable at any overlap.
 
 The theme installer writes the [GTK 4 overlay](../../config/gtk-4.0/nautilus-glass.css) into `~/.local/share/themes/Silky-MacTahoe-{Dark,Light}/gtk-4.0/`. If the base MacTahoe GTK theme is installed, run `./scripts/install-macos-theme.sh --no-icons --no-gtk --no-bars` from the repository root to update it. With either macOS Tahoe theme active, save your work, quit the Nautilus process, and reopen Files. Background blur requires GTK's Wayland background effects support and Hyprland with blur enabled. Tested with Nautilus 51.1, GTK 4.24.1, and Hyprland 0.57.2.
 
-To check the effect, overlap Files with another window containing text. The sidebar should pick up the colors while softening the text behind it, and filenames should stay crisp. To revert the glass styling, restore the corresponding `gtk.css.bak.*` and `gtk-dark.css.bak.*` backup files printed by the installer, then quit and reopen Nautilus.
+To check the effect, overlap Files with another window containing text. The sidebar should pick up the blurred colors, and details behind the file area should be obscured. To revert the glass styling, restore the corresponding `gtk.css.bak.*` and `gtk-dark.css.bak.*` backup files printed by the installer, then quit and reopen Nautilus.
 
 Icon tweaks made earlier with ChatGPT are folded into the installer:
 
@@ -75,16 +75,48 @@ Icon tweaks made earlier with ChatGPT are folded into the installer:
 - ChatGPT's official icon has different transparent padding from MacTahoe's, so `dockIconScale()` in the MacShell patch draws it 4% smaller in the Dock; Claude is now redrawn on the standard tile, so its factor is 1.0
 - `scripts/tune-app-icons.py` brings every other launcher app into the MacTahoe style. Its output goes straight into `MacTahoe/apps/scalable`, so the Applications panel, Dock and Spotlight all use it:
   - Utilities and Omarchy's own apps link to the matching macOS icon, e.g. `imv → accessories-image-viewer`, `omacut → VideoTrimmer`, `hype → Keynote`, `gliff → remote-desktop`, `signed → PDF`, `monologue → Photo Booth`, `LimineSnapperSync → timeshift`, `wemeetapp → meeting`, `zoom → Zoom`
-  - Branded apps (Claude, HEY, Superwhisper, WorkBuddy, xiezuo, Basecamp, Netcatty, Clippy, WowType, Google Messages, …) keep their logo, redrawn on MacTahoe's exact tile: 442 px on a 512 canvas, corner radius 100, with the shadow taken from the set's own Zoom icon. Round logos and bare glyphs sit on a light tile
-  - Local `.desktop` files that pointed at hand-made PNGs now use the theme icon name
+  - Branded and custom-logo apps (Claude, Kimi Code, HEY, Superwhisper, WorkBuddy, xiezuo, Basecamp, Netcatty, Clippy, WowType, Google Messages, Fantasi, Flowtunes, and Omarchy's Browser / Terminal / Media Viewer / Game Vibes / Agent launchers) keep their logo, redrawn on MacTahoe's exact tile: 442 px on a 512 canvas, corner radius 100, with the shadow taken from the set's own Zoom icon. Bordered solid cards with hard drop shadows are trimmed clean and centered on their own background colour; round logos and bare glyphs sit on a light tile
+  - `.desktop` entries that pointed at absolute-path PNGs or wide device icons (such as `antigravity.desktop`, `kimi-code.desktop`, and `kbd-layout-viewer5.desktop`) are switched in `~/.local/share/applications/` to the matching MacTahoe theme icon name
   - After installing a new app, run `python3 scripts/tune-app-icons.py` again. An app with no mapping yet needs an entry in the script's `ALIASES` or `BRANDS` first
 - MacShell's Dock and Spotlight read the icon theme from `QS_ICON_THEME` in `~/.config/macshell/env`
 
+## Finder-style Folio
+
+Folio uses the Finder icon already in MacTahoe. The Dock and the MacShell applications panel share the same `folio` app ID. The navigation sidebar keeps its frosted glass. The path bar, file area, and preview use the theme's fully opaque background. Blue folders keep their rounded selection outlines. The red button closes the window, and yellow minimizes it. The green button uses a plus for entering full screen and inward diagonal marks for exiting it. Click it to toggle full screen, just like `Super+F`. The yellow button is disabled in full screen. Right-click or hold the green button to open a layout menu with two rows of icons for the four halves and four corners of the display. Hover over an icon to see its label. In full screen, the menu offers an exit action and disables the layout icons. Drag the space next to the buttons to move a floating window, or drag the path bar with a mouse or touchscreen, or double-click it to maximize or restore. At either display edge, the middle zone previews a half-screen layout and the top and bottom zones preview their respective quarters. The blue preview moves and resizes linearly and fades out when the pointer leaves the edge. Releasing the pointer submits the placement right away and fades the preview out in 45 ms. The preview and window both respect space reserved by the bar and Dock.
+
+The toolbar is 44 px tall. Its traffic lights use solid 12 px circles with 8 px gaps, optically matching Foot. Files uses its existing path strokes for hover symbols. The sidebar background runs continuously from the top of the window, and the divider in the file area sits over the background. Columns avoid leaving a sliver of a folder icon at the leading edge when automatically scrolling.
+
+Under the Tahoe themes, the floating Folio sidebar blurs the scene behind the window and Hyprland clips it to the window's rounded shape. The [Folio window rule](../../config/hypr/silky-folio.lua) uses live blur and removes the translucent outer border to clear the colored fringe at the sidebar corners. Regular Folio windows paint at full opacity on the first frame instead of waiting through the upstream 150 ms settle timer and 100 ms fade-in, so opening Folio no longer flashes an empty blurred glass box (file choosers keep the upstream behavior). Update the user config and run `hyprctl reload` to apply it to open windows. Check the top-left and bottom-left corners over a high-contrast window. To roll back, remove the `silky-folio-rounded-glass-edge` rule and reload.
+
+Click or tap the path text or the empty area beside it to edit the path with the current value selected. Drag the path bar to move the window. Click or tap empty space in the file area to cancel editing. Swiping still scrolls the files. `Ctrl+L` also starts editing. Enter opens the path and Escape leaves the editor. The copy icon copies the full path of the current folder. In column view, when a subfolder is selected and expanded in the next column, the top path bar, window title, path editor, and copy-path button include that subfolder; selecting a file or switching to list/grid view returns the bar to the containing folder.
+
+Swipe with one finger to scroll the file area in column, list, or icon view. Mouse drag and drop remains available. In column view, a single-finger touchscreen tap acts like a left click. Touch and hold with one finger or tap with two fingers to open the context menu at the first contact. Moving past the system drag threshold cancels the context gesture. If Silky Gestures is enabled, rebuild it with its installer so Folio receives holds in the file area. See [Moving and resizing floating windows on the touchscreen](03-silky-gestures.md#moving-and-resizing-floating-windows-on-the-touchscreen).
+
+Trash gives the toolbar space back to the file view. Right-click Trash in the sidebar and choose the centered Empty action, or use the same action in the Trash file area. The action asks for confirmation, and the sidebar menu disables it when Trash is empty.
+
+Install the MacTahoe icon pack through the theme installer and select `macos-tahoe-dark` or `macos-tahoe-light`. From the repository root, run:
+
+```bash
+./scripts/install-folio-macos.sh
+hyprctl reload
+qs -c MacShell ipc call macshell reload
+```
+
+The installer builds the [window patch](../../patches/folio-0.6.1-silky.patch) against a pinned Folio 0.6.1 revision. It requires Git, CMake, a C++ compiler, pkg-config, Qt 6, GLib/GIO, and zlib. The build goes into `~/.local/share/silky-omarchy/folio/`. The user desktop entry and file manager shortcuts retain the Folio app ID. Under Tahoe themes, the launcher checks the shared libraries and symbols that the user build needs. Kernel and packaged Folio updates leave the Dock, default folder handler and both file manager shortcuts on the same user build and view settings. The user build stays on 0.6.1 independently of packaged Folio updates. Previews, file choosers and other themes use the package. The launcher also uses it when the user build is missing or its runtime libraries are incompatible. After an update, run `gtk-launch folio.desktop /tmp` and check that `/proc/<Folio PID>/exe` points to the build in your home directory. The desktop entry was verified with packaged Folio 0.7.1 on kernel 7.3.0-75-omarchy. The [Folio window rules](../../config/hypr/silky-folio.lua) leave Folio at full window opacity so its own sidebar translucency controls the glass.
+
+The [MacShell integration](../../scripts/tune-folio-macshell.py) lets the yellow button scale the window into a thumbnail between the Dock separator and Trash. Click the window thumbnail to restore it. See [Window minimizing](02-macshell.md#window-minimizing). Without MacShell, Omarchy supports minimize on floating workspaces. Verified on native Wayland with Hyprland 0.57.2, MacShell 0.5.3, and Folio 0.6.1. Reopen Folio, then click green twice, yellow, the Dock thumbnail, and red to verify entering full screen, exiting full screen, minimizing, restoring the same window, and closing. Right-click and hold should both open the layout menu. Each half should respect the display space reserved for the bar and Dock. The corner icons should match the previews shown when dragging to the corners. In full screen, the yellow button and layout icons should be disabled. Over a high-contrast wallpaper, the empty file area should stay solid in floating and fullscreen windows while the sidebar picks up blurred colors. If a fullscreen window shows an empty Dock outline, see the [Liquid Glass Dock plugin](02-macshell.md#liquid-glass-dock-plugin-prototype).
+
+To roll back, restore the `.bak.folio.*` files printed by the installer. If there was no user launcher or desktop entry, remove `~/.local/bin/folio` and `~/.local/share/applications/folio.desktop`. Restore the `MacDock.qml` and `shell.qml` backups, reload MacShell, and reopen Folio. Restore any minimized Folio windows from the Dock first. To remove the Folio opacity, minimize overlay, and half-screen layout configuration, remove `require("hypr.silky-folio")` from `~/.config/hypr/hyprland.lua` and reload Hyprland.
+
 <a id="foot-glass"></a>
 
-## Frosted glass in Foot
+## Tahoe appearance for Foot
 
-Dark mode uses a smoky violet background and light mode uses frosted white. Foot applies transparency to the default background and keeps text crisp. When MacShell Appearance switches to Light, Dark, or Auto, Foot windows that have loaded the glass palettes follow the system appearance. Floating windows retain the existing traffic-light title bar.
+Foot follows Folio’s layout. The output sits on solid graphite or warm white, with frosting on the 30 px floating title bar. The terminal uses 11 pt Monaco with fallbacks for Chinese text, terminal icons, and emoji. It has 20 px horizontal and 16 px vertical padding, a thin beam cursor, and separate ANSI palettes with blue selections. Foot windows with both palettes loaded follow MacShell’s Light, Dark, and Auto appearances.
+
+On floating workspaces, red closes the window and yellow minimizes it through MacShell, where the Dock restores it. Click green to enter fullscreen as in Files. Right-click or hold green to choose from two rows containing the four halves and four corners. In fullscreen, moving the pointer to the top-left edge reveals the exit control. Drag free space on the title bar to move the window, or double-click to toggle maximize. During a side-edge drag, the middle band previews a half and the upper and lower bands preview their respective corners. Releasing places only the dragged window and respects the menu bar and Dock reserves.
+
+The colored faces in Foot and Files are both 12 px. On hover, Silky Gestures draws the cross, dash, and plus for the shared Tahoe title bars using the same paths and 1.1 px round-cap strokes as Files. It rasterizes the strokes at the output scale and aligns them to the pixel grid. Foot’s fullscreen overlay uses Files’ inward diagonals for exit and greys out yellow. Run `./scripts/install-silky-gestures.sh`, install the matching `silky-macos.lua`, and reload Hyprland to update the hover marks. The title bar uses the configured font glyphs when the updated plugin is unavailable. To roll back, restore the previous `silky-macos.lua` and plugin build and sign in again. The fullscreen overlay comes from `FootWindowLayout.qml` and updates when MacShell reloads.
 
 From the repository root, run:
 
@@ -94,11 +126,15 @@ foot --check-config
 systemctl --user is-active silky-foot-glass.service
 ```
 
-The installer backs up `~/.config/foot/foot.ini` and adds the [glass palettes](../../config/foot/silky-glass.ini) and startup appearance settings. This requires Foot with dual palettes and background blur support (verified on 1.28.0) and Hyprland with blur enabled, as in the macOS Tahoe themes. The user service watches `org.gnome.desktop.interface color-scheme`, sets the appearance for new windows, and tells running Foot processes to switch palettes.
+The [theme installer](#install-and-switch) provides the floating title bar. The Foot installer backs up any changed copies of `~/.config/foot/foot.ini` and `~/.config/foot/silky-glass.ini`. The first migration writes the font to `foot.ini` so Omarchy’s font and text-size commands can adjust it. The [appearance profile](../../config/foot/silky-glass.ini) needs dual-palette support, verified on Foot 1.28.0. Fontconfig uses installed Monaco, JetBrainsMono Nerd Font, Sarasa Mono SC, and Noto Color Emoji fonts or available fallbacks. The user service watches `org.gnome.desktop.interface color-scheme` to set the startup appearance and switch the palettes of running Foot windows.
 
-Open a fresh Foot window in front of a colorful wallpaper or window, then switch between Light and Dark in MacShell and observe the background and text in the same window. Windows opened before installation need reopening to load the palettes. If you use `foot --server`, restart its process after the existing sessions finish so new clients can load the glass palettes.
+Window layouts use the existing Files/MacShell integration. From the repository root, back up and update `config/hypr/silky-folio.lua` and `config/hypr/silky-macos.lua` in `~/.config/hypr/`. Back up the installed Silky Gestures plugin in `~/.local/lib/silky-omarchy/`. Run `./scripts/install-silky-gestures.sh` to rebuild the input plugin and `python3 scripts/tune-folio-macshell.py ~/.config/quickshell/MacShell --backup` to update the menu. Apply with `hyprctl reload` and `qs -c MacShell ipc call macshell reload`. To roll back layouts, restore the two Lua backups, the MacShell `shell.qml` backup, and the previous plugin build, then sign in again to load that build.
 
-To roll back, run `systemctl --user disable --now silky-foot-glass.service`, restore the contents of the backup printed by the installer to `~/.config/foot/foot.ini`, and open a new Foot window.
+Open a fresh window through the default terminal launcher and check Chinese text, ANSI colors, selections, and the title-bar controls. Reopen older windows after their sessions finish. With `foot --server`, wait for active sessions to finish before restarting the server process.
+
+On Hyprland 0.57.2, the live session verified both palettes and MacShell minimize and restore of the same session. An isolated Wayland session used simulated input to check right-click, press-and-hold, entering and exiting fullscreen, the snap preview, and the top-right drop. All eight placements kept clear of the menu bar and Dock reserves. Simulated title-bar dragging on the built-in panel measured 89.6 FPS using Wayland presentation timestamps after the update. Physical touchscreen checks are pending.
+
+To return to the previous look, restore the Foot backups printed by the installer and open a fresh window. To remove appearance synchronization entirely, run `systemctl --user disable --now silky-foot-glass.service` and restore the pre-installation `foot.ini` or remove its two Silky includes. To roll back the title bar separately, restore the `~/.config/hypr/silky-macos.lua` backup and run `hyprctl reload`.
 
 <a id="remmina"></a>
 
@@ -106,11 +142,12 @@ To roll back, run `systemctl --user disable --now silky-foot-glass.service`, res
 
 Remmina 1.4.44 ships a Simplified Chinese translation, but the system language is `en_US`, so the interface stayed in English. After installation, Remmina shows Simplified Chinese menus, column headers and dialogs whether you open it from the launcher, the Dock, an `rdp://` link or the tray applet. Under the macOS Tahoe theme you also get:
 
-- **MacShell glass**: the main window and remote connection windows have translucent backgrounds that Hyprland blurs. Dark is smoky `#1c1c1e`, light is frosted `#f6f6f8`, a little more opaque than the menus so text stays crisp. The remote desktop picture itself stays opaque.
+- **MacShell glass**: the header and session toolbar use glass. The main connection list, quick connect area and footer sit over a solid base (`#1c1c1e` dark, `#f6f6f8` light). The remote desktop picture is opaque.
 - **Live light / dark**: switching appearance in MacShell or with `omarchy theme set` restyles open Remmina windows immediately, without a restart.
 - **Main window**: borderless title bar buttons with a rounded plate on hover. The connection list has no grid lines, and the selected row is a rounded pill inset from the edges, in MacShell's accent colour, turning light grey when the window loses focus. The quick-connect bar, column headers and footer use small secondary text.
-- **Remote connection window**: the toolbar moves from the left edge to the top, forming a unified title bar. Traffic lights and the connection name sit on the left. Dragging the name or any empty toolbar space moves a floating window directly, without holding `Super`; double-clicking maximizes it. The tools on the right use a thin 16 px line icon set, and tooltips say what each tool does in plain words, such as "Resize remote screen with window" or "Send key combination", keeping Remmina's shortcut hint. Active toggles (full screen, scaling, keyboard capture…) show in the accent colour.
+- **Remote connection window**: the toolbar moves from the left edge to the top, forming a unified title bar. Traffic lights and the connection name sit on the left. Dragging the name or the empty middle of the toolbar moves a floating window directly, without holding `Super`; double-clicking maximizes it. The tools on the right use a thin 16 px line icon set, and tooltips say what each tool does in plain words, such as "Resize remote screen with window" or "Send key combination", keeping Remmina's shortcut hint. Active toggles (full screen, scaling, keyboard capture…) show in the accent colour.
 - **Trimmed toolbar**: connection list, fit window, full screen, dynamic resolution, scaling, keyboard capture, screenshot and disconnect stay visible. Duplicate connection, view only, invert scrolling, edit connection settings, minimize and reconnect move into a `⋯` menu. Plugin menus the current protocol does not offer (quality options, remote actions, send key combination) hide themselves, and separators are gone.
+- **Sharp, right-sized remote screen**: on a scale-2 display, stock Remmina asks Windows for the window's logical size (about 1159×630) and draws every remote pixel as 2×2, so Windows looks like 200% and slightly blurry. The patched RDP plugin asks for the real pixel size (about 2318×1260) and shows it 1:1, with Windows at 150%: the UI is about 3/4 of its previous size and text is crisp. Resizing the window still resizes the remote desktop, and the remote pointer is shown at HiDPI size. See [HiDPI scaling of the remote screen](#remmina-hidpi).
 - **Tabs**: hidden for a single session and shown as rounded segments from two sessions on. Empty space in the tab row also drags the window.
 
 From the repository root, run:
@@ -119,7 +156,7 @@ From the repository root, run:
 ./scripts/install-remmina-mac.sh
 ```
 
-The installer only edits `~/.config/remmina/remmina.pref` while Remmina is not running, because Remmina rewrites that file when it quits. If Remmina was running, end your remote sessions, run `remmina --quit`, run the installer again, then open Remmina from the app menu. Remmina runs as a single instance, so any process started before installation (including the tray applet) must quit before the new language and look apply. Requires `remmina`, the `zh_CN.UTF-8` locale, and `gcc`, `pkgconf`, `gtk3` and `librsvg` to build the module. The look also needs the [macOS Tahoe theme](#install-and-switch) and Hyprland window blur (enabled by the macOS Tahoe theme).
+The module itself puts the toolbar on top and hides the tab row for a single session, independent of Remmina's preferences. Remmina reads `~/.config/remmina/remmina.pref` only at startup and rewrites it on quit, so a `toolbar_placement` written by the installer can be overwritten. The installer still writes both keys while Remmina is closed, as a fallback when the module is not loaded. After installing, end your remote sessions, run `remmina --quit`, and open Remmina from the app menu. Remmina runs as a single instance, so any process started before installation (including the tray applet) must quit before the new language and look apply. Requires `remmina`, the `zh_CN.UTF-8` locale, and `gcc`, `pkgconf`, `gtk3` and `librsvg` to build the module. The HiDPI RDP plugin also needs `cmake`, `make`, `curl`, `patch` and `freerdp` (already a Remmina dependency); the first install downloads about 4 MB of Remmina source. The look also needs the [macOS Tahoe theme](#install-and-switch) and Hyprland window blur (enabled by the macOS Tahoe theme).
 
 ### Implementation
 
@@ -128,12 +165,30 @@ The installer only edits `~/.config/remmina/remmina.pref` while Remmina is not r
 | [`plugins/silky-remmina/silky-remmina.c`](../../plugins/silky-remmina/silky-remmina.c) | GTK3 module loaded only into Remmina. Under a MacTahoe theme it layers the stylesheet below over the current GTK theme and follows `gtk-theme-name` live. Tags the main and connection windows with `.silky-glass` and `.silky-dark` / `.silky-light` and gives them an RGBA visual so the background can be translucent. Reads MacShell's accent from `~/.config/macbar/settings.json` as `@silky_accent`. Paints the main list's selection pill. Identifies connection toolbar buttons by icon name, swaps icons and tooltips, hides or moves them into `⋯`, and adds the traffic lights and title to a horizontal toolbar. Removes itself from `GTK_MODULES` at startup so programs Remmina launches do not load it |
 | [`config/remmina/silky-remmina.css`](../../config/remmina/silky-remmina.css) | Glass colours, main window, unified toolbar, traffic lights and tabs. The module reloads it when it changes |
 | [`config/remmina/icons/`](../../config/remmina/icons/) | Toolbar line icons: 16×16, 1.25 px round strokes; `currentColor` is replaced with the button's current text colour when drawn |
-| [`bin/silky-remmina`](../../bin/silky-remmina) | Installed as `~/.local/bin/silky-remmina`. Sets `LANGUAGE=zh_CN:en` and `LC_MESSAGES=zh_CN.UTF-8`, adds `GTK_PATH` and `GTK_MODULES=silky-remmina` when the module is installed, then hands off to `remmina-file-wrapper` |
+| [`patches/remmina-1.4.44-rdp-hidpi.patch`](../../patches/remmina-1.4.44-rdp-hidpi.patch) | Touches only the RDP plugin's `plugins/rdp/rdp_event.c`; see [HiDPI scaling](#remmina-hidpi) below |
+| [`bin/silky-remmina`](../../bin/silky-remmina) | Installed as `~/.local/bin/silky-remmina`. Sets `LANGUAGE=zh_CN:en` and `LC_MESSAGES=zh_CN.UTF-8`, adds `GTK_PATH` and `GTK_MODULES=silky-remmina` when the module is installed. If the HiDPI plugin was built for a different Remmina version than the installed one, renames it to `remmina-plugin-rdp.so.disabled-<version>` and sends a notification, so an old plugin never loads into a newer Remmina. Then hands off to `remmina-file-wrapper` |
 | [`scripts/install-remmina-mac.sh`](../../scripts/install-remmina-mac.sh) | Builds the module in a temporary directory and installs it to `~/.local/share/silky-remmina/gtk-3.0/modules/`, with the stylesheet and icons in `~/.local/share/silky-remmina/`. Copies `org.remmina.Remmina*.desktop` to `~/.local/share/applications/` with every `Exec` rewritten, and rewrites `~/.config/autostart/remmina-applet.desktop`. While Remmina is not running it sets `toolbar_placement=0` (top) and `always_show_tab=false`. Writes only on change and backs up originals as `*.bak.<timestamp>` |
 
-Most Remmina widgets have no CSS names, and rules in the global `~/.config/gtk-3.0/gtk.css` would hit every GTK3 app. The previous version loaded a separate theme through `GTK_THEME`, which froze the appearance at launch: after a light/dark switch Remmina had to restart to follow. The GTK3 module does not pin the theme and only layers styles on top, so it follows live. GTK3 only loads modules by name from a `modules/` directory under `GTK_PATH`, not from an absolute path. GTK3 symbolic icons only refill elements such as `path`, so stroke-based icons cannot use them; the module draws the toolbar icons with librsvg in the current colour instead.
+Most Remmina widgets have no CSS names, and rules in the global `~/.config/gtk-3.0/gtk.css` would hit every GTK3 app. The previous version loaded a separate theme through `GTK_THEME`, which froze the appearance at launch: after a light/dark switch Remmina had to restart to follow. The GTK3 module does not pin the theme and only layers styles on top, so it follows live. GTK3 only loads modules by name from a `modules/` directory under `GTK_PATH`, not from an absolute path. GTK3 symbolic icons only refill elements such as `path`, so stroke-based icons cannot use them; the module draws the toolbar icons with librsvg in the current colour instead. The icon widget has no GdkWindow of its own; otherwise it covers the middle of the button and only clicks on the edge respond. The `⋯` menu is destroyed only after it closes: GTK closes a menu before activating the chosen item, so destroying it immediately drops the click.
 
-The traffic lights and title appear only on a horizontal toolbar (`toolbar_placement=0` or `2`). If you move the toolbar back to the left or right in Remmina's preferences, the trimmed buttons and new icons still apply. Full screen uses Remmina's own floating toolbar, without traffic lights. Verified only with Remmina 1.4.44 / GTK 3.24. If Remmina renames a toolbar icon, that button keeps its stock look. Remmina runs natively on Wayland, so XWayland plays no part.
+The module moves a windowed connection toolbar to the first row of Remmina's grid and the session area to the second, so the toolbar sits on top wherever the preferences place it. To keep Remmina's own placement and tab behaviour, set `SILKY_REMMINA_TOOLBAR=native` in `bin/silky-remmina`; then only a horizontal toolbar gets the traffic lights and title, while the trimmed buttons and new icons still apply. Dragging sends `xdg_toplevel.move` through GTK, which Hyprland follows for floating windows; tiled windows stay under Hyprland's tiling layout. GTK3 buttons let their press propagate to parent widgets, so the module starts a drag only from event boxes on the name and the empty space, and skips presses that began on a button or entry; otherwise the compositor takes the pointer, the button never gets its release, and the click is lost. Full screen uses Remmina's own floating toolbar, without traffic lights. Verified only with Remmina 1.4.44 / GTK 3.24. If Remmina renames a toolbar icon, that button keeps its stock look. Remmina runs natively on Wayland, so XWayland plays no part.
+
+<a id="remmina-hidpi"></a>
+
+### HiDPI scaling of the remote screen
+
+In dynamic resolution mode, Remmina 1.4.44's RDP plugin uses the logical size from `gtk_widget_get_allocation()` as the remote resolution and draws it 1:1 in logical pixels. On a Hyprland output at scale 2, GTK then stretches every remote pixel to 2×2. The [patch](../../patches/remmina-1.4.44-rdp-hidpi.patch) only acts in dynamic resolution mode with a GTK scale above 1, and does four things:
+
+- Multiplies the resolution sent to the server by the scale factor, and corrects it once right after connecting
+- Reuses Remmina's existing "scaled" path for drawing, redraw regions and pointer coordinates, at exactly 1/2, so the picture is 1:1 and sharp
+- Builds the remote pointer cursor at device scale instead of doubling it
+- Leaves scale 1, fixed resolution and "scaled" mode unchanged
+
+How large Windows content looks is set by Remmina's "Desktop scale factor %" (Preferences → RDP; `rdp_desktopScaleFactor` in `remmina.pref`, which only applies when `rdp_deviceScaleFactor` is also non-zero). The installer writes `150` and `100` when they are unset and keeps existing values. For smaller content use `125`, for larger `175`; it applies at the next connection without restarting Remmina. Valid values are 100–500, and the device factor only accepts 100, 140 or 180. Both are global and apply to every RDP connection. Windows Server 2012 R2 / Windows 8.1 or later re-lay out the UI for a new scale factor mid-session.
+
+The installer downloads the pinned Remmina 1.4.44 source from GitLab (SHA-256 checked), applies the patch and builds only the `remmina-plugin-rdp` target with the same feature switches as Arch's package (including CUPS printing and libsecret), then installs it as `~/.config/remmina/plugins/remmina-plugin-rdp.so`. Remmina searches that directory first and skips a same-named plugin in `/usr/lib/remmina/plugins/`, so package-managed files stay untouched. The source is cached in `~/.cache/silky-omarchy/remmina-1.4.44/`, and nothing is rebuilt while the patch and version are unchanged. With a Remmina other than 1.4.44 the installer skips this step; `SILKY_REMMINA_HIDPI=0` skips it too, and `SILKY_REMMINA_SCALE=125` picks another factor on first install.
+
+Verified: the patch passes a compiler check and builds without warnings; the new plugin links the same libraries and exports the same symbols as the packaged one; an isolated instance loaded only the plugin from the user directory. Sharpness in a real RDP session, resolution following on window resize and pointer placement are still to be verified.
 
 ### Verify
 
@@ -141,11 +196,13 @@ The traffic lights and title appear only on a horizontal toolbar (`toolbar_place
 grep -h '^Exec' ~/.local/share/applications/org.remmina.Remmina.desktop
 grep -c libsilky-remmina /proc/"$(pgrep -xn remmina)"/maps
 grep -E '^(toolbar_placement|always_show_tab)=' ~/.config/remmina/remmina.pref
+grep -o '/[^ ]*remmina-plugin-rdp.so' /proc/"$(pgrep -xn remmina)"/maps | sort -u
+grep -E '^rdp_(desktop|device)ScaleFactor=' ~/.config/remmina/remmina.pref
 ```
 
-Expected: every `Exec` points to `~/.local/bin/silky-remmina`, the module appears in the process maps (count above 0), and the preferences read `toolbar_placement=0` and `always_show_tab=false`. After opening a connection, the top of the window shows traffic lights, the connection name and thin line icons, and `⋯` lists the moved actions. Switching light/dark in MacShell restyles the main and connection windows immediately, with the wallpaper blurred behind them.
+Expected: every `Exec` points to `~/.local/bin/silky-remmina`, and the module appears in the process maps (count above 0). The two preferences are only a fallback: even with `toolbar_placement=3` the toolbar should be on top. After opening a connection, the top of the window shows traffic lights, the connection name and thin line icons, and `⋯` lists the moved actions. Switching light/dark in MacShell updates the solid profile-list background and the glass on the header and session toolbar. The RDP plugin path should be `~/.config/remmina/plugins/remmina-plugin-rdp.so`, and the scale preferences `rdp_desktopScaleFactor=150` and `rdp_deviceScaleFactor=100`. Once connected, right-click the remote desktop → Display settings: the resolution should be about the window's real pixel size (twice its logical size), scale 150%, with crisp text.
 
-Verified in an isolated instance (separate D-Bus and config directory, a WWW-protocol test connection): module loading, top toolbar, trimmed buttons and `⋯` menu, line icons, main-window glass and selection pill, and a live switch from dark to light. A real RDP session and the Hyprland blur on hardware are still to be verified.
+Verified in an isolated instance (separate D-Bus and config directory, a WWW-protocol test connection): module loading, top toolbar, trimmed buttons and `⋯` menu, line icons, main-window glass and selection pill, a live switch from dark to light, and a top toolbar despite a left-toolbar preference. A real RDP session and the Hyprland blur on hardware are still to be verified.
 
 ### Rollback
 
@@ -153,30 +210,61 @@ Verified in an isolated instance (separate D-Bus and config directory, a WWW-pro
 remmina --quit
 rm ~/.local/share/applications/org.remmina.Remmina.desktop ~/.local/share/applications/org.remmina.Remmina-file.desktop
 rm -r ~/.local/share/silky-remmina ~/.local/bin/silky-remmina
+rm ~/.config/remmina/plugins/remmina-plugin-rdp.so ~/.config/remmina/plugins/.silky-hidpi
 ```
 
-Then restore the `~/.config/autostart/remmina-applet.desktop.bak.*` reported by the installer as `remmina-applet.desktop`. To get the left toolbar and always-visible tabs back, copy the `~/.config/remmina/remmina.pref.bak.*` backup over `remmina.pref`, or change them under Remmina Preferences → Appearance. `~/.local/share/themes/Silky-Remmina-{Dark,Light}` from the previous version is no longer used and can be deleted. Reopen Remmina.
+To roll back only the HiDPI plugin, run just the last command; Remmina loads the packaged plugin on its next start. Then set Desktop scale factor back to 0 under Preferences → RDP, or delete `rdp_desktopScaleFactor` and `rdp_deviceScaleFactor` from `remmina.pref`. The source cache in `~/.cache/silky-omarchy/remmina-1.4.44/` can be deleted. Then restore the `~/.config/autostart/remmina-applet.desktop.bak.*` reported by the installer as `remmina-applet.desktop`. To get the left toolbar and always-visible tabs back, copy the `~/.config/remmina/remmina.pref.bak.*` backup over `remmina.pref`, or change them under Remmina Preferences → Appearance. `~/.local/share/themes/Silky-Remmina-{Dark,Light}` from the previous version is no longer used and can be deleted. Reopen Remmina.
 
 ## Traffic-light title bar
 
 Omarchy already adds title bars to windows on floating workspaces: `default/hypr/workspace-modes.lua` loads its own plugin `omarchy-hyprland-titlebars` (`/usr/lib/omarchy-hyprland-titlebars/titlebars.so`, based on hyprbars) with three square buttons × □ − on the right (`button_rounding = 0`). Under the macOS Tahoe themes it becomes:
 
 - The 30 px bar keeps the title centred and lets some of the wallpaper or the window behind show through in both appearances. The background is about 80% opaque when focused and 84% when unfocused. The bar also blurs its backdrop when Hyprland has global blur enabled.
-- Two **round** buttons at the top left: 12 px, `button_rounding = 6`, 8 px apart, `#ff5f57` / `#28c840`
+- Three **round** buttons at the top left, 12 px across and 8 px apart, in `#ff5f57`, `#febc2e`, and `#28c840`
 - The × − + symbols appear only when the pointer is over the lights; the lights turn grey when the window loses focus
-- Close → close the window; green → maximize / restore; double-clicking the title bar also maximizes
-- Only added to windows that draw no buttons of their own, currently terminals (foot, kitty, Alacritty, Ghostty, WezTerm); Claude, Chrome, Electron apps, GTK / libadwaita apps and MacShell windows keep their own. To add another app, add its class to `with_bar` in `silky-macos.lua`
+- Red closes the window and yellow minimizes it to the Dock. For Foot and the four system apps below, green toggles full screen and double-clicking empty title-bar space toggles maximize.
+- The bar is used on windows that Hyprland decorates, including Foot, the other configured terminals, and the four system apps below. Apps with client-side controls keep their own decorations.
 
 ### Implementation
 
 | File | Role |
 | --- | --- |
 | `config/hypr/silky-titlebar-guard.lua` | Comes **before** `require("default.hypr.omarchy")` in `hyprland.lua`. hyprbars buttons can only be added, never removed, so under the macOS theme `hl.plugin.hyprbars.add_button` is replaced with a no-op and Omarchy's three square buttons never get added; the original function is kept as `silky_add_button` |
-| `config/hypr/silky-macos.lua` | Comes after Omarchy's defaults: overrides the title-bar style, adds the two round buttons with the original function, and sets `hyprbars:no_bar` rules from an allow list |
+| `config/hypr/silky-macos.lua` | Comes after Omarchy's defaults, overrides the title-bar style, adds the three round buttons with the original function, and sets `hyprbars:no_bar` rules from an allow list |
 
 These settings apply only once Omarchy has loaded the title-bar plugin (some workspace is in floating mode); otherwise they are skipped, so there is no `unknown field 'hyprbars:no_bar'` config error. hyprbars is no longer built here, so nothing needs rebuilding after a Hyprland update.
 
 The theme installer above updates the [title bar configuration](../../config/hypr/silky-macos.lua) and reloads Hyprland. To verify the effect, overlap two Foot windows in a floating workspace and switch focus to see the lower window’s colour through the bar. To revert just this effect, restore the `~/.config/hypr/silky-macos.lua.bak.*` reported by the installer, or restore opaque bar colours and set `bar_blur` to `false`, then run `hyprctl reload`.
+
+<a id="system-app-audit"></a>
+
+### System app window updates
+
+| App | Change |
+| --- | --- |
+| Calculator, Omacut, Write, Media Viewer | Floating windows use the shared 30 px title bar. Yellow minimizes to the Dock through MacShell, green matches `Super+F`, and the top-left overlay exits full screen. Right-click or hold green to open the half-screen and corner layouts. The menu and drag preview honor the app’s size limits and the available space on the display. |
+| Omalogi | The standalone mouse editor uses a solid background and the shared title bar. [Standalone window](14-omalogi.md#a-real-window) |
+| WeChat | Chat and list content retain their original colors at full opacity. The compositor gradient outline was removed from the main window. Update the [WeChat configuration](01-touchpad-gestures.md#touchscreen-scrolling-in-wechats-conversation-list) and reload Hyprland. |
+| AccessClient’s PuTTY | The XWayland console uses a solid background. Use the [shortcuts installer](10-shortcuts.md#install) to update `silky-app-windows.lua`, reload, and check a floating SSH console. |
+| Nautilus, Remmina | [Nautilus](#frosted-glass-in-files) uses a solid file-area background with glass on auxiliary surfaces. [Remmina](#remmina) uses a solid connection list with glass on the header and session toolbar. Reopen Remmina from the launcher after updating its style. |
+
+The four system apps keep their Omarchy app IDs and launchers. Use the Silky Gestures plugin built for Hyprland 0.57.2 and an existing Folio/MacShell integration. Update the theme’s title-bar configuration, back up and replace `~/.config/hypr/silky-folio.lua`, then run from the repository root:
+
+```bash
+./scripts/install-silky-gestures.sh
+python3 scripts/tune-folio-macshell.py ~/.config/quickshell/MacShell --backup
+hyprctl reload
+hyprctl configerrors
+qs -c MacShell ipc call macshell reload
+```
+
+[Silky Gestures](../../plugins/silky-gestures/foot-layout.hpp) reads the window size limits, and the [Hyprland configuration](../../config/hypr/silky-folio.lua) computes the preview and placement with space for the 30 px compositor title bar. With the layout plugin unavailable, the four new title-bar users still enter full screen via the compositor and can exit with `Super+F`.
+
+Open each system app from its launcher and check green right-click, press and hold, `Esc`, click, and the exit overlay in the top left. Areas smaller than the window’s minimum are disabled and the drag preview skips them. Minimize and restore from the Dock, then compare the window and its position. For WeChat, PuTTY, Nautilus, and Remmina, overlap a window containing high-contrast text and check the chat, terminal, file, or connection area.
+
+Checked on Hyprland 0.57.2 with a 2×, 90 Hz internal display and in an isolated 1472×920 Wayland session. Simulated input covered the shared menus and full-screen paths, all eight Foot placements, Media Viewer drag snapping, and disabled slots in Write. MacShell’s Dock IPC restored Calculator to the same window, workspace, and geometry. An isolated Remmina instance and a GTK4 Nautilus style fixture were checked against a saturated backdrop in both appearances. The WeChat and PuTTY rules were tested with windows using their class names. Physical touch, external displays, and a live RDP session remain to be checked.
+
+To roll back, restore the title-bar, plugin, MacShell, and `silky-folio.lua` backups. Reload Hyprland and MacShell and sign back in to load the previous plugin. Restore WeChat, PuTTY, and GTK styles from the backups in their installation sections. To roll back only the Remmina style, restore `~/.local/share/silky-remmina/silky-remmina.css.bak.*` and reopen the app.
 
 ### Pitfalls
 

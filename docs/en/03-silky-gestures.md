@@ -121,6 +121,8 @@ Hyprland 0.57 only accepts `xdg_toplevel.move` / `resize` requests carrying a mo
 
 Moving and resizing take the same path as Hyprland's mouse drags (`g_layoutManager->beginDragTarget` → `moveMouse` → `endDragTarget`), so snapping and the like behave as with the mouse. Before the drag starts, the pointer is moved to the finger, because the layout reads the drag origin from the pointer position.
 
+Folio handles touches in its file area directly. A swipe scrolls the files and a hold can open the file menu. Drag the top of Folio to move the window. See [Finder-style Folio](04-macos-theme.md#finder-style-folio).
+
 Only floating windows are handled; tiled windows and windows filling the whole screen go to the app as usual. The 20 px workspace swipe at the left and right screen edges takes priority. A finger on a shell layer above the windows (MacShell's Applications / Spotlight panel, the menu bar, the Dock, popup menus: any top or overlay layer, judged by its input region) is left to that layer alone, so it never drags the window behind it.
 
 ### Floating windows cannot be dragged under the menu bar

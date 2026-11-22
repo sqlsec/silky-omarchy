@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Silky Omarchy Folio launcher.
+set -euo pipefail
+
+stock=/usr/bin/folio
+data=${XDG_DATA_HOME:-"$HOME/.local/share"}
+state=${XDG_STATE_HOME:-"$HOME/.local/state"}
+build="$data/silky-omarchy/folio"
+theme=
+if [[ -r $state/omarchy/current/theme.name ]]; then
+  read -r theme < "$state/omarchy/current/theme.name" || true
+fi
+
+if [[ ${1:-} != chooser && ${1:-} != preview && $theme == macos-tahoe-* &&
+      -x $build/folio ]]; then
+  # Check the runtime libraries of the standalone build.
+  if dependencies=$(LC_ALL=C ldd -r -- "$build/folio" 2>&1) &&
+      [[ $dependencies != *"not found"* && $dependencies != *"undefined symbol"* ]]; then
+    exec "$build/folio" "$@"
+  fi
+  printf 'Silky Folio has incompatible runtime libraries. Using packaged Folio.\n%s\n' "$dependencies" >&2
+fi
+exec "$stock" "$@"

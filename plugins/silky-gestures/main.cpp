@@ -21,13 +21,18 @@
 // Everything is done from event listeners: Hyprland's function hooks only exist on x86_64 and this targets aarch64 too.
 
 #include <algorithm>
+#include <cairo.h>
 #include <chrono>
 #include <cmath>
 #include <deque>
 #include <format>
 #include <optional>
+#include <linux/input-event-codes.h>
 #include <unordered_map>
 #include <string>
+#include <string_view>
+#include <lua.hpp>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -39,10 +44,13 @@
 #include <hyprland/src/desktop/view/window/WindowBackend.hpp>
 #include <hyprland/src/desktop/state/ViewState.hpp>
 #include <hyprland/src/desktop/view/window/Window.hpp>
+#include <hyprland/src/desktop/view/window/WindowPresentation.hpp>
+#include <hyprland/src/desktop/view/LayerSurface.hpp>
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
 #include <hyprland/src/layout/LayoutManager.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopTimer.hpp>
 #include <hyprland/src/pointer/PointerController.hpp>
+#include <hyprland/src/protocols/LayerShell.hpp>
 #include <hyprland/src/devices/IPointer.hpp>
 #include <hyprland/src/devices/ITouch.hpp>
 #include <hyprland/src/event/EventBus.hpp>
@@ -53,6 +61,10 @@
 #include <hyprland/src/managers/input/trackpad/TrackpadGestures.hpp>
 #include <hyprland/src/output/Monitor.hpp>
 #include <hyprland/src/render/Renderer.hpp>
+#include <hyprland/src/render/Context.hpp>
+#include <hyprland/src/render/Texture.hpp>
+#include <hyprland/src/render/pass/TexPassElement.hpp>
+#include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 #include <hyprland/src/state/MonitorState.hpp>
 #include <hyprland/src/state/WorkspaceState.hpp>
 #include <hyprland/src/state/workspace/Resolver.hpp>
@@ -97,16 +109,21 @@ struct SNeighbours {
     bool right = false;
 };
 
+static auto swipeTarget(PHLMONITOR monitor, bool left) {
+    static auto PRELATIVE = CConfigValue<Config::INTEGER>("gestures:workspace_swipe_use_r");
+    return State::Workspace::resolver()->getWorkspaceTargetFromString(
+        *PRELATIVE ? (left ? "r-1" : "r+1") : (left ? "m-1" : "m+1"), monitor);
+}
+
 static SNeighbours neighbours(PHLMONITOR monitor, PHLWORKSPACE begin) {
     SNeighbours n;
     if (!monitor || !begin)
         return n;
 
-    static auto PUSER = CConfigValue<Config::INTEGER>("gestures:workspace_swipe_use_r");
     static auto PNEW  = CConfigValue<Config::INTEGER>("gestures:workspace_swipe_create_new");
 
-    const auto LEFT  = State::Workspace::resolver()->getWorkspaceTargetFromString(*PUSER ? "r-1" : "m-1", monitor);
-    const auto RIGHT = State::Workspace::resolver()->getWorkspaceTargetFromString(*PUSER ? "r+1" : "m+1", monitor);
+    const auto LEFT  = swipeTarget(monitor, true);
+    const auto RIGHT = swipeTarget(monitor, false);
     if (!LEFT.valid() || !RIGHT.valid())
         return n;
 
@@ -156,6 +173,60 @@ static struct {
     PHLWORKSPACEREF pendingWorkspace;
     double          pendingFrom = 0;
 } g_pad;
+
+// Mirror the compositor's in-progress swipe to the overview layer, which is drawn above the
+// moving workspaces. Sample once per rendered frame, after Hyprland consumes the input event.
+static PHLMONITORREF g_overviewSwipeMonitor;
+static std::string g_lastWorkspaceSample;
+
+static void postOverview(const std::string& data);
+
+static void finishOverviewSwipe() {
+    const auto MONITOR = g_overviewSwipeMonitor.lock();
+    if (MONITOR && !g_lastWorkspaceSample.empty())
+        postOverview(std::format("workspace-end,{}", MONITOR->m_name));
+    g_overviewSwipeMonitor.reset();
+    g_lastWorkspaceSample.clear();
+}
+
+static void watchOverviewSwipe(uint32_t fingers) {
+    finishOverviewSwipe();
+    if (fingers != 4 || g_pSessionLockManager->isSessionLocked())
+        return;
+    const auto FOCUS = g_pSeatManager->m_state.keyboardFocus.lock();
+    const auto SURFACE = FOCUS ? Desktop::View::CWLSurface::fromResource(FOCUS) : nullptr;
+    const auto VIEW = SURFACE ? SURFACE->view() : nullptr;
+    const auto LAYER = VIEW ? Desktop::View::CLayerSurface::fromView(VIEW) : nullptr;
+    if (LAYER && LAYER->m_namespace == "silkyoverview")
+        g_overviewSwipeMonitor = LAYER->m_monitor;
+}
+
+static void sampleOverviewSwipe(PHLMONITOR monitor) {
+    if (g_overviewSwipeMonitor != monitor)
+        return;
+    auto& swipe = *g_pUnifiedWorkspaceSwipe;
+    if (!swipe.isGestureInProgress() || swipe.m_monitor != monitor)
+        return;
+    const auto ORIGIN = swipe.m_workspaceBegin;
+    const auto ORIGIN_ID = ORIGIN ? ORIGIN->numberedID() : std::nullopt;
+    if (!ORIGIN_ID)
+        return;
+
+    const double PROGRESS = g_pad.over != 0 ? -rubberOffset(monitor, g_pad.over) / monitor->m_size.x : swipe.m_delta / swipeDistance();
+    auto targetId = *ORIGIN_ID;
+    if (g_pad.over == 0 && PROGRESS != 0) {
+        const auto TARGET = State::Workspace::state()->find(swipeTarget(monitor, PROGRESS < 0));
+        if (const auto ID = TARGET ? TARGET->numberedID() : std::nullopt)
+            targetId = *ID;
+    }
+    if (PROGRESS == 0 && g_lastWorkspaceSample.empty())
+        return;
+    auto packet = std::format("workspace-move,{},{},{},{:.4f}", monitor->m_name, *ORIGIN_ID, targetId, PROGRESS);
+    if (packet != g_lastWorkspaceSample) {
+        postOverview(packet);
+        g_lastWorkspaceSample = std::move(packet);
+    }
+}
 
 static void applyPendingSpring() {
     const auto MONITOR   = g_pad.pendingMonitor.lock();
@@ -217,6 +288,7 @@ static void onSwipeEnd(const IPointer::SSwipeEndEvent& e, Event::SCallbackInfo& 
         }
     }
     g_pad.over = 0;
+    finishOverviewSwipe();
 }
 
 // ══════════════ floating windows stay below the menu bar ══════════════
@@ -248,12 +320,15 @@ static void keepBelowMenuBar(PHLWINDOW window, bool resizing) {
     TARGET->warpPositionSize();
 }
 
+#include "foot-layout.hpp"
+
 static void onDragMotion() {
     const auto& DRAG   = g_layoutManager->dragController();
     const auto  TARGET = DRAG ? DRAG->target() : nullptr;
     if (!TARGET || !TARGET->window())
         return;
     g_lastDragged = TARGET->window();
+    trackFootSnap(TARGET->window(), DRAG->mode() == MBIND_MOVE);
     keepBelowMenuBar(TARGET->window(), DRAG->mode() != MBIND_MOVE);
 }
 
@@ -262,6 +337,7 @@ static void onDragEnded() {
     g_pEventLoopManager->doLater([] {
         keepBelowMenuBar(g_lastDragged.lock(), false);
         g_lastDragged.reset();
+        finishFootSnap();
     });
 }
 
@@ -869,7 +945,8 @@ static bool grabFloatingWindow(const ITouch::SDownEvent& e, PHLMONITOR monitor) 
         g_touch.grab = GRAB_EDGE;
     else if (P.y < MAIN.y + TITLE_PX && P.y >= FULL.y)
         g_touch.grab = GRAB_TITLE;
-    else if (MAIN.containsPoint(P))
+    // Folio's content uses a stationary finger for its own context menu.
+    else if (MAIN.containsPoint(P) && WINDOW->metadata().appID() != "folio")
         g_touch.grab = GRAB_HOLD;
     else
         return false;
@@ -1105,12 +1182,26 @@ static void onTouchDown(const ITouch::SDownEvent& e, Event::SCallbackInfo& info)
     if (g_touch.replaying)
         return;
     forget(e.touchID); // a reused id is a new finger
+    if (e.device && g_touch.fingers.empty()) {
+        if (const auto monitor = touchMonitor(e.device);
+            monitor && footTouchDown(e.touchID, monitor->m_position + e.pos * monitor->m_size, monitor)) {
+            info.cancelled = true;
+            return;
+        }
+    }
     onTouchDownImpl(e, info);
     if (info.cancelled)
         g_touch.swallowed.push_back(e.touchID);
 }
 
 static void onTouchMotion(const ITouch::SMotionEvent& e, Event::SCallbackInfo& info) {
+    if (g_footTouch == e.touchID) {
+        if (const auto monitor = g_footTouchMonitor.lock())
+            g_footTouchPoint = monitor->m_position + e.pos * monitor->m_size;
+        trackFootGreenMotion(g_footTouchPoint);
+        info.cancelled = true;
+        return;
+    }
     onTouchMotionImpl(e, info);
     if (g_bar.active && e.touchID == g_bar.id) {
         if (const auto W = g_bar.window.lock(); W && W->isFloating())
@@ -1121,6 +1212,10 @@ static void onTouchMotion(const ITouch::SMotionEvent& e, Event::SCallbackInfo& i
 }
 
 static void liftFinger(int32_t id, bool cancelled, Event::SCallbackInfo& info) {
+    if (footTouchUp(id, cancelled)) {
+        info.cancelled = true;
+        return;
+    }
     liftFingerImpl(id, cancelled, info);
     if (g_bar.active && id == g_bar.id) {
         if (const auto W = g_bar.window.lock(); W && W->isFloating())
@@ -1142,6 +1237,8 @@ static void liftFinger(int32_t id, bool cancelled, Event::SCallbackInfo& info) {
 // mouse moved. So when a button goes down with no other button held and the pointer focus is a layer surface (or
 // nothing), the surface under the pointer is looked up again first; the click then lands where it is seen to land.
 static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info) {
+    if (handleFootMouse(e, info))
+        return;
     if (e.state != WL_POINTER_BUTTON_STATE_PRESSED || g_pInputManager->hasHeldButtons() || g_pInputManager->isConstrained() ||
         g_pSessionLockManager->isSessionLocked())
         return;
@@ -1154,6 +1251,8 @@ static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo&
     }
     g_pInputManager->simulateMouseMovement();
 }
+
+#include "titlebar-marks.hpp"
 
 // ══════════════ plugin ══════════════
 static std::vector<CHyprSignalListener> g_listeners;
@@ -1169,18 +1268,36 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     if (COMPOSITOR != CLIENT)
         throw std::runtime_error("[silky-gestures] built for a different Hyprland: rebuild the plugin");
 
+    HyprlandAPI::addLuaFunction(handle, "silky_gestures", "enable_foot_layout", [](lua_State* lua) {
+        g_windowLayoutApps = { "foot" };
+        for (int i = 1; i <= lua_gettop(lua); ++i)
+            g_windowLayoutApps.emplace_back(luaL_checkstring(lua, i));
+        return 0;
+    });
+    HyprlandAPI::addLuaFunction(handle, "silky_gestures", "window_layout_limits", windowLayoutLimits);
+    HyprlandAPI::addLuaFunction(handle, "silky_gestures", "enable_titlebar_marks", [](lua_State*) {
+        g_titlebarMarksEnabled = true;
+        return 0;
+    });
     auto& events = Event::bus()->m_events;
     g_listeners.emplace_back(events.gesture.swipe.begin.listen([](const IPointer::SSwipeBeginEvent& e, Event::SCallbackInfo&) {
         g_pad.over = 0;
+        watchOverviewSwipe(e.fingers);
         // the counterpart of "silkypinch": a pinch that libinput took for a swipe shows up here
         IPC::Socket2::sock()->postEvent({.event = "silkyswipe", .data = std::to_string(e.fingers)});
     }));
     g_listeners.emplace_back(events.gesture.swipe.update.listen(onSwipeUpdate));
     g_listeners.emplace_back(events.gesture.swipe.end.listen(onSwipeEnd));
+    g_listeners.emplace_back(events.render.pre.listen(sampleOverviewSwipe));
+    g_listeners.emplace_back(events.render.stage.listen(renderTitlebarMarks));
     g_listeners.emplace_back(events.gesture.pinch.begin.listen(onPinchBegin));
     g_listeners.emplace_back(events.gesture.pinch.update.listen(onPinchUpdate));
     g_listeners.emplace_back(events.gesture.pinch.end.listen(onPinchEnd));
     g_listeners.emplace_back(events.input.mouse.button.listen(onMouseButton));
+    g_listeners.emplace_back(events.input.mouse.move.listen([](Vector2D point, Event::SCallbackInfo&) {
+        if (!g_footTouch)
+            trackFootGreenMotion(point);
+    }));
     g_listeners.emplace_back(events.input.touch.down.listen(onTouchDown));
     g_listeners.emplace_back(g_layoutManager->dragController()->m_events.motion.listen([] { onDragMotion(); }));
     g_listeners.emplace_back(g_layoutManager->dragController()->m_events.ended.listen([] { onDragEnded(); }));
@@ -1189,18 +1306,33 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     g_listeners.emplace_back(events.input.touch.cancel.listen([](const ITouch::SCancelEvent& e, Event::SCallbackInfo& info) { liftFinger(e.touchID, true, info); }));
     // the table is cleared between these two; the plugin itself is loaded while a config is being read, after the
     // clear, so the first reloaded must not add it a second time
-    g_listeners.emplace_back(events.config.preReload.listen([] { g_overviewAdded = false; }));
+    g_listeners.emplace_back(events.config.preReload.listen([] {
+        g_overviewAdded = false;
+        g_windowLayoutApps.clear();
+        g_titlebarMarksEnabled = false;
+        cancelFootHold();
+        g_footGreen.reset();
+        g_footTouch.reset();
+        g_footRightDown = false;
+        trackFootSnap({}, false);
+    }));
     g_listeners.emplace_back(events.config.reloaded.listen([] {
         if (!g_overviewAdded)
             addOverviewGesture();
     }));
     addOverviewGesture();
 
-    return {"silky-gestures", "Touch-screen workspace swipes, Launchpad pinch and four-finger window overview (touchpad and touch screen), rubber band, raising / moving / resizing floating windows, kept below the menu bar", "sqlsec", "0.8.1"};
+    return {"silky-gestures", "Touch-screen workspace swipes, Launchpad pinch and four-finger window overview (touchpad and touch screen), rubber band, raising / moving / resizing floating windows, kept below the menu bar", "sqlsec", "0.8.3"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
+    cancelFootHold();
+    g_footGreen.reset();
+    g_footTouch.reset();
+    g_footRightDown = false;
+    trackFootSnap({}, false);
     removeOverviewGesture();
+    finishOverviewSwipe();
     endWindowDrag();
     // fingers still held back would reach apps unpaired once this is gone: tell the apps to drop every touch first
     if (!g_touch.swallowed.empty() || !g_touch.fingers.empty())
@@ -1212,6 +1344,7 @@ APICALL EXPORT void PLUGIN_EXIT() {
         postOverview("end,cancel");
     g_padPinch = {};
     g_listeners.clear();
+    g_titlebarMarks.clear();
     g_touch.fingers.clear();
     resetTouch();
     g_pad = {};

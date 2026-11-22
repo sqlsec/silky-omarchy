@@ -62,7 +62,7 @@ hl.animation({
 
 ### Touchscreen scrolling in WeChat’s conversation list
 
-The local WeChat Wayland adapter used to accumulate 34 logical pixels of touch movement into one mouse-wheel notch. Slow drags paused and then jumped. The updated [touch adapter](../../plugins/wechat-wayland/touch-scroll.c) sends continuous scroll deltas after recognising a vertical drag and ends the scroll on release or cancellation. Taps still go to WeChat, and the native touchpad and mouse wheel keep their own input paths. The WeChat main window uses 91% opacity with backdrop blur.
+The local WeChat Wayland adapter used to accumulate 34 logical pixels of touch movement into one mouse-wheel notch. Slow drags paused and then jumped. The updated [touch adapter](../../plugins/wechat-wayland/touch-scroll.c) sends continuous scroll deltas after recognising a vertical drag and ends the scroll on release or cancellation. Taps still go to WeChat, and the native touchpad and mouse wheel keep their own input paths.
 
 If `~/.local/bin/wechat-wayland-touch` is already set up with `touch-scroll.so` enabled, run this from the repository root.
 

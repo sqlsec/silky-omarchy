@@ -1,0 +1,1941 @@
+diff --git c/src/FileRow.qml w/src/FileRow.qml
+index 1a990b3..1f8151b 100644
+--- c/src/FileRow.qml
++++ w/src/FileRow.qml
+@@ -28,6 +28,7 @@ Item {
+     property bool trail: false
+     property bool detailed: false
+     property bool chevron: false
++    property bool suppressTouchTap: false
+     // In the list, a tree: each level indented, and a folder's arrow opens
+     // it in place (or closes it).
+     property bool tree: false
+@@ -135,9 +136,15 @@ Item {
+                 visible: false
+                 layer.enabled: true
+             }
++            Image {
++                id: folderIcon
++                anchors.fill: parent
++                source: row.isDir ? theme.silkyFolderIcon : ""
++                fillMode: Image.PreserveAspectFit
++            }
+             Glyph {
+                 anchors.centerIn: parent
+-                visible: !thumb.visible
++                visible: !thumb.visible && folderIcon.status !== Image.Ready
+                 name: row.glyph
+                 size: 16
+                 color: row.isDir ? theme.accent : theme.secondaryForeground
+@@ -191,10 +198,16 @@ Item {
+         onHoveredChanged: if (hovered) row.grabToImage(result => { row.Drag.imageSource = ""; row.Drag.imageSource = result.url })
+     }
+     TapHandler {
+-        id: tap
+-        onTapped: row.clicked(tap.point.modifiers)
++        acceptedDevices: PointerDevice.AllDevices & ~PointerDevice.TouchScreen
++        onTapped: row.clicked(point.modifiers)
+         onDoubleTapped: row.activated()
+     }
++    TapHandler {
++        acceptedDevices: PointerDevice.TouchScreen
++        enabled: !row.suppressTouchTap
++        onTapped: if (!row.suppressTouchTap) row.clicked(point.modifiers)
++        onDoubleTapped: if (!row.suppressTouchTap) row.activated()
++    }
+ 
+     // Like the tiles: dragged, a row is a file for the sidebar or another app.
+     Drag.dragType: Drag.Automatic
+@@ -204,6 +217,8 @@ Item {
+     Drag.hotSpot.x: LayoutMirroring.enabled ? row.width : 0
+     DragHandler {
+         target: null
++        // Let the view take touchscreen swipes as scrolling.
++        acceptedDevices: PointerDevice.AllDevices & ~PointerDevice.TouchScreen
+         enabled: row.kind !== "item"
+         // Dragging a selected item takes the whole selection along. The list
+         // is built as the drag starts, not again on every change of selection.
+diff --git c/src/FileTile.qml w/src/FileTile.qml
+index cf04304..e830afc 100644
+--- c/src/FileTile.qml
++++ w/src/FileTile.qml
+@@ -137,6 +137,8 @@ Item {
+     // A plugin's item isn't a file to hand anywhere.
+     DragHandler {
+         target: null
++        // Let the view take touchscreen swipes as scrolling.
++        acceptedDevices: PointerDevice.AllDevices & ~PointerDevice.TouchScreen
+         enabled: tile.kind !== "item"
+         // Dragging a selected item takes the whole selection along. The list
+         // is built as the drag starts, not again on every change of selection.
+@@ -168,22 +170,46 @@ Item {
+              + "Q4.5 88.5 4.5 " + (88.5 - r) + "Z"
+     }
+ 
+-    // Folders are a plain card, nothing on it; the name below says the rest.
++    // Use the same folder artwork as the surrounding desktop when installed.
+     Component {
+         id: folderArt
+ 
+-        Shape {
++        Item {
+             width: 128
+             height: 92
+-            preferredRendererType: Shape.CurveRenderer
+-            ShapePath {
+-                fillColor: tile.current || folderDrop.containsDrag ? Qt.tint(theme.lighterBackground, Qt.alpha(theme.accent, 0.3))
+-                    : hover.hovered ? Qt.tint(theme.lighterBackground, Qt.alpha(theme.foreground, 0.06))
+-                    : theme.lighterBackground
+-                strokeColor: tile.current || folderDrop.containsDrag ? theme.accent : "transparent"
+-                strokeWidth: folderDrop.containsDrag ? 2.5 : 1.5
+-                joinStyle: tile.iconRadius > 0 ? ShapePath.RoundJoin : ShapePath.MiterJoin
+-                PathSvg { path: tile.folderPath(tile.iconRadius) }
++
++            Image {
++                id: folderImage
++                anchors.centerIn: parent
++                width: 108
++                height: 88
++                source: theme.silkyFolderIcon
++                fillMode: Image.PreserveAspectFit
++                sourceSize.width: width * Screen.devicePixelRatio
++                sourceSize.height: height * Screen.devicePixelRatio
++            }
++
++            Rectangle {
++                anchors.fill: parent
++                radius: Math.max(5, tile.iconRadius)
++                color: Qt.alpha(theme.accent, 0.13)
++                border.color: Qt.alpha(theme.accent, 0.8)
++                visible: folderImage.status === Image.Ready && (tile.current || folderDrop.containsDrag)
++            }
++
++            Shape {
++                anchors.fill: parent
++                visible: folderImage.status !== Image.Ready
++                preferredRendererType: Shape.CurveRenderer
++                ShapePath {
++                    fillColor: tile.current || folderDrop.containsDrag ? Qt.tint(theme.lighterBackground, Qt.alpha(theme.accent, 0.3))
++                        : hover.hovered ? Qt.tint(theme.lighterBackground, Qt.alpha(theme.foreground, 0.06))
++                        : theme.lighterBackground
++                    strokeColor: tile.current || folderDrop.containsDrag ? theme.accent : "transparent"
++                    strokeWidth: folderDrop.containsDrag ? 2.5 : 1.5
++                    joinStyle: tile.iconRadius > 0 ? ShapePath.RoundJoin : ShapePath.MiterJoin
++                    PathSvg { path: tile.folderPath(tile.iconRadius) }
++                }
+             }
+         }
+     }
+diff --git c/src/FolderColumns.qml w/src/FolderColumns.qml
+index d469bc4..3b67c8c 100644
+--- c/src/FolderColumns.qml
++++ w/src/FolderColumns.qml
+@@ -25,6 +25,7 @@ Item {
+ 
+     // Every column has a menu: on an item there, or on the column's folder.
+     signal contextMenu(var item, string folder, point at)
++    signal singleFingerTapped()
+ 
+     readonly property var crumbs: backend.crumbs
+ 
+@@ -81,9 +82,14 @@ Item {
+     // Keeps the newest columns in view as the trail grows, and the hidden
+     // ones out of it: on the left, when mirrored.
+     function revealEnd() {
++        const stride = view.columnWidth + 1
+         const from = Math.max(view.hiddenWidth, row.width - flick.width)
++        const inset = from % stride
++        // Keep the first visible icon and its label aligned when the pane nearly
++        // fits another column. The right edge can trim the preview instead.
++        const start = flick.width >= 2 * stride && inset <= 44 ? from - inset : from
+         const most = Math.max(0, flick.contentWidth - flick.width)
+-        flick.contentX = view.LayoutMirroring.enabled ? most - from : from
++        flick.contentX = view.LayoutMirroring.enabled ? most - start : start
+     }
+     LayoutMirroring.onEnabledChanged: revealEnd()
+     function enter() {
+@@ -97,6 +103,116 @@ Item {
+     // which ends at its last item.
+     component ColumnDrop: FolderDrop { parent: items; anchors.fill: parent; z: -1 }
+ 
++    component FileColumn: FileListView {
++        id: fileColumn
++        required property string folderPath
++        readonly property Item touchColumn: fileColumn
++
++        function itemForMenu(position) {
++            const index = indexAt(position.x + contentX, position.y + contentY)
++            return index >= 0 ? model.get(index) : null
++        }
++        function showMenu(scenePosition) {
++            const position = mapFromItem(null, scenePosition)
++            if (contains(position))
++                view.contextMenu(itemForMenu(position), folderPath, scenePosition)
++        }
++
++        TapHandler {
++            acceptedDevices: PointerDevice.AllDevices & ~PointerDevice.TouchScreen
++            acceptedButtons: Qt.RightButton
++            onTapped: (point, button) => {
++                if (button === Qt.RightButton)
++                    fileColumn.showMenu(point.scenePosition)
++            }
++        }
++    }
++
++    // These passive grabs observe the whole viewport without taking touch
++    // scrolling away from its Flickables. The regular row TapHandler still
++    // owns ordinary single taps.
++    Item {
++        id: touches
++        anchors.fill: parent
++        z: 1
++
++        property int down: 0
++        property int fingers: 0
++        property bool moved: false
++        property bool canceled: false
++        property bool suppressTap: false
++        property point firstPress
++        property double startedAt: 0
++
++        function press(point) {
++            if (down === 0) {
++                firstPress = point.scenePosition
++                startedAt = Date.now()
++                fingers = 0
++                moved = false
++                canceled = false
++                suppressTap = false
++                hold.restart()
++            }
++            ++down
++            ++fingers
++            if (fingers > 1) {
++                suppressTap = true
++                hold.stop()
++            }
++        }
++        function move(position, origin) {
++            if (Math.abs(position.x - origin.x) + Math.abs(position.y - origin.y) > Qt.styleHints.startDragDistance) {
++                moved = true
++                hold.stop()
++            }
++        }
++        function release(cancelled) {
++            if (down === 0)
++                return
++            canceled = canceled || cancelled
++            if (--down > 0)
++                return
++            hold.stop()
++            if (moved || canceled)
++                return
++            if (fingers === 1)
++                view.singleFingerTapped()
++            else if (fingers === 2 && Date.now() - startedAt <= Qt.styleHints.mouseDoubleClickInterval)
++                showMenu()
++        }
++        function showMenu() {
++            const position = row.mapFromItem(null, firstPress)
++            const target = row.childAt(position.x, position.y)?.touchColumn
++            if (target)
++                target.showMenu(firstPress)
++        }
++
++        Timer {
++            id: hold
++            interval: Qt.styleHints.mousePressAndHoldInterval
++            onTriggered: {
++                touches.suppressTap = true
++                touches.canceled = true
++                touches.showMenu()
++            }
++        }
++        component Finger: PointHandler {
++            acceptedDevices: PointerDevice.TouchScreen
++            onPointChanged: if (active) touches.move(point.scenePosition, point.scenePressPosition)
++            onGrabChanged: (transition, point) => {
++                if (transition === PointerDevice.GrabPassive)
++                    touches.press(point)
++                else if (transition === PointerDevice.UngrabPassive || transition === PointerDevice.CancelGrabPassive)
++                    touches.release(transition === PointerDevice.CancelGrabPassive)
++            }
++        }
++
++        Finger {}
++        Finger {}
++        Finger {}
++    }
++
+     Flickable {
+         id: flick
+         anchors.fill: parent
+@@ -126,9 +242,11 @@ Item {
+                     required property string path
+                     required property string next
+                     height: row.height
++                    readonly property Item touchColumn: column
+ 
+-                    FileListView {
++                    FileColumn {
+                         id: column
++                        folderPath: ancestor.path
+                         width: view.columnWidth
+                         height: parent.height
+                         model: FolderModel {
+@@ -146,13 +264,6 @@ Item {
+                         }
+                         function revealNext() { positionViewAtIndex(Math.max(0, folder.indexOf(ancestor.next)), ListView.Contain) }
+                         ColumnDrop { items: column; folder: ancestor.path }
+-                        TapHandler {
+-                            acceptedButtons: Qt.RightButton
+-                            onTapped: (point) => {
+-                                const index = column.indexAt(point.position.x + column.contentX, point.position.y + column.contentY)
+-                                view.contextMenu(index >= 0 ? folder.get(index) : null, ancestor.path, point.scenePosition)
+-                            }
+-                        }
+                         Connections {
+                             target: ancestor
+                             function onNextChanged() { column.revealNext() }
+@@ -160,6 +271,7 @@ Item {
+                         delegate: FileRow {
+                             width: column.width
+                             chevron: true
++                            suppressTouchTap: touches.suppressTap
+                             trail: name === ancestor.next
+                             onClicked: isDir ? backend.navigate(path) : backend.showItem(path)
+                             onActivated: backend.open(path)
+@@ -170,8 +282,9 @@ Item {
+             }
+ 
+             // The folder being shown: its selection is the window's.
+-            FileListView {
++            FileColumn {
+                 id: here
++                folderPath: backend.path
+                 width: view.columnWidth
+                 height: row.height
+                 focus: true
+@@ -183,10 +296,7 @@ Item {
+                 highlightFollowsCurrentItem: false
+                 model: backend.folder
+ 
+-                TapHandler {
+-                    acceptedButtons: Qt.RightButton
+-                    onTapped: (point) => view.contextMenu(selecting.menuAt(point), backend.path, point.scenePosition)
+-                }
++                function itemForMenu(position) { return selecting.menuAt({ position }) }
+                 ColumnDrop { items: here; folder: backend.path }
+ 
+                 onCurrentIndexChanged: selecting.cursorMoved()
+@@ -199,6 +309,7 @@ Item {
+                 delegate: FileRow {
+                     width: here.width
+                     chevron: true
++                    suppressTouchTap: touches.suppressTap
+                     current: selected
+                     onClicked: (modifiers) => { selecting.click(index, modifiers); here.forceActiveFocus() }
+                     onActivated: backend.open(path)
+@@ -216,18 +327,12 @@ Item {
+             Separator { }
+ 
+             // A look inside the selected folder; clicking in it goes there.
+-            FileListView {
++            FileColumn {
+                 id: inside
++                folderPath: view.selected.path ?? ""
+                 width: view.columnWidth
+                 height: row.height
+                 visible: view.selected.isDir === true
+-                TapHandler {
+-                    acceptedButtons: Qt.RightButton
+-                    onTapped: (point) => {
+-                        const index = inside.indexAt(point.position.x + inside.contentX, point.position.y + inside.contentY)
+-                        view.contextMenu(index >= 0 ? inside.model.get(index) : null, view.selected.path, point.scenePosition)
+-                    }
+-                }
+                 model: FolderModel {
+                     id: insideFolder
+                     path: view.selected.isDir === true ? view.selected.path : ""
+@@ -243,6 +348,7 @@ Item {
+                 delegate: FileRow {
+                     width: inside.width
+                     chevron: true
++                    suppressTouchTap: touches.suppressTap
+                     onClicked: backend.showItem(path)
+                     onActivated: backend.open(path)
+                 }
+diff --git c/src/FolderPane.qml w/src/FolderPane.qml
+index e23254d..08e9f29 100644
+--- c/src/FolderPane.qml
++++ w/src/FolderPane.qml
+@@ -15,6 +15,7 @@ FocusScope {
+     readonly property bool active: !!host && host.activePane === pane
+     readonly property var paneBackend: backend
+     readonly property var paneFileOps: fileOps
++    readonly property string displayTitle: pathBar.hasActiveFolder ? pathBar.activeFolder.name : backend.title
+     property bool closable: false
+     signal closeRequested()
+     // How far this pane's path bar reaches left, over the sidebar, so the
+@@ -135,6 +136,16 @@ FocusScope {
+     // follow.
+     onActiveFocusChanged: if (activeFocus && host) host.activePane = pane
+     function focusView() { if (view.item) view.item.focusView() }
++    function cancelPathEditing() { if (pathBar.editing) pathBar.stopEditing() }
++    function dismissPathEditing() {
++        const editingPane = host?.activePane
++        if (!pathBar.editing && editingPane?.editingPath !== true)
++            return
++        if (editingPane && editingPane !== pane)
++            editingPane.cancelPathEditing()
++        pane.cancelPathEditing()
++        pane.focusView()
++    }
+     // Rename… in a sidebar folder's menu.
+     function renameFolder(path) { rename.open({ path: path, isDir: true }) }
+     // A place picked in the sidebar: the columns start at it.
+@@ -361,6 +372,15 @@ FocusScope {
+     }
+ 
+     ColumnLayout {
++        TapHandler {
++            enabled: !chooser && (pathBar.editing || pane.host?.activePane?.editingPath === true)
++            acceptedDevices: pane.viewMode === "columns"
++                ? PointerDevice.AllDevices & ~PointerDevice.TouchScreen : PointerDevice.AllDevices
++            onTapped: point => {
++                if (point.position.y >= pathBar.height)
++                    pane.dismissPathEditing()
++            }
++        }
+         anchors.fill: parent
+         spacing: 0
+ 
+@@ -422,19 +442,6 @@ FocusScope {
+             }
+         }
+ 
+-        // The trash offers one thing: emptying it.
+-        Rectangle {
+-            Layout.fillWidth: true
+-            implicitHeight: 48
+-            visible: pane.inTrash && backend.folder.count > 0
+-            color: Qt.alpha(theme.foreground, 0.04)
+-            PlainButton {
+-                anchors.centerIn: parent
+-                text: qsTr("Empty Trash")
+-                onClicked: pane.emptyTrash()
+-            }
+-        }
+-
+         Item { implicitHeight: 16 }
+ 
+         // Columns, list or grid: each takes the folder's model and keeps the
+@@ -469,7 +476,13 @@ FocusScope {
+         }
+         Component { id: gridView; FolderGrid { zoom: pane.zoom; onZoomRequested: (step) => pane.zoomBy(step) } }
+         Component { id: listView; FolderList { } }
+-        Component { id: columnsView; FolderColumns { detailsPane: pane } }
++        Component {
++            id: columnsView
++            FolderColumns {
++                detailsPane: pane
++                onSingleFingerTapped: if (!chooser) pane.dismissPathEditing()
++            }
++        }
+     }
+ 
+     // Drawn over the window's top bar. It reaches back over the sidebar for
+@@ -479,8 +492,10 @@ FocusScope {
+         id: pathBar
+         x: LayoutMirroring.enabled ? 0 : -pane.barLeft
+         width: pane.barLeft + pane.width
++        implicitHeight: pane.host?.toolbarHeight ?? 60
+         onEditDone: pane.focusView()
+         viewMode: pane.viewMode
++        activeFolder: !chooser && pane.viewMode === "columns" && pane.current.isDir === true ? pane.current : null
+         closable: pane.closable
+         onCycleView: pane.cycleView()
+         onCloseRequested: pane.closeRequested()
+diff --git c/src/FolioMenuItem.qml w/src/FolioMenuItem.qml
+index ad3824a..81eeba9 100644
+--- c/src/FolioMenuItem.qml
++++ w/src/FolioMenuItem.qml
+@@ -9,6 +9,7 @@ MenuItem {
+     id: entry
+ 
+     property string keys
++    property bool centeredText: false
+     // Said while it's highlighted, by the pointer or the arrow keys, for an
+     // entry that needs a word more than its label.
+     property string tip
+@@ -43,7 +44,8 @@ MenuItem {
+         implicitHeight: label.implicitHeight
+         Text {
+             id: label
+-            anchors.left: parent.left
++            anchors.left: entry.centeredText ? undefined : parent.left
++            anchors.horizontalCenter: entry.centeredText ? parent.horizontalCenter : undefined
+             anchors.verticalCenter: parent.verticalCenter
+             text: entry.text
+             color: !entry.enabled ? theme.secondaryForeground : entry.highlighted ? theme.brightForeground : theme.foreground
+diff --git c/src/Glyph.qml w/src/Glyph.qml
+index 1b6bf00..f88fec3 100644
+--- c/src/Glyph.qml
++++ w/src/Glyph.qml
+@@ -84,6 +84,7 @@ Item {
+         case "pause": return "M8 5v14M16 5v14"
+         case "open": return "M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"
+         case "audio": return "M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"
++        case "copy": return box(8, 8, 12, 12, r) + "M15 5H6Q4 5 4 7V15"
+         case "check": return "M5 12l5 5 9-10"
+         case "close": return "M6 6l12 12M18 6L6 18"
+         default: return page()
+diff --git c/src/Main.qml w/src/Main.qml
+index 9be2f93..754a36c 100644
+--- c/src/Main.qml
++++ w/src/Main.qml
+@@ -2,6 +2,7 @@ import QtQuick
+ import QtQuick.Controls
+ import QtQuick.Controls.Material
+ import QtQuick.Layouts
++import QtQuick.Shapes
+ import QtCore
+ 
+ // The window: one bar across the top, under it the sidebar, one folder pane
+@@ -10,11 +11,15 @@ import QtCore
+ // the pane used last.
+ ApplicationWindow {
+     id: win
++    flags: chooser ? Qt.Window : Qt.Window | Qt.FramelessWindowHint
++    function toggleZoom() {
++        windows.controlWindow(win, "maximized")
++    }
+     // A file chooser's window is a dialog, the size of GTK's.
+     width: chooser ? 875 : 1280
+     height: chooser ? 600 : 800
+-    minimumWidth: 720
+-    minimumHeight: 460
++    minimumWidth: 640
++    minimumHeight: 360
+     visible: true
+     // The backend's title (Home, Trash) is translated in C++, which
+     // retranslating QML doesn't redo, so the language is read here too.
+@@ -22,9 +27,16 @@ ApplicationWindow {
+         translator.language
+         if (chooser && chooser.title.length > 0)
+             return chooser.title
+-        return activePane && activePane.paneBackend.title.length > 0 ? activePane.paneBackend.title : qsTr("Files")
++        return activePane && activePane.displayTitle.length > 0 ? activePane.displayTitle : qsTr("Files")
+     }
+-    color: theme.background
++    readonly property bool fullScreen: visibility === Window.FullScreen
++    readonly property bool windowLayoutsAvailable: Qt.platform.os === "linux" && windows.windowLayoutsAvailable()
++    readonly property string enterFullScreenMark: "M1 4H7 M4 1V7"
++    readonly property string exitFullScreenMark: "M3.75 3.75H0.55L3.75 0.55Z M4.25 4.25H7.45L4.25 7.45Z"
++    readonly property int toolbarHeight: chooser ? 60 : 44
++    readonly property color sidebarTint: Qt.alpha(
++        Qt.tint(theme.background, Qt.alpha(theme.foreground, theme.light ? 0.05 : 0.08)), theme.light ? 0.83 : 0.77)
++    color: chooser ? theme.background : "transparent"
+ 
+     Material.theme: theme.light ? Material.Light : Material.Dark
+     Material.accent: theme.accent
+@@ -44,12 +56,15 @@ ApplicationWindow {
+     // stay hidden until that size is in, or until it's clear none is coming,
+     // so they first appear where they'll stay. Until then they take no
+     // clicks or keys either, so nothing acts on files no one can see yet.
+-    property bool settled: false
++    // File choosers keep the upstream settle delay; regular windows paint
++    // immediately so transparent glass surfaces never flash an empty blurred box.
++    property bool settled: !chooser
++    Component.onCompleted: if (settled) Qt.callLater(() => activePane.focusView())
+     onSettledChanged: activePane.focusView()
+     property bool drawn: false
+-    onFrameSwapped: if (!drawn) { drawn = true; settleTimer.start() }
+-    onWidthChanged: if (drawn) settled = true
+-    onHeightChanged: if (drawn) settled = true
++    onFrameSwapped: if (!drawn && !settled) { drawn = true; settleTimer.start() }
++    onWidthChanged: if (drawn && !settled) settled = true
++    onHeightChanged: if (drawn && !settled) settled = true
+     Timer { id: settleTimer; interval: 150; onTriggered: win.settled = true }
+ 
+     property bool helpVisible: false
+@@ -148,18 +163,130 @@ ApplicationWindow {
+         anchors.fill: parent
+         enabled: win.settled
+         opacity: win.settled ? 1 : 0
+-        Behavior on opacity { NumberAnimation { duration: 100 } }
++        Behavior on opacity { enabled: !!chooser; NumberAnimation { duration: 100 } }
+         // A file chooser cancels on Escape that nothing inside wanted.
+         Keys.enabled: !!chooser
+         Keys.onEscapePressed: chooser.cancel()
+ 
+-        // The bar across the top; the panes' path bars draw over it.
+-        readonly property int barHeight: 60
++        // Each surface spans the toolbar and content so fractional scaling cannot expose a seam.
+         Rectangle {
+-            width: parent.width
+-            height: parent.barHeight
++            visible: !chooser
++            anchors { top: parent.top; left: parent.left; bottom: parent.bottom }
++            width: sidebar.width
++            color: win.sidebarTint
++        }
++        Rectangle {
++            visible: !chooser
++            anchors { top: parent.top; right: parent.right; bottom: parent.bottom }
++            width: parent.width - sidebar.width
+             color: theme.background
+-            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Qt.alpha(theme.foreground, 0.12) }
++        }
++        Item {
++            width: parent.width
++            height: win.toolbarHeight
++            Rectangle {
++                visible: !!chooser
++                anchors.bottom: parent.bottom
++                width: parent.width
++                height: 1
++                color: Qt.alpha(theme.foreground, 0.12)
++            }
++            Item {
++                visible: !chooser
++                anchors.left: parent.left
++                width: sidebar.width
++                height: parent.height
++
++                DragHandler {
++                    target: null
++                    onActiveChanged: if (active) windows.startWindowDrag(win)
++                }
++                TapHandler { onDoubleTapped: win.toggleZoom() }
++
++                Row {
++                    id: controls
++                    anchors.left: parent.left
++                    anchors.leftMargin: 16
++                    anchors.verticalCenter: parent.verticalCenter
++                    spacing: 0
++                    HoverHandler { id: controlsHover }
++
++                    WindowLayoutMenu {
++                        id: layoutMenu
++                        fullScreen: win.fullScreen
++                        layoutsAvailable: win.windowLayoutsAvailable
++                        onActionRequested: action => windows.controlWindow(win, action)
++                    }
++
++                    Repeater {
++                        model: [
++                            { label: qsTr("Close"), mark: "M1.5 1.5L6.5 6.5 M6.5 1.5L1.5 6.5", ink: "#bf4d0000", tint: "#ff5f57", run: () => win.close() },
++                            { label: qsTr("Minimize"), mark: "M1 4H7", ink: "#bf553700", tint: "#febc2e", run: () => windows.controlWindow(win, "minimize") },
++                            { label: qsTr("Full Screen"), ink: "#bf004d00", tint: "#28c840",
++                              run: () => windows.controlWindow(win, "fullscreen") }
++                        ]
++                        delegate: AbstractButton {
++                            id: control
++                            required property var modelData
++                            required property int index
++                            readonly property bool green: index === 2
++                            enabled: index !== 1 || !win.fullScreen
++                            width: 20
++                            height: 28
++                            padding: 0
++                            hoverEnabled: true
++                            focusPolicy: Qt.TabFocus
++                            text: green && win.fullScreen ? qsTr("Exit Full Screen") : modelData.label
++                            onClicked: modelData.run()
++                            onPressAndHold: if (green) layoutMenu.openAt(control)
++                            ToolTip.visible: hovered && !layoutMenu.visible
++                            ToolTip.delay: 650
++                            ToolTip.text: text
++
++                            TapHandler {
++                                enabled: control.green
++                                acceptedButtons: Qt.RightButton
++                                onTapped: layoutMenu.openAt(control)
++                            }
++
++                            background: Item {
++                                Rectangle {
++                                    anchors.centerIn: parent
++                                    width: 12
++                                    height: width
++                                    radius: width / 2
++                                    color: !enabled || (!win.active && !hovered) ? Qt.tint(theme.background, Qt.alpha(theme.foreground, 0.37))
++                                         : down ? Qt.darker(modelData.tint, 1.18) : modelData.tint
++                                    // Keep the full face optically aligned with the terminal controls.
++                                    border.width: 0
++                                }
++                            }
++                            contentItem: Item {
++                                Shape {
++                                    id: mark
++                                    readonly property bool filled: control.green && win.fullScreen
++                                    anchors.centerIn: parent
++                                    width: 8
++                                    height: 8
++                                    visible: control.enabled && (controlsHover.hovered || visualFocus || layoutMenu.visible)
++                                    preferredRendererType: Shape.CurveRenderer
++                                    ShapePath {
++                                        fillColor: mark.filled ? modelData.ink : "transparent"
++                                        strokeColor: mark.filled ? "transparent" : modelData.ink
++                                        strokeWidth: mark.filled ? 0 : 1.1
++                                        capStyle: ShapePath.RoundCap
++                                        PathSvg {
++                                            path: control.green
++                                                ? (win.fullScreen ? win.exitFullScreenMark : win.enterFullScreenMark)
++                                                : modelData.mark
++                                        }
++                                    }
++                                }
++                            }
++                        }
++                    }
++                }
++            }
+         }
+ 
+         RowLayout {
+@@ -169,22 +296,24 @@ ApplicationWindow {
+ 
+             Sidebar {
+                 id: sidebar
++                color: chooser ? theme.background : "transparent"
+                 target: win.activePane ? win.activePane.paneBackend : backend
+                 onFinished: win.activePane.focusView()
+                 onPlaceChosen: (path) => win.activePane.startAt(path)
+                 onRenameRequested: (path) => win.activePane.renameFolder(path)
+                 onDeleteRequested: (path) => win.activePane.confirmDelete([path])
+                 onTrashRequested: (path) => win.activePane.paneFileOps.trash([path])
++                onEmptyTrashRequested: win.activePane.emptyTrash()
+                 onFormatRequested: (disk) => win.activePane.formatDrive(disk)
+-                Layout.topMargin: parent.parent.barHeight
++                Layout.topMargin: win.toolbarHeight
+                 Layout.preferredWidth: 190
+                 Layout.fillHeight: true
+             }
+-            Rectangle { Layout.topMargin: parent.parent.barHeight; Layout.fillHeight: true; implicitWidth: 1; color: Qt.alpha(theme.foreground, 0.12) }
++            Rectangle { Layout.topMargin: win.toolbarHeight; Layout.fillHeight: true; implicitWidth: 1; color: Qt.alpha(theme.foreground, 0.12) }
+ 
+             FolderPane {
+                 id: leftPane
+-                barLeft: sidebar.width + 1
++                barLeft: chooser ? sidebar.width + 1 : 0
+                 Layout.fillWidth: true
+                 Layout.fillHeight: true
+                 focus: true
+diff --git c/src/PathBar.qml w/src/PathBar.qml
+index bb5f379..132e13a 100644
+--- c/src/PathBar.qml
++++ w/src/PathBar.qml
+@@ -8,9 +8,37 @@ Rectangle {
+     id: bar
+ 
+     property string viewMode: "grid"
++    // In column view, selecting a subfolder opens its contents in the next
++    // column immediately; mirror that folder in the breadcrumb bar, copy-path
++    // button and path editor so the top bar reflects the folder on screen.
++    property var activeFolder: null
++    readonly property bool hasActiveFolder: {
++        if (!activeFolder || activeFolder.isDir !== true)
++            return false
++        if (backend.folder.query.length > 0)
++            return false
++        const folderPath = activeFolder.path || ""
++        const folderName = activeFolder.name || ""
++        if (folderPath.length === 0 || folderName.length === 0)
++            return false
++        const base = backend.path
++        if (base.length === 0 || base.startsWith("recent:") || base.startsWith("plugin:"))
++            return false
++        const expected = base === "/" ? "/" + folderName : base + "/" + folderName
++        return folderPath === expected
++    }
++    readonly property string displayPath: hasActiveFolder ? activeFolder.path : backend.path
++    readonly property var displayCrumbs: {
++        translator.language
++        const base = backend.crumbs
++        if (!hasActiveFolder)
++            return base
++        return base.concat([{ name: activeFolder.name, path: activeFolder.path }])
++    }
+     // Ctrl+L: the path as text to edit. Enter goes there (or connects to a
+     // server's address), Escape cancels, Tab completes a folder name.
+     property bool editing: false
++    readonly property bool copied: copyFeedback.running
+     // The right pane of a split has a close button (Ctrl+W).
+     property bool closable: false
+     signal closeRequested()
+@@ -21,8 +49,20 @@ Rectangle {
+     signal cycleView()
+     signal editDone()
+ 
++    function copyPath() {
++        if (displayPath.length === 0)
++            return
++        fileOps.yank([displayPath])
++        copyFeedback.restart()
++    }
++    Timer { id: copyFeedback; interval: 1250 }
++    onDisplayPathChanged: copyFeedback.stop()
++
+     function editPath() {
+-        pathField.text = backend.typedPath()
++        const base = backend.typedPath()
++        pathField.text = hasActiveFolder
++            ? (base.endsWith("/") ? base + activeFolder.name + "/" : base + "/" + activeFolder.name + "/")
++            : base
+         editing = true
+         pathField.forceActiveFocus()
+         pathField.selectAll()
+@@ -78,10 +118,10 @@ Rectangle {
+ 
+     RowLayout {
+         anchors.fill: parent
+-        anchors.leftMargin: 26
++        anchors.leftMargin: chooser ? 26 : 16
+         // A file chooser's buttons sit as close to the window's edges as
+         // the bar's own sit to the top: 12 all round.
+-        anchors.rightMargin: chooser ? 12 : 20
++        anchors.rightMargin: 12
+         spacing: 4
+ 
+ 
+@@ -150,6 +190,7 @@ Rectangle {
+             Layout.fillHeight: true
+             contentWidth: Math.max(width, crumbs.implicitWidth)
+             clip: true
++            interactive: !!chooser
+             boundsBehavior: Flickable.StopAtBounds
+             // Long paths keep their end in view; that's where you are.
+             // Mirrored, the end is on the left.
+@@ -158,6 +199,20 @@ Rectangle {
+             onWidthChanged: revealEnd()
+             LayoutMirroring.onEnabledChanged: revealEnd()
+ 
++            HoverHandler {
++                enabled: !chooser
++                cursorShape: Qt.IBeamCursor
++            }
++            TapHandler {
++                enabled: !chooser
++                onTapped: bar.editPath()
++            }
++            DragHandler {
++                enabled: !chooser
++                target: null
++                onActiveChanged: if (active) windows.startWindowDrag(bar.Window.window)
++            }
++
+             Row {
+                 id: crumbs
+                 // A Row isn't placed by its Flickable, so it's moved to the
+@@ -169,16 +224,16 @@ Rectangle {
+                 Repeater {
+                     // Recents, Trash and plugins' views are named in C++, which
+                     // retranslating QML doesn't redo.
+-                    model: { translator.language; return backend.crumbs }
++                    model: bar.displayCrumbs
+                     Row {
+                         id: crumb
+                         required property var modelData
+                         required property int index
+-                        readonly property bool last: index === backend.crumbs.length - 1
++                        readonly property bool last: index === bar.displayCrumbs.length - 1
+                         spacing: 10
+                         Text {
+                             // No separator after / itself: "/ run", not "/ / run".
+-                            visible: crumb.index > 0 && !(crumb.index === 1 && backend.crumbs[0].name === "/")
++                            visible: crumb.index > 0 && !(crumb.index === 1 && bar.displayCrumbs[0].name === "/")
+                             text: "/"
+                             color: Qt.alpha(theme.foreground, 0.35)
+                             font.pixelSize: 14
+@@ -192,8 +247,8 @@ Rectangle {
+                                 id: crumbMouse
+                                 anchors.fill: parent
+                                 anchors.margins: -4
+-                                hoverEnabled: true
+-                                // The folder you're in opens the path for typing, as Ctrl+L does.
++                                enabled: !!chooser
++                                hoverEnabled: enabled
+                                 cursorShape: crumb.last ? Qt.IBeamCursor : Qt.PointingHandCursor
+                                 onClicked: crumb.last ? bar.editPath() : backend.navigate(crumb.modelData.path)
+                             }
+@@ -203,8 +258,25 @@ Rectangle {
+             }
+         }
+ 
+-        Item { implicitWidth: 16 }
+-        // First of the buttons, before those for the folder shown.
++        IconButton {
++            visible: !chooser && !bar.editing && !bar.searching
++            implicitWidth: 30
++            implicitHeight: 30
++            glyph: bar.copied ? "check" : "copy"
++            text: bar.copied ? qsTr("Path copied") : qsTr("Copy Path")
++            active: bar.copied
++            onClicked: bar.copyPath()
++        }
++        Rectangle {
++            visible: !chooser && !bar.editing && !bar.searching
++            Layout.leftMargin: 4
++            Layout.rightMargin: 4
++            implicitWidth: 1
++            implicitHeight: 16
++            color: Qt.alpha(theme.foreground, 0.12)
++        }
++        Item { visible: !!chooser; implicitWidth: 16 }
++        // First of the folder controls, at the right.
+         AbstractButton {
+             id: help
+             visible: bar.showsHelp
+diff --git c/src/Sidebar.qml w/src/Sidebar.qml
+index 64dfa2c..cc4f52c 100644
+--- c/src/Sidebar.qml
++++ w/src/Sidebar.qml
+@@ -24,6 +24,7 @@ Rectangle {
+     signal deleteRequested(string path)
+     // Trash in a folder's menu, done by the pane used last, as the rest are.
+     signal trashRequested(string path)
++    signal emptyTrashRequested()
+     // A place picked here: the columns start at it, rather than at the
+     // folders above it.
+     signal placeChosen(string path)
+@@ -114,11 +115,13 @@ Rectangle {
+     readonly property var keyedPlace: !activeFocus ? null
+                                     : cursor < pinnedAt ? homeRows.itemAt(cursor)
+                                     : cursor < viewsAt ? pinRows.itemAt(cursor - pinnedAt) : null
++    readonly property var keyedView: activeFocus && cursor >= viewsAt && cursor < devicesAt
++                                    ? viewRows.itemAt(cursor - viewsAt) : null
+     function menuKey(event) {
+         return ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && (event.modifiers & Qt.AltModifier))
+             || event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))
+     }
+-    Keys.onShortcutOverride: (event) => event.accepted = menuKey(event) && (keyedDrive !== null || keyedPlace !== null)
++    Keys.onShortcutOverride: (event) => event.accepted = menuKey(event) && (keyedDrive !== null || keyedPlace !== null || keyedView?.dropTrashes === true)
+     // Return has its own handler, which Keys calls before this one.
+     Keys.onPressed: (event) => event.accepted = openDriveMenu(event)
+     function openDriveMenu(event) {
+@@ -128,6 +131,8 @@ Rectangle {
+             driveMenu.show(keyedDrive.modelData, keyedDrive)
+         else if (keyedPlace)
+             placeMenu.show(keyedPlace.modelData, cursor >= pinnedAt, keyedPlace)
++        else if (keyedView?.dropTrashes)
++            openTrashMenu(keyedView)
+         else
+             return false
+         return true
+@@ -140,6 +145,41 @@ Rectangle {
+         onTrashRequested: (path) => sidebar.trashRequested(path)
+     }
+ 
++    function openTrashMenu(anchor) {
++        trashMenuLoader.active = true
++        const menu = trashMenuLoader.item
++        if (anchor)
++            menu.popup(anchor, anchor.width, 0)
++        else
++            menu.popup()
++    }
++
++    Loader {
++        id: trashMenuLoader
++        active: false
++
++        sourceComponent: FolioMenu {
++            id: trashMenu
++            property bool hasItems: false
++            onAboutToShow: hasItems = fileOps.trashCount() > 0
++
++            width: Math.ceil(Math.max(76, labelMetrics.advanceWidth + emptyItem.leftPadding + emptyItem.rightPadding
++                                     + leftPadding + rightPadding))
++            TextMetrics {
++                id: labelMetrics
++                text: emptyItem.text
++                font: emptyItem.font
++            }
++            FolioMenuItem {
++                id: emptyItem
++                text: qsTr("Empty")
++                centeredText: true
++                enabled: trashMenu.hasItems
++                onTriggered: sidebar.emptyTrashRequested()
++            }
++        }
++    }
++
+     DriveMenu {
+         id: driveMenu
+         onOpenRequested: (path) => { sidebar.go(path); sidebar.finished() }
+@@ -236,7 +276,7 @@ Rectangle {
+             Glyph {
+                 name: row.mark && row.mark.icon ? row.mark.icon : row.glyph
+                 opacity: row.glyph ? 1 : 0
+-                color: row.active ? theme.brightForeground : theme.foreground
++                color: theme.accent
+             }
+             ColumnLayout {
+                 Layout.fillWidth: true
+@@ -397,8 +437,10 @@ Rectangle {
+             // Views: lists that aren't a folder of their own.
+             SectionLabel { text: qsTr("Views") }
+             Repeater {
++                id: viewRows
+                 model: places.views
+                 PlaceRow {
++                    id: viewRow
+                     required property var modelData
+                     required property int index
+                     dropTrashes: modelData.icon === "trash"
+@@ -407,6 +449,11 @@ Rectangle {
+                     glyph: modelData.icon
+                     active: sidebar.activePath === modelData.path
+                     onClicked: sidebar.go(modelData.path)
++                    TapHandler {
++                        enabled: viewRow.dropTrashes
++                        acceptedButtons: Qt.RightButton
++                        onTapped: sidebar.openTrashMenu(null)
++                    }
+                     keyed: sidebar.activeFocus && sidebar.cursor === sidebar.viewsAt + index
+                     onKeyedChanged: if (keyed) sidebar.reveal(this)
+                 }
+diff --git c/src/WindowLayoutMenu.qml w/src/WindowLayoutMenu.qml
+new file mode 100644
+index 0000000..55421c8
+--- /dev/null
++++ w/src/WindowLayoutMenu.qml
+@@ -0,0 +1,116 @@
++import QtQuick
++import QtQuick.Controls
++import QtQuick.Layouts
++
++Popup {
++    id: menu
++
++    required property bool fullScreen
++    required property bool layoutsAvailable
++    signal actionRequested(string action)
++
++    function openAt(button) {
++        parent = button
++        x = Math.min(0, button.width / 2 - 27)
++        y = button.height + 2
++        open()
++    }
++
++    popupType: Popup.Item
++    focus: true
++    width: implicitWidth
++    padding: 8
++    margins: 6
++    background: Rectangle {
++        color: Qt.tint(theme.background, Qt.alpha(theme.foreground, theme.light ? 0.025 : 0.04))
++        border.color: Qt.alpha(theme.foreground, 0.19)
++        radius: 12
++    }
++
++    contentItem: ColumnLayout {
++        spacing: 5
++
++        GridLayout {
++            visible: menu.layoutsAvailable
++            columns: 4
++            rowSpacing: 3
++            columnSpacing: 3
++
++            Repeater {
++                model: [
++                    { action: "left", label: qsTr("Left Half"), region: Qt.rect(0, 0, 0.5, 1) },
++                    { action: "right", label: qsTr("Right Half"), region: Qt.rect(0.5, 0, 0.5, 1) },
++                    { action: "top", label: qsTr("Top Half"), region: Qt.rect(0, 0, 1, 0.5) },
++                    { action: "bottom", label: qsTr("Bottom Half"), region: Qt.rect(0, 0.5, 1, 0.5) },
++                    { action: "top-left", label: qsTr("Top Left Quarter"), region: Qt.rect(0, 0, 0.5, 0.5) },
++                    { action: "top-right", label: qsTr("Top Right Quarter"), region: Qt.rect(0.5, 0, 0.5, 0.5) },
++                    { action: "bottom-left", label: qsTr("Bottom Left Quarter"), region: Qt.rect(0, 0.5, 0.5, 0.5) },
++                    { action: "bottom-right", label: qsTr("Bottom Right Quarter"), region: Qt.rect(0.5, 0.5, 0.5, 0.5) }
++                ]
++                delegate: AbstractButton {
++                    id: tile
++                    required property var modelData
++                    implicitWidth: 44
++                    implicitHeight: 36
++                    hoverEnabled: true
++                    enabled: !menu.fullScreen
++                    text: modelData.label
++                    Accessible.name: text
++                    onClicked: {
++                        menu.close()
++                        menu.actionRequested(modelData.action)
++                    }
++                    ToolTip.visible: hovered
++                    ToolTip.text: text
++                    ToolTip.delay: 550
++
++                    background: Rectangle {
++                        radius: 7
++                        color: tile.down || tile.hovered || tile.visualFocus ? Qt.alpha(theme.accent, 0.18) : "transparent"
++                    }
++                    contentItem: Item {
++                        Rectangle {
++                            id: glyph
++                            anchors.centerIn: parent
++                            width: 24
++                            height: 17
++                            radius: 3
++                            color: "transparent"
++                            border.width: 1.4
++                            border.color: theme.foreground
++                            opacity: tile.enabled ? 1 : 0.35
++
++                            Rectangle {
++                                readonly property rect region: tile.modelData.region
++                                x: 3 + 18 * region.x
++                                y: 3 + 11 * region.y
++                                width: 18 * region.width
++                                height: 11 * region.height
++                                radius: 1.3
++                                color: theme.foreground
++                            }
++                        }
++                    }
++                }
++            }
++        }
++
++        Rectangle {
++            visible: menu.layoutsAvailable
++            Layout.fillWidth: true
++            Layout.leftMargin: 4
++            Layout.rightMargin: 4
++            implicitHeight: 1
++            color: Qt.alpha(theme.foreground, 0.14)
++        }
++        PlainButton {
++            Layout.fillWidth: true
++            implicitHeight: 30
++            text: menu.fullScreen ? qsTr("Exit Full Screen") : qsTr("Full Screen")
++            onClicked: {
++                menu.close()
++                menu.actionRequested("fullscreen")
++            }
++        }
++    }
++}
+diff --git c/src/i18n/en.json w/src/i18n/en.json
+index b742a47..0bdee6e 100644
+--- c/src/i18n/en.json
++++ w/src/i18n/en.json
+@@ -161,6 +161,7 @@
+     "one": "Emptied the trash: %Ln item deleted.",
+     "other": "Emptied the trash: %Ln items deleted."
+   },
++  "Empty": "Empty",
+   "Empty Trash": "Empty Trash",
+   "Empty Trash…": "Empty Trash…",
+   "Empty the trash?": "Empty the trash?",
+@@ -172,6 +173,7 @@
+   "Escape closes": "Escape closes",
+   "Everything else": "Everything else",
+   "Everything on this drive will be erased. This can't be undone.": "Everything on this drive will be erased. This can't be undone.",
++  "Exit Full Screen": "Exit Full Screen",
+   "Extract": "Extract",
+   "Extracting %1: %Ln items…": {
+     "one": "Extracting %1: %Ln item…",
+@@ -207,6 +209,7 @@
+   "Formatting %1…": "Formatting %1…",
+   "Format…": "Format…",
+   "Free space": "Free space",
++  "Full Screen": "Full Screen",
+   "GVfs gave no local folder for the mount": "GVfs gave no local folder for the mount",
+   "Go home": "Go home",
+   "Go to the parent folder": "Go to the parent folder",
+@@ -220,6 +223,15 @@
+   "Making a preview…": "Making a preview…",
+   "Merge": "Merge",
+   "Merging adds what's in this folder to the one there. What has the same name inside is replaced, and the replaced items go to the trash.": "Merging adds what's in this folder to the one there. What has the same name inside is replaced, and the replaced items go to the trash.",
++  "Left Half": "Left Half",
++  "Right Half": "Right Half",
++  "Top Half": "Top Half",
++  "Bottom Half": "Bottom Half",
++  "Top Left Quarter": "Top Left Quarter",
++  "Top Right Quarter": "Top Right Quarter",
++  "Bottom Left Quarter": "Bottom Left Quarter",
++  "Bottom Right Quarter": "Bottom Right Quarter",
++  "Minimize": "Minimize",
+   "Modified": "Modified",
+   "Mount": "Mount",
+   "Move the selection": "Move the selection",
+@@ -275,6 +287,7 @@
+   "Page %1 of %2": "Page %1 of %2",
+   "Password": "Password",
+   "Paste": "Paste",
++  "Path copied": "Path copied",
+   "Paste Into Folder": "Paste Into Folder",
+   "Pause (K)": "Pause (K)",
+   "Permission was refused.": "Permission was refused.",
+diff --git c/src/i18n/zh-CN.json w/src/i18n/zh-CN.json
+index ffd2a86..c3cdc9a 100644
+--- c/src/i18n/zh-CN.json
++++ w/src/i18n/zh-CN.json
+@@ -151,6 +151,7 @@
+   "Emptied the trash: %Ln items deleted.": {
+     "other": "已清空回收站：已删除 %Ln 个项目。"
+   },
++  "Empty": "清空",
+   "Empty Trash": "清空回收站",
+   "Empty Trash…": "清空回收站…",
+   "Empty the trash?": "清空回收站？",
+@@ -161,6 +162,7 @@
+   "Escape closes": "Escape 关闭",
+   "Everything else": "其他",
+   "Everything on this drive will be erased. This can't be undone.": "此驱动器上的所有内容都将被抹除。此操作无法撤销。",
++  "Exit Full Screen": "退出全屏",
+   "Extract": "解压",
+   "Extracting %1: %Ln items…": {
+     "other": "正在解压 %1：%Ln 个项目…"
+@@ -192,6 +194,7 @@
+   "Formatting %1…": "正在格式化 %1…",
+   "Format…": "格式化…",
+   "Free space": "可用空间",
++  "Full Screen": "全屏",
+   "GVfs gave no local folder for the mount": "GVfs 未提供该挂载的本地文件夹",
+   "Go home": "回到主文件夹",
+   "Go to the parent folder": "前往上级文件夹",
+@@ -205,6 +208,15 @@
+   "Making a preview…": "正在生成预览…",
+   "Merge": "合并",
+   "Merging adds what's in this folder to the one there. What has the same name inside is replaced, and the replaced items go to the trash.": "合并会把此文件夹中的内容添加到目标文件夹中。内部同名的项目会被替换，被替换的项目会移到回收站。",
++  "Left Half": "左半屏",
++  "Right Half": "右半屏",
++  "Top Half": "上半屏",
++  "Bottom Half": "下半屏",
++  "Top Left Quarter": "左上四分之一屏",
++  "Top Right Quarter": "右上四分之一屏",
++  "Bottom Left Quarter": "左下四分之一屏",
++  "Bottom Right Quarter": "右下四分之一屏",
++  "Minimize": "最小化",
+   "Modified": "修改时间",
+   "Mount": "挂载",
+   "Move the selection": "移动选择",
+@@ -256,6 +268,7 @@
+   "Page %1 of %2": "第 %1 页，共 %2 页",
+   "Password": "密码",
+   "Paste": "粘贴",
++  "Path copied": "已复制路径",
+   "Paste Into Folder": "粘贴到文件夹",
+   "Pause (K)": "暂停（K）",
+   "Permission was refused.": "权限被拒绝。",
+diff --git c/src/i18n/zh-TW.json w/src/i18n/zh-TW.json
+index d4a2c55..87eaddf 100644
+--- c/src/i18n/zh-TW.json
++++ w/src/i18n/zh-TW.json
+@@ -151,6 +151,7 @@
+   "Emptied the trash: %Ln items deleted.": {
+     "other": "已清空垃圾桶：已刪除 %Ln 個項目。"
+   },
++  "Empty": "清空",
+   "Empty Trash": "清空垃圾桶",
+   "Empty Trash…": "清空垃圾桶…",
+   "Empty the trash?": "要清空垃圾桶嗎？",
+@@ -161,6 +162,7 @@
+   "Escape closes": "Escape 關閉",
+   "Everything else": "其他",
+   "Everything on this drive will be erased. This can't be undone.": "此磁碟機上的所有資料都將被清除，且無法復原。",
++  "Exit Full Screen": "退出全螢幕",
+   "Extract": "解壓縮",
+   "Extracting %1: %Ln items…": {
+     "other": "正在解壓縮 %1：%Ln 個項目…"
+@@ -192,6 +194,7 @@
+   "Formatting %1…": "正在格式化 %1…",
+   "Format…": "格式化…",
+   "Free space": "可用空間",
++  "Full Screen": "全螢幕",
+   "GVfs gave no local folder for the mount": "GVfs 未提供此掛載的本機資料夾",
+   "Go home": "前往家目錄",
+   "Go to the parent folder": "前往上層資料夾",
+@@ -205,6 +208,15 @@
+   "Making a preview…": "正在產生預覽…",
+   "Merge": "合併",
+   "Merging adds what's in this folder to the one there. What has the same name inside is replaced, and the replaced items go to the trash.": "合併會將此資料夾中的內容加入該資料夾。其中同名的項目會被取代，被取代的項目會移至垃圾桶。",
++  "Left Half": "左半螢幕",
++  "Right Half": "右半螢幕",
++  "Top Half": "上半螢幕",
++  "Bottom Half": "下半螢幕",
++  "Top Left Quarter": "左上四分之一螢幕",
++  "Top Right Quarter": "右上四分之一螢幕",
++  "Bottom Left Quarter": "左下四分之一螢幕",
++  "Bottom Right Quarter": "右下四分之一螢幕",
++  "Minimize": "最小化",
+   "Modified": "修改時間",
+   "Mount": "掛載",
+   "Move the selection": "移動選取範圍",
+@@ -256,6 +268,7 @@
+   "Page %1 of %2": "第 %1 頁，共 %2 頁",
+   "Password": "密碼",
+   "Paste": "貼上",
++  "Path copied": "已複製路徑",
+   "Paste Into Folder": "貼入資料夾",
+   "Pause (K)": "暫停 (K)",
+   "Permission was refused.": "權限遭拒。",
+diff --git c/src/main.cpp w/src/main.cpp
+index 48852d8..0988bbc 100644
+--- c/src/main.cpp
++++ w/src/main.cpp
+@@ -41,15 +41,14 @@ static QString startPath(const QStringList &args, QString *select) {
+     return QDir::homePath();
+ }
+ 
+-// Omarchy points fontconfig's monospace at the font picked in its menu, so
+-// asking for "monospace" follows the user's choice.
++// Match the desktop's sans-serif toolbar while keeping fontconfig fallbacks.
+ static void setUp(QGuiApplication &app) {
+     app.setApplicationName("folio");
+     // Settings (the chosen view) go to ~/.config/folio/folio.conf.
+     app.setOrganizationName("folio");
+     app.setWindowIcon(QIcon::fromTheme("folio"));
+-    QFont font("monospace");
+-    font.setStyleHint(QFont::Monospace);
++    QFont font;
++    font.setFamilies({"Inter", "sans-serif"});
+     font.setPixelSize(13);
+     app.setFont(font);
+     QQuickStyle::setStyle("Material");
+diff --git c/src/resources.qrc w/src/resources.qrc
+index 8ecd457..2efe625 100644
+--- c/src/resources.qrc
++++ w/src/resources.qrc
+@@ -18,6 +18,7 @@
+         <file>Band.qml</file>
+         <file>FolioMenu.qml</file>
+         <file>FolioMenuItem.qml</file>
++        <file>WindowLayoutMenu.qml</file>
+         <file>MenuLine.qml</file>
+         <file>FolioScrollBar.qml</file>
+         <file>FileListView.qml</file>
+diff --git c/src/theme.cpp w/src/theme.cpp
+index c3f4401..d7ee789 100644
+--- c/src/theme.cpp
++++ w/src/theme.cpp
+@@ -190,3 +190,9 @@ void Theme::reload() {
+         emit changed();
+     }
+ }
++
++QUrl Theme::silkyFolderIcon() {
++    static const QUrl icon = QUrl::fromLocalFile(QStandardPaths::locate(
++        QStandardPaths::GenericDataLocation, QStringLiteral("icons/MacTahoe/places/scalable/folder-blue.svg")));
++    return icon;
++}
+diff --git c/src/theme.h w/src/theme.h
+index 221b9de..adbb4cb 100644
+--- c/src/theme.h
++++ w/src/theme.h
+@@ -5,6 +5,7 @@
+ #include <QHash>
+ #include <QObject>
+ #include <QProcess>
++#include <QUrl>
+ #include <QTimer>
+ 
+ // The Omarchy palette, followed live. A file manager draws far more surface
+@@ -28,6 +29,7 @@ class Theme : public QObject {
+     Q_PROPERTY(QColor orange READ orange NOTIFY changed)
+     Q_PROPERTY(bool light READ light NOTIFY changed)
+     Q_PROPERTY(int radius READ radius NOTIFY changed)
++    Q_PROPERTY(QUrl silkyFolderIcon READ silkyFolderIcon CONSTANT)
+ 
+ public:
+     explicit Theme(const QString &currentDirectory = {}, QObject *parent = nullptr, const QString &hyprctl = {});
+@@ -49,6 +51,7 @@ public:
+     QColor orange() const { return color("orange"); }
+     bool light() const { return m_light; }
+     int radius() const { return m_radius; }
++    static QUrl silkyFolderIcon();
+ 
+ signals:
+     void changed();
+diff --git c/src/windows.cpp w/src/windows.cpp
+index ad242d0..e6f5800 100644
+--- c/src/windows.cpp
++++ w/src/windows.cpp
+@@ -1,8 +1,22 @@
+ #include "windows.h"
+ 
++#include <QGuiApplication>
++#include <QImageWriter>
++#include <QJsonDocument>
++#include <QJsonObject>
++#include <QPointer>
++#include <QProcess>
+ #include <QQmlContext>
+ #include <QQmlEngine>
++#include <QQuickItem>
++#include <QQuickItemGrabResult>
+ #include <QQuickWindow>
++#include <QRegularExpression>
++#include <QStandardPaths>
++#include <QTemporaryFile>
++#include <QTimer>
++#include <memory>
++#include <utility>
+ 
+ #include "backend.h"
+ #include "fileops.h"
+@@ -125,3 +139,160 @@ void Windows::release(Pane &pane) {
+         pane.context->deleteLater();
+     pane = {};
+ }
++
++// Take one frame while the app is still mapped. The Dock can animate and
++// retain it after Hyprland moves the window off-screen.
++static QString snapshotForDock(QQuickWindow *window, const QImage &image) {
++    const QString runtime = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
++    if (runtime.isEmpty() || image.isNull())
++        return {};
++
++    auto snapshot = std::make_unique<QTemporaryFile>(runtime + "/silky-folio-XXXXXX.png");
++    if (!snapshot->open())
++        return {};
++    QImageWriter writer(snapshot.get(), "png");
++    writer.setQuality(100);
++    if (!writer.write(image))
++        return {};
++    snapshot->close();
++
++    const QString name = QStringLiteral("silky-folio-dock-snapshot");
++    if (auto *previous = window->findChild<QTemporaryFile *>(name, Qt::FindDirectChildrenOnly))
++        previous->deleteLater();
++    snapshot->setObjectName(name);
++    snapshot->setParent(window);
++    return snapshot.release()->fileName();
++}
++
++bool Windows::windowLayoutsAvailable() const {
++    return !qEnvironmentVariableIsEmpty("HYPRLAND_INSTANCE_SIGNATURE")
++        && !QStandardPaths::findExecutable("hyprctl").isEmpty();
++}
++
++void Windows::startWindowDrag(QObject *window) {
++    auto *target = qobject_cast<QQuickWindow *>(window);
++    if (!target || !target->startSystemMove() || !windowLayoutsAvailable())
++        return;
++
++    QProcess::startDetached("hyprctl", {"eval", QStringLiteral("o.silky_folio_begin_drag(%1)")
++        .arg(QCoreApplication::applicationPid())});
++}
++
++void Windows::controlWindow(QObject *window, const QString &action) {
++    auto *target = qobject_cast<QQuickWindow *>(window);
++    if (!target || !target->isActive())
++        return;
++
++    const bool minimize = action == "minimize";
++    const bool fullScreen = action == "fullscreen";
++    static const QStringList placements{
++        "left", "right", "top", "bottom", "top-left", "top-right", "bottom-left", "bottom-right"
++    };
++    const bool placement = placements.contains(action);
++    if ((!minimize && !fullScreen && !placement && action != "maximized")
++            || ((minimize || placement) && target->visibility() == QWindow::FullScreen))
++        return;
++
++    const QString hyprctl = qEnvironmentVariableIsEmpty("HYPRLAND_INSTANCE_SIGNATURE")
++        ? QString() : QStandardPaths::findExecutable("hyprctl");
++    if (hyprctl.isEmpty()) {
++        if (placement)
++            return;
++        if (minimize)
++            target->showMinimized();
++        else if (target->visibility() == (fullScreen ? QWindow::FullScreen : QWindow::Maximized))
++            target->showNormal();
++        else if (fullScreen)
++            target->showFullScreen();
++        else
++            target->showMaximized();
++        return;
++    }
++
++    // Hyprland handles placement itself. Use the compositor's address for
++    // the clicked, still-focused Folio window to avoid acting on another app.
++    auto *query = new QProcess(this);
++    connect(query, &QProcess::errorOccurred, query, &QObject::deleteLater);
++    connect(query, &QProcess::finished, query,
++            [query, target = QPointer<QQuickWindow>(target), hyprctl, action, minimize, fullScreen, placement](int code, QProcess::ExitStatus status) {
++        query->deleteLater();
++        if (code != 0 || status != QProcess::NormalExit || !target || !target->isActive())
++            return;
++        const auto client = QJsonDocument::fromJson(query->readAllStandardOutput()).object();
++        const auto address = client.value("address").toString();
++        static const QRegularExpression validAddress(QStringLiteral("^0x[0-9a-fA-F]+$"));
++        if (client.value("pid").toInteger() != QCoreApplication::applicationPid()
++                || client.value("class").toString() != QStringLiteral("folio")
++                || !validAddress.match(address).hasMatch())
++            return;
++
++        if ((minimize || placement) && client.value("fullscreen").toInt() >= 2)
++            return;
++
++        if (placement) {
++            QProcess::startDetached(hyprctl, {"eval",
++                QStringLiteral("o.silky_folio_place(\"%1\", \"%2\")").arg(address, action)});
++        } else if (minimize) {
++            auto *request = new QProcess(query->parent());
++            // Leave recovery to the regular Omarchy Dock when MacShell is absent.
++            const auto fallback = [address] {
++                QProcess::startDetached("omarchy-hyprland-window-minimize", {address});
++            };
++            connect(request, &QProcess::errorOccurred, request, [request, fallback](QProcess::ProcessError error) {
++                if (error != QProcess::FailedToStart)
++                    return;
++                fallback();
++                request->deleteLater();
++            });
++            connect(request, &QProcess::finished, request, [request, fallback](int exitCode, QProcess::ExitStatus exitStatus) {
++                if (exitCode != 0 || exitStatus != QProcess::NormalExit || request->readAllStandardOutput().trimmed() != "true")
++                    fallback();
++                request->deleteLater();
++            });
++            auto submitted = std::make_shared<bool>(false);
++            const auto send = [request, address, target, submitted](const QImage &image = {}) {
++                if (std::exchange(*submitted, true))
++                    return;
++                if (!target || !target->isActive()) {
++                    request->deleteLater();
++                    return;
++                }
++                const QString snapshot = snapshotForDock(target, image);
++                QStringList args{"-c", "MacShell", "ipc", "call", "window"};
++                if (snapshot.isEmpty())
++                    args << "minimizeFolio" << address;
++                else
++                    args << "minimizeFolioSnapshot" << address << snapshot;
++                request->start("qs", args);
++                QTimer::singleShot(1000, request, [request] {
++                    if (request->state() != QProcess::NotRunning)
++                        request->kill();
++                });
++            };
++
++            // Capture a bounded frame asynchronously, without grabbing an
++            // entire high-DPI window on the GUI thread.
++            QSize captureSize = target->size();
++            const qreal scale = target->effectiveDevicePixelRatio();
++            const QSize limit(qRound(1152 / scale), qRound(768 / scale));
++            if (captureSize.width() > limit.width() || captureSize.height() > limit.height())
++                captureSize.scale(limit, Qt::KeepAspectRatio);
++            const auto capture = target->contentItem()->grabToImage(captureSize);
++            if (capture) {
++                connect(capture.data(), &QQuickItemGrabResult::ready, request, [capture, send, submitted] {
++                    if (!*submitted)
++                        send(capture->image());
++                });
++                QTimer::singleShot(220, request, [send] { send(); });
++            } else {
++                send();
++            }
++        } else {
++            QProcess::startDetached(hyprctl, {"dispatch",
++                QStringLiteral("hl.dsp.window.fullscreen({ mode = \"%1\", action = \"toggle\", window = \"address:%2\" })")
++                    .arg(fullScreen ? QStringLiteral("fullscreen") : QStringLiteral("maximized"), address)});
++        }
++    });
++    query->start(hyprctl, {"activewindow", "-j"});
++    QTimer::singleShot(500, query, [query] { if (query->state() != QProcess::NotRunning) query->kill(); });
++}
+diff --git c/src/windows.h w/src/windows.h
+index 122aedd..5179c68 100644
+--- c/src/windows.h
++++ w/src/windows.h
+@@ -34,6 +34,9 @@ public:
+     // put on the right.
+     Q_INVOKABLE QObject *openSplit(QObject *window, const QString &folder);
+     Q_INVOKABLE void closeSplit(QObject *window);
++    Q_INVOKABLE bool windowLayoutsAvailable() const;
++    Q_INVOKABLE void startWindowDrag(QObject *window);
++    Q_INVOKABLE void controlWindow(QObject *window, const QString &action);
+ 
+ private:
+     struct Pane {
+diff --git c/tests/folio_tests.cpp w/tests/folio_tests.cpp
+index 3f60636..0a1eb67 100644
+--- c/tests/folio_tests.cpp
++++ w/tests/folio_tests.cpp
+@@ -766,7 +766,17 @@ private slots:
+                 width: 1200; height: 480; visible: true
+                 property alias cursor: folderView.currentIndex
+                 readonly property string selected: folderView.selected.name || ""
+-                FolderColumns { id: folderView; anchors.fill: parent; Component.onCompleted: focusView() }
++                property int menus: 0
++                property string menuPath
++                FolderColumns {
++                    id: folderView
++                    anchors.fill: parent
++                    Component.onCompleted: focusView()
++                    onContextMenu: (item, folder, position) => {
++                        menuPath = item ? item.path : folder
++                        ++menus
++                    }
++                }
+             }
+         )", QUrl::fromLocalFile(sourceFolder() + "/ColumnsClickTest.qml"));
+         std::unique_ptr<QObject> root(component.create());
+@@ -781,6 +791,286 @@ private slots:
+         QTest::mouseClick(window, Qt::LeftButton, {}, QPoint(2 * 261 + 80, 20));
+         QTRY_COMPARE(backend.path(), home.filePath("Documents/Racing"));
+         QTRY_COMPARE(root->property("selected").toString(), QString("2025"));
++
++        const QPoint parent(80, 20), current(261 + 80, 20), preview(2 * 261 + 80, 20);
++        const QPoint second = preview + QPoint(70, 2);
++        const auto menus = [&] { return root->property("menus").toInt(); };
++        const auto menuPath = [&] { return root->property("menuPath").toString(); };
++        const auto documents = home.filePath("Documents");
++        auto *screen = QTest::createTouchDevice(QInputDevice::DeviceType::TouchScreen);
++
++        backend.navigate(documents);
++        QTRY_COMPARE(root->property("selected").toString(), QString("Racing"));
++        QTest::qWait(100);
++        QTest::touchEvent(window, screen).press(0, preview, window);
++        QTest::touchEvent(window, screen).release(0, preview, window);
++        QTRY_COMPARE(backend.path(), home.filePath("Documents/Racing"));
++        QCOMPARE(menus(), 0);
++
++        backend.navigate(documents);
++        QTRY_COMPARE(root->property("selected").toString(), QString("Racing"));
++        QTest::qWait(100);
++        QTest::touchEvent(window, screen).press(0, preview, window);
++        QTRY_COMPARE_WITH_TIMEOUT(menus(), 1, 1500);
++        QCOMPARE(menuPath(), home.filePath("Documents/Racing/2025"));
++        QTest::touchEvent(window, screen).release(0, preview, window);
++        QCOMPARE(backend.path(), documents);
++        QCOMPARE(menus(), 1);
++
++        auto touch = QTest::touchEvent(window, screen, false);
++        touch.press(0, preview, window).commit();
++        touch.stationary(0).press(1, second, window).commit();
++        touch.release(0, preview, window).stationary(1).commit();
++        QCOMPARE(menus(), 1);
++        touch.release(1, second, window).commit();
++        QTRY_COMPARE(menus(), 2);
++        QCOMPARE(menuPath(), home.filePath("Documents/Racing/2025"));
++        QCOMPARE(backend.path(), documents);
++
++        touch.press(0, preview, window).press(1, second, window).commit();
++        const auto moved = second + QPoint(0, 44);
++        touch.stationary(0).move(1, moved, window).commit();
++        touch.release(0, preview, window).release(1, moved, window).commit();
++        QCOMPARE(menus(), 2);
++
++        QTest::mouseClick(window, Qt::RightButton, {}, current);
++        QTRY_COMPARE(menus(), 3);
++        QCOMPARE(menuPath(), home.filePath("Documents/Racing"));
++        QTest::touchEvent(window, screen).press(0, parent, window);
++        QTest::touchEvent(window, screen).release(0, parent, window);
++        QCOMPARE(menus(), 3);
++        QCOMPARE(backend.path(), documents);
++    }
++
++    void pathBarDistinguishesTouchTapAndDrag()
++    {
++        QTemporaryDir home;
++        Backend backend(home.path());
++        Theme theme(home.filePath("theme"));
++        FileOps fileOps;
++        Translator translator(home.filePath("language"), home.path());
++        QQmlEngine engine;
++        engine.rootContext()->setContextProperty("backend", &backend);
++        engine.rootContext()->setContextProperty("theme", &theme);
++        engine.rootContext()->setContextProperty("fileOps", &fileOps);
++        engine.rootContext()->setContextProperty("translator", &translator);
++        QQmlComponent component(&engine);
++        component.setData(R"(
++            import QtQuick
++            Window {
++                id: fixture
++                width: 720; height: 240; visible: true
++                property bool chooser: false
++                property int dragRequests: 0
++                property alias editing: path.editing
++                property QtObject windows: QtObject {
++                    function startWindowDrag(target) {
++                        if (target === fixture)
++                            ++fixture.dragRequests
++                    }
++                }
++                PathBar { id: path; width: parent.width; height: 44 }
++            }
++        )", QUrl::fromLocalFile(sourceFolder() + "/PathBarTouchTest.qml"));
++        std::unique_ptr<QObject> root(component.create());
++        QVERIFY2(root, qPrintable(component.errorString()));
++        auto *window = qobject_cast<QQuickWindow *>(root.get());
++        QVERIFY(QTest::qWaitForWindowExposed(window));
++        auto *screen = QTest::createTouchDevice(QInputDevice::DeviceType::TouchScreen);
++        const QPoint start(200, 22), end(265, 26);
++        auto touch = QTest::touchEvent(window, screen, false);
++
++        touch.press(0, start, window).commit();
++        touch.release(0, start, window).commit();
++        QTRY_VERIFY(root->property("editing").toBool());
++        QCOMPARE(root->property("dragRequests").toInt(), 0);
++        QTest::keyClick(window, Qt::Key_Escape);
++        QTRY_VERIFY(!root->property("editing").toBool());
++
++        touch.press(0, start, window).commit();
++        touch.move(0, end, window).commit();
++        QTRY_COMPARE(root->property("dragRequests").toInt(), 1);
++        touch.release(0, end, window).commit();
++        QVERIFY(!root->property("editing").toBool());
++
++        QTest::mouseClick(window, Qt::LeftButton, {}, start);
++        QTRY_VERIFY(root->property("editing").toBool());
++    }
++
++    void touchEmptyColumnCancelsPathEditing()
++    {
++        QTemporaryDir home, plugins;
++        const auto folder = home.filePath("Downloads");
++        QVERIFY(QDir(home.path()).mkdir("Downloads"));
++        for (int i = 0; i < 30; ++i)
++            QVERIFY(QDir(folder).mkdir(QString("folder-%1").arg(i)));
++        Backend backend(home.path());
++        backend.navigate(folder);
++        QTRY_COMPARE(backend.folder()->count(), 30);
++        Theme theme(home.filePath("theme"));
++        Places places(home.path());
++        FileOps fileOps;
++        Plugins bundled("en", {plugins.path()}, home.filePath("folio.conf"));
++        Translator translator(home.filePath("language"), home.path());
++        qmlRegisterType<FolderModel>("Folio", 1, 0, "FolderModel");
++        QQmlEngine engine;
++        engine.rootContext()->setContextProperty("backend", &backend);
++        engine.rootContext()->setContextProperty("chooser", static_cast<QObject *>(nullptr));
++        engine.rootContext()->setContextProperty("theme", &theme);
++        engine.rootContext()->setContextProperty("fileOps", &fileOps);
++        engine.rootContext()->setContextProperty("plugins", &bundled);
++        engine.rootContext()->setContextProperty("translator", &translator);
++        engine.rootContext()->setContextProperty("places", &places);
++        QQmlComponent component(&engine);
++        component.setData(R"(
++            import QtQuick
++            import QtQuick.Controls
++            ApplicationWindow {
++                width: 900; height: 550; visible: true
++                property string viewMode: "columns"
++                property real zoom: 1
++                property int toolbarHeight: 44
++                property bool split: false
++                property bool helpVisible: false
++                property var activePane: pane
++                readonly property bool editing: pane.editingPath
++                FolderPane { id: pane; anchors.fill: parent; focus: true }
++            }
++        )", QUrl::fromLocalFile(sourceFolder() + "/PathDismissTouchTest.qml"));
++        std::unique_ptr<QObject> root(component.create());
++        QVERIFY2(root, qPrintable(component.errorString()));
++        auto *window = qobject_cast<QQuickWindow *>(root.get());
++        window->requestActivate();
++        QVERIFY(QTest::qWaitForWindowActive(window));
++        auto *screen = QTest::createTouchDevice(QInputDevice::DeviceType::TouchScreen);
++        auto touch = QTest::touchEvent(window, screen, false);
++        const QPoint path(140, 22), emptyColumn(110, 440);
++
++        touch.press(0, path, window).commit();
++        touch.release(0, path, window).commit();
++        QTRY_VERIFY(root->property("editing").toBool());
++        QTest::keyClick(window, Qt::Key_X);
++        QQuickItem *fileView = nullptr;
++        for (auto *candidate : root->findChildren<QQuickItem *>()) {
++            if (candidate->property("contentY").isValid()
++                    && candidate->property("model").value<QObject *>() == backend.folder()) {
++                fileView = candidate;
++                break;
++            }
++        }
++        QVERIFY(fileView);
++        QTRY_VERIFY(fileView->property("contentHeight").toReal() > fileView->height());
++        const QPoint start = fileView->mapToScene(QPointF(85, 300)).toPoint();
++        const auto initialY = fileView->property("contentY").toReal();
++        touch.press(0, start, window).commit();
++        for (int offset : {25, 60, 105, 150}) {
++            QTest::qWait(20);
++            touch.move(0, start - QPoint(0, offset), window).commit();
++        }
++        QTRY_VERIFY_WITH_TIMEOUT(fileView->property("contentY").toReal() > initialY + 50, 500);
++        touch.release(0, start - QPoint(0, 150), window).commit();
++        QVERIFY(root->property("editing").toBool());
++
++        touch.press(0, emptyColumn, window).commit();
++        touch.release(0, emptyColumn, window).commit();
++        QTRY_VERIFY_WITH_TIMEOUT(!root->property("editing").toBool(), 500);
++        QCOMPARE(backend.path(), folder);
++
++        QTest::mouseClick(window, Qt::LeftButton, {}, path);
++        QTRY_VERIFY(root->property("editing").toBool());
++        QTest::mouseClick(window, Qt::LeftButton, {}, emptyColumn);
++        QTRY_VERIFY(!root->property("editing").toBool());
++    }
++
++    void columnPathBarShowsSelectedSubfolder()
++    {
++        QTemporaryDir home, plugins;
++        const auto day = home.filePath("Documents/Codex/2026-11-14");
++        const auto repo = day + "/repo";
++        QVERIFY(QDir(home.path()).mkpath("Documents/Codex/2026-11-14/repo/outputs"));
++        write(day + "/notes.txt", "hello");
++
++        Backend backend(home.path());
++        backend.navigate(day);
++        QTRY_COMPARE(backend.folder()->count(), 2);
++        Theme theme(home.filePath("theme"));
++        Places places(home.path());
++        FileOps fileOps;
++        Plugins bundled("en", {plugins.path()}, home.filePath("folio.conf"));
++        Translator translator(home.filePath("language"), home.path());
++        qmlRegisterType<FolderModel>("Folio", 1, 0, "FolderModel");
++        QQmlEngine engine;
++        engine.rootContext()->setContextProperty("backend", &backend);
++        engine.rootContext()->setContextProperty("chooser", static_cast<QObject *>(nullptr));
++        engine.rootContext()->setContextProperty("theme", &theme);
++        engine.rootContext()->setContextProperty("fileOps", &fileOps);
++        engine.rootContext()->setContextProperty("plugins", &bundled);
++        engine.rootContext()->setContextProperty("translator", &translator);
++        engine.rootContext()->setContextProperty("places", &places);
++        QQmlComponent component(&engine);
++        component.setData(R"(
++            import QtQuick
++            import QtQuick.Controls
++            ApplicationWindow {
++                width: 900; height: 550; visible: true
++                property string viewMode: "columns"
++                property real zoom: 1
++                property int toolbarHeight: 44
++                property bool split: false
++                property bool helpVisible: false
++                property var activePane: pane
++                readonly property string displayTitle: pane.displayTitle
++                FolderPane { id: pane; anchors.fill: parent; focus: true }
++            }
++        )", QUrl::fromLocalFile(sourceFolder() + "/ColumnPathBarTest.qml"));
++        std::unique_ptr<QObject> root(component.create());
++        QVERIFY2(root, qPrintable(component.errorString()));
++        auto *window = qobject_cast<QQuickWindow *>(root.get());
++        window->requestActivate();
++        QVERIFY(QTest::qWaitForWindowActive(window));
++
++        QQuickItem *pathBar = nullptr;
++        for (auto *candidate : root->findChildren<QQuickItem *>()) {
++            if (candidate->property("displayCrumbs").isValid()) {
++                pathBar = candidate;
++                break;
++            }
++        }
++        QVERIFY(pathBar);
++        const auto crumbNames = [&] {
++            QStringList names;
++            for (const QVariant &entry : pathBar->property("displayCrumbs").toList())
++                names << entry.toMap().value("name").toString();
++            return names;
++        };
++
++        // Selecting the subfolder in column view appends it to the path bar.
++        QTRY_COMPARE(pathBar->property("displayPath").toString(), repo);
++        QCOMPARE(crumbNames(), QStringList({"~", "Documents", "Codex", "2026-11-14", "repo"}));
++        QCOMPARE(root->property("displayTitle").toString(), QString("repo"));
++
++        QVERIFY(QMetaObject::invokeMethod(pathBar, "copyPath"));
++        QCOMPARE(QGuiApplication::clipboard()->text(), repo);
++
++        QVERIFY(QMetaObject::invokeMethod(pathBar, "editPath"));
++        QTRY_VERIFY(pathBar->property("editing").toBool());
++        QTRY_COMPARE(window->activeFocusItem()->property("text").toString(),
++                     QString("~/Documents/Codex/2026-11-14/repo/"));
++        QTest::keyClick(window, Qt::Key_Escape);
++        QTRY_VERIFY(!pathBar->property("editing").toBool());
++
++        // Moving the cursor onto a file keeps the bar on the containing folder.
++        QTest::keyClick(window, Qt::Key_Down);
++        QTRY_COMPARE(pathBar->property("displayPath").toString(), day);
++        QCOMPARE(crumbNames(), QStringList({"~", "Documents", "Codex", "2026-11-14"}));
++        QCOMPARE(root->property("displayTitle").toString(), QString("2026-11-14"));
++
++        // Moving back onto the subfolder restores it; switching to list view drops it.
++        QTest::keyClick(window, Qt::Key_Up);
++        QTRY_COMPARE(pathBar->property("displayPath").toString(), repo);
++        QTest::keyClick(window, Qt::Key_2, Qt::ControlModifier);
++        QTRY_COMPARE(pathBar->property("displayPath").toString(), day);
++        QCOMPARE(crumbNames(), QStringList({"~", "Documents", "Codex", "2026-11-14"}));
+     }
+ 
+     // The list's tree: a folder opened in place lists its items under it a
+@@ -6503,6 +6793,71 @@ private slots:
+         QVERIFY(!FolderModel::toMap(FolderModel::Entry()).contains("peek"));
+     }
+ 
++    void folderTouchScrolls_data()
++    {
++        folderKeyboardScrolls_data();
++    }
++
++    void folderTouchScrolls()
++    {
++        QFETCH(QString, viewType);
++        QTemporaryDir home;
++        const auto folder = home.filePath("files");
++        QVERIFY(QDir(home.path()).mkdir("files"));
++        for (int i = 0; i < 50; ++i)
++            QVERIFY(QDir(folder).mkdir(QString("folder-%1").arg(i, 2, 10, QLatin1Char('0'))));
++        Backend backend(home.path());
++        backend.navigate(folder);
++        QTRY_COMPARE(backend.folder()->rowCount(), 50);
++        Theme theme(home.filePath("theme"));
++        FileOps fileOps;
++        Translator translator(home.filePath("language"), home.path());
++        qmlRegisterType<FolderModel>("Folio", 1, 0, "FolderModel");
++        QQmlEngine engine;
++        engine.rootContext()->setContextProperty("backend", &backend);
++        engine.rootContext()->setContextProperty("theme", &theme);
++        engine.rootContext()->setContextProperty("fileOps", &fileOps);
++        engine.rootContext()->setContextProperty("translator", &translator);
++        engine.rootContext()->setContextProperty("plugins", QVariantMap{{"views", QVariantMap{}}});
++        QQmlComponent component(&engine);
++        component.setData(QString(R"(
++            import QtQuick
++            Window {
++                width: 780; height: 360; visible: true
++                %1 { anchors.fill: parent }
++            }
++        )").arg(viewType).toUtf8(), QUrl::fromLocalFile(sourceFolder() + "/FolderTouchTest.qml"));
++        std::unique_ptr<QObject> root(component.create());
++        QVERIFY2(root, qPrintable(component.errorString()));
++        auto *window = qobject_cast<QQuickWindow *>(root.get());
++        QVERIFY(QTest::qWaitForWindowExposed(window));
++
++        QQuickItem *fileView = nullptr;
++        for (auto *candidate : root->findChildren<QQuickItem *>()) {
++            if (candidate->property("contentY").isValid()
++                    && candidate->property("model").value<QObject *>() == backend.folder()) {
++                fileView = candidate;
++                break;
++            }
++        }
++        QVERIFY(fileView);
++        QTRY_VERIFY(fileView->property("contentHeight").toReal() > fileView->height());
++        QTest::qWait(100);
++        const QPoint start = fileView->mapToScene(QPointF(90, 300)).toPoint();
++        const auto initialY = fileView->property("contentY").toReal();
++        auto *screen = QTest::createTouchDevice(QInputDevice::DeviceType::TouchScreen);
++        auto touch = QTest::touchEvent(window, screen, false);
++        touch.press(0, start, window).commit();
++        for (int offset : {25, 60, 100, 145, 190, 235}) {
++            QTest::qWait(20);
++            touch.move(0, start - QPoint(0, offset), window).commit();
++        }
++        const auto draggedY = fileView->property("contentY").toReal();
++        touch.release(0, start - QPoint(0, 235), window).commit();
++        QVERIFY2(draggedY > initialY + 50, qPrintable(QString("%1 to %2").arg(initialY).arg(draggedY)));
++        QCOMPARE(backend.folder()->selectedCount(), 0);
++    }
++
+     void folderKeyboardScrolls_data()
+     {
+         QTest::addColumn<QString>("viewType");

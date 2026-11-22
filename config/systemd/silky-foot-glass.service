@@ -1,5 +1,5 @@
 [Unit]
-Description=Match Foot's frosted glass palette to the desktop appearance
+Description=Match Foot's terminal palette to the desktop appearance
 PartOf=graphical-session.target
 
 [Service]

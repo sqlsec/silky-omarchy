@@ -51,7 +51,17 @@ make -C "$plugin_dir"
 
 mkdir -p "$lib_dir"
 target="$lib_dir/silky-gestures-$headers_version.so"
+backup_if_changed() {
+  local source=$1 destination=$2
+  if [[ -f $destination ]] && ! cmp -s "$source" "$destination"; then
+    local backup="$destination.bak.$(date +%Y%m%d-%H%M%S-%N)"
+    cp -a -- "$destination" "$backup"
+    printf 'Backed up %s to %s\n' "$destination" "$backup"
+  fi
+}
+
 # A loaded plugin stays mapped: replace the file instead of writing into it.
+backup_if_changed "$plugin_dir/silky-gestures.so" "$target"
 install -m 755 "$plugin_dir/silky-gestures.so" "$target.new"
 mv -f "$target.new" "$target"
 find "$lib_dir" -maxdepth 1 -name 'silky-gestures-*.so' ! -name "silky-gestures-$headers_version.so" -delete
@@ -59,6 +69,7 @@ printf 'Installed %s\n' "$target"
 
 $build_only && exit 0
 
+backup_if_changed "$repo_root/config/hypr/silky-gestures.lua" "$hypr_dir/silky-gestures.lua"
 install -m 644 "$repo_root/config/hypr/silky-gestures.lua" "$hypr_dir/silky-gestures.lua"
 if ! grep -q 'require("hypr.silky-gestures")' "$hypr_dir/hyprland.lua"; then
   cp -a "$hypr_dir/hyprland.lua" "$hypr_dir/hyprland.lua.bak.$(date +%Y%m%d-%H%M%S)"

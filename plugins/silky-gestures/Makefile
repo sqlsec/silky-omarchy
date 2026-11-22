@@ -4,7 +4,7 @@ PKGS     := hyprland pixman-1 libdrm pangocairo libinput libudev wayland-server 
 CXXFLAGS ?= -O2
 CXXFLAGS += -shared -fPIC --no-gnu-unique -std=c++26 -Wall -Wno-deprecated-declarations
 
-silky-gestures.so: main.cpp
+silky-gestures.so: main.cpp foot-layout.hpp titlebar-marks.hpp
 	$(CXX) $(CXXFLAGS) $$(pkg-config --cflags $(PKGS)) $< -o $@
 
 clean:

@@ -117,6 +117,8 @@ Hyprland 0.57 只接受带鼠标按键序列号的 `xdg_toplevel.move` / `resize
 
 **所有触摸都立即交给应用**，和没有插件时完全一样；只有当它确定是窗口操作（标题区或边缘拖过阈值、或按住不动 0.4 秒）时，才给应用发一个标准的触摸取消（`wl_touch.cancel`），然后接管去移动或缩放窗口。所以轻点、滚动、按下高亮都和原来一样，没有延迟。按下后又加一根手指（比如双指缩放）时，插件不再关注这次触摸。
 
+Folio 的文件区由应用处理触摸。触屏滑动可以滚动，长按可以打开文件菜单。拖动 Folio 顶部仍可移动窗口。见 [Folio 的 Finder 外观](04-macos-theme.md#folio-的-finder-外观)。
+
 > 早期版本是先把按下事件扣住、松手时再补发给应用。补发的“按下”和真正的“抬起”落在同一个 `wl_touch.frame` 里，Chromium / Electron 应用（Claude、Chrome、VS Code）会直接丢掉这种点击，表现为窗口里很多地方点了没反应。现在不再扣留；屏幕边缘的工作区滑动仍需要扣留，它补发按下后会立即发送一个 frame，与抬起分开。
 
 移动和缩放走的是 Hyprland 鼠标拖动的同一条路径（`g_layoutManager->beginDragTarget` → `moveMouse` → `endDragTarget`），吸附等行为与鼠标一致。开始拖动前会把指针移到手指位置，因为布局从指针位置读取拖动起点。
