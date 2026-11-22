@@ -72,8 +72,10 @@ Upstream Omalogi is a full-screen Omarchy shell overlay (`Overlay` layer): it st
 - `bin/silky-omalogi` focuses the window if it is open (switching to its workspace), else starts `qs -n -d -p …`. Hyprland uses Lua config, so `hyprctl dispatch` takes a Lua expression: `hl.dsp.focus({ window = "class:^(io\\.github\\.elberacasa\\.omalogi)$" })`; the old `focuswindow class:…` errors
 - the entry is renamed `io.github.elberacasa.omalogi.desktop` with `StartupWMClass`, and the icon gets a same-named link, so the Dock matches the running window to 罗技鼠标
 - `config/hypr/silky-omalogi.lua`: centred floating 1280×700, so its bottom edge stays above the Dock (the Dock auto-hides when a window covers its area; the first 1360×860 pushed it away), and a width of 1280 leaves room for the device diagram and its labels. Omarchy's floating-workspace mode shrinks new windows to 1100×760 unless the app has its own float rule; the window size is plain logical pixels, not `Style.space()` (spacing scale ≈0.83 here would shrink it and fight the rule). Super+T still tiles it
-- the card stays at least 85% opaque (`Math.max(menu.background.a, 0.85)`): [11 · Menu glass](11-menu-glass.md) sets the `menu` colours to 55%, too thin under an editor full of small text; Hyprland blurs the window
+- The editor uses a solid background in the active theme’s color. Hyprland draws the shared frosted title bar on floating workspaces.
 - the bar indicator (in the Omarchy shell) still opens the in-shell window; this setup uses the MacShell bar, so use the launcher entry
+
+The [shared window controls](04-macos-theme.md#system-app-audit) check Omalogi’s 960×600 minimum. On a 1472×920 display, every half-screen and corner option is disabled. An isolated Wayland session verified the green button’s press-and-hold menu and full-screen toggle. Run `./scripts/install-omalogi.sh` to update the style, then reopen Omalogi. For a style-only rollback, restore the previous `plugin/Omalogi.qml` under `~/.config/omarchy/plugins/io.github.elberacasa.omalogi/` and reopen the app.
 
 ## Wired + wireless mice
 
@@ -144,7 +146,7 @@ After changing the patch, run `cargo test --release` in the source dir (all pass
 | The entry showed a gear on orange | MacShell's fallback icon: Qt caches "no `omalogi` icon" until the process restarts | Absolute `Icon=` path; delete and recreate the entry |
 | The first, dark icon was lost on the dark panel | Dark tile, small mouse | Bright blue gradient tile, mouse enlarged to 96% |
 | "允许访问" opened a terminal that failed with exit code 1 | No udev rule yet; the plugin's `install.sh` exited on ARM | On ARM it hands over to `install-omalogi.sh`; type the sudo password there |
-| Overlay too see-through to read | Menu glass sets `menu` to 55% and the overlay layer had no blur rule | Card at least 85% opaque (later a window, blurred by Hyprland) |
+| Overlay too see-through to read | Menu glass sets `menu` to 55% and the overlay layer had no blur rule | Solid editor background with glass restricted to the title bar |
 | Stayed on top across workspaces, no window modes | Upstream is a full-screen `Overlay` layer | `FloatingWindow` |
 | Wouldn't open after a plugin change, no errors logged | The Omarchy shell kept the old plugin | `omarchy-restart-shell` |
 | Menu bar said MacShell, no Dock icon | A window inside the Omarchy shell has class `org.quickshell` | Own Quickshell process + `//@ pragma AppId` |

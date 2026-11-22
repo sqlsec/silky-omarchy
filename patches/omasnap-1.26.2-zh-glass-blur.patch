@@ -1,0 +1,182 @@
+diff --git a/src/capture.cpp b/src/capture.cpp
+--- a/src/capture.cpp
++++ b/src/capture.cpp
+@@ -1009,50 +1009,125 @@
+   return texture;
+ }
+ 
+-QImage sampleRedaction(const QImage &image, const QRect &region,
+-                       RedactionStyle style, int level, qreal scaleX,
+-                       qreal scaleY) {
+-  constexpr std::array mosaicCellSizes{6, 14, 28};
+-  constexpr std::array blurSampleSpacing{5, 12, 24};
+-  const auto &steps = style == RedactionStyle::Blur ? blurSampleSpacing
+-                                                    : mosaicCellSizes;
+-  const auto spacing = steps.at(static_cast<std::size_t>(
+-      std::clamp(level, kMinimumRedactionLevel, kMaximumRedactionLevel) - 1));
++QImage sampleMosaic(const QImage &image, const QRect &region, int level,
++                    qreal scaleX, qreal scaleY) {
++  constexpr std::array cellSizes{6, 14, 28};
++  const auto spacing = cellSizes.at(static_cast<std::size_t>(level - 1));
+   const auto sampleCount = [spacing](int pixels, qreal scale) {
+-    // Always reduce detail even in a tiny region. Bound the thumbnail in a
+-    // zoomed preview or a very long scroll capture.
+     return std::clamp(qCeil(pixels / std::max(2.0, spacing * scale)), 1, 512);
+   };
+   const QSize size(sampleCount(region.width(), scaleX),
+                    sampleCount(region.height(), scaleY));
+-  QImage samples = image.copy(region).scaled(size, Qt::IgnoreAspectRatio,
+-                                              Qt::SmoothTransformation)
+-                       .convertToFormat(QImage::Format_RGB32);
+-  if (style != RedactionStyle::Blur)
+-    return samples;
+-
+-  // Binomial filtering softens the remaining cell transitions before
+-  // bilinear interpolation spreads the colors back over the region.
+-  for (const bool horizontal : {true, false}) {
+-    QImage blurred(size, QImage::Format_RGB32);
+-    for (int y = 0; y < size.height(); ++y) {
+-      auto *output = reinterpret_cast<QRgb *>(blurred.scanLine(y));
+-      for (int x = 0; x < size.width(); ++x) {
+-        const QRgb center = samples.pixel(x, y);
+-        const QRgb before = horizontal
+-            ? samples.pixel(std::max(0, x - 1), y)
+-            : samples.pixel(x, std::max(0, y - 1));
+-        const QRgb after = horizontal
+-            ? samples.pixel(std::min(size.width() - 1, x + 1), y)
+-            : samples.pixel(x, std::min(size.height() - 1, y + 1));
+-        output[x] = qRgb((qRed(before) + 2 * qRed(center) + qRed(after)) / 4,
+-                         (qGreen(before) + 2 * qGreen(center) + qGreen(after)) / 4,
+-                         (qBlue(before) + 2 * qBlue(center) + qBlue(after)) / 4);
+-      }
+-    }
+-    samples = std::move(blurred);
+-  }
+-  return samples;
++  return image.copy(region).scaled(size, Qt::IgnoreAspectRatio,
++                                  Qt::SmoothTransformation)
++      .convertToFormat(QImage::Format_RGB32);
++}
++
++void glassBlurPass(const QImage &input, QImage &output, int radius,
++                   bool horizontal) {
++  const int length = horizontal ? input.width() : input.height();
++  const int count = horizontal ? input.height() : input.width();
++  const qsizetype pitch = input.bytesPerLine() / sizeof(QRgb);
++  const qsizetype step = horizontal ? 1 : pitch;
++  const qsizetype stride = horizontal ? pitch : 1;
++  const auto *src = reinterpret_cast<const QRgb *>(input.constBits());
++  auto *dst = reinterpret_cast<QRgb *>(output.bits());
++  const int diameter = 2 * radius + 1;
++  // Fixed-point reciprocal keeps division out of the pixel loop.
++  constexpr int reciprocalScale = 1 << 20;
++  const int multiplier = (reciprocalScale + diameter / 2) / diameter;
++  const auto average = [multiplier](int sum) {
++    return (sum * multiplier + reciprocalScale / 2) / reciprocalScale;
++  };
++
++  // Reflect only pixels inside the selection. Samples beyond either edge
++  // share the same kernel as the interior without repeating the border row.
++  const auto reflect = [length](int position) {
++    if (length == 1)
++      return 0;
++    const int period = 2 * (length - 1);
++    const int offset = std::abs(position) % period;
++    return std::min(offset, period - offset);
++  };
++  QVector<qsizetype> indices(length + 2 * radius);
++  for (int i = 0; i < indices.size(); ++i)
++    indices[i] = reflect(i - radius) * step;
++  const auto *offsets = indices.constData();
++
++  for (int line = 0; line < count; ++line) {
++    const auto *sourceLine = src + line * stride;
++    auto *targetLine = dst + line * stride;
++    int red = 0;
++    int green = 0;
++    int blue = 0;
++    for (int i = 0; i < diameter; ++i) {
++      const QRgb pixel = sourceLine[offsets[i]];
++      red += qRed(pixel);
++      green += qGreen(pixel);
++      blue += qBlue(pixel);
++    }
++    for (int i = 0; i < length; ++i) {
++      targetLine[i * step] = qRgb(average(red), average(green), average(blue));
++      if (i + 1 == length)
++        break;
++      const QRgb leaving = sourceLine[offsets[i]];
++      const QRgb entering = sourceLine[offsets[i + diameter]];
++      red += qRed(entering) - qRed(leaving);
++      green += qGreen(entering) - qGreen(leaving);
++      blue += qBlue(entering) - qBlue(leaving);
++    }
++  }
++}
++
++QImage sampleFrostedBlur(const QImage &image, const QRect &region, int level,
++                         qreal scaleX, qreal scaleY) {
++  constexpr std::array deviations{8.0, 17.0, 31.0};
++  const qreal sigma = deviations.at(static_cast<std::size_t>(level - 1));
++  const qreal logicalWidth = region.width() / scaleX;
++  const qreal logicalHeight = region.height() / scaleY;
++  // Keep several samples per standard deviation and bound the working set
++  // during a drag, including fullscreen selections and long scroll captures.
++  constexpr qreal pixelBudget = 180000.0;
++  const qreal spacing = std::max(
++      {1.0, sigma / 7.0, std::sqrt(logicalWidth * logicalHeight / pixelBudget),
++       logicalWidth / 1280.0, logicalHeight / 1280.0});
++  const QSize size(std::clamp(qRound(logicalWidth / spacing), 1, region.width()),
++                   std::clamp(qRound(logicalHeight / spacing), 1, region.height()));
++  QImage field = image.copy(region).scaled(size, Qt::IgnoreAspectRatio,
++                                          Qt::SmoothTransformation)
++                     .convertToFormat(QImage::Format_RGB32);
++  QImage scratch(size, QImage::Format_RGB32);
++  if (field.isNull() || scratch.isNull())
++    return {};
++
++  // Three box convolutions approximate a Gaussian. A box has variance
++  // radius * (radius + 1) / 3, so three passes give the desired variance.
++  const auto boxRadius = [sigma](qreal pixelsPerLogicalPixel) {
++    const qreal deviation = sigma * pixelsPerLogicalPixel;
++    return qRound(std::sqrt(deviation * deviation + 0.25) - 0.5);
++  };
++  const int radiusX = boxRadius(size.width() / logicalWidth);
++  const int radiusY = boxRadius(size.height() / logicalHeight);
++  for (int pass = 0; pass < 3; ++pass) {
++    glassBlurPass(field, scratch, radiusX, true);
++    glassBlurPass(scratch, field, radiusY, false);
++  }
++
++  // An even veil softens saturation and lifts shadows across the filtered
++  // image. The alpha stays opaque when the result replaces the source pixels.
++  for (int y = 0; y < size.height(); ++y) {
++    auto *row = reinterpret_cast<QRgb *>(field.scanLine(y));
++    for (int x = 0; x < size.width(); ++x) {
++      const QRgb pixel = row[x];
++      const int luma = (54 * qRed(pixel) + 183 * qGreen(pixel) +
++                        19 * qBlue(pixel) + 128) / 256;
++      const int veil = 21 * luma + 10 * 255 + 100;
++      row[x] = qRgb((169 * qRed(pixel) + veil) / 200,
++                    (169 * qGreen(pixel) + veil) / 200,
++                    (169 * qBlue(pixel) + veil) / 200);
++    }
++  }
++  return field;
+ }
+ 
+ void applyRedactions(QImage &image, const QVector<Annotation> &annotations,
+@@ -1068,8 +1143,11 @@
+     QVector<QColor> palette;
+     QImage samples;
+     if (hasRedactionLevels(annotation.redactionStyle)) {
+-      samples = sampleRedaction(image, region, annotation.redactionStyle,
+-                                annotation.redactionLevel, scaleX, scaleY);
++      const int level = std::clamp(annotation.redactionLevel,
++                                   kMinimumRedactionLevel, kMaximumRedactionLevel);
++      samples = annotation.redactionStyle == RedactionStyle::Blur
++                    ? sampleFrostedBlur(image, region, level, scaleX, scaleY)
++                    : sampleMosaic(image, region, level, scaleX, scaleY);
+     } else if (annotation.redactionStyle == RedactionStyle::Pixelate) {
+       palette = aggregateRedactionPalette(image, region);
+     }

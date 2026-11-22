@@ -48,7 +48,9 @@ Run what you need:
 python3 scripts/install-macshell-overview.py
 python3 scripts/install-macshell-widgets.py  # optional: Notification Center widgets (needs the menu bar system monitors)
 ./scripts/install-macos-theme.sh && omarchy theme set macos-tahoe-dark
-./scripts/install-foot-glass.sh   # Optional: Foot frosted glass follows light/dark appearance
+# Optional: Finder icon and traffic-light window buttons for Folio
+./scripts/install-folio-macos.sh
+./scripts/install-foot-glass.sh   # Optional: Foot Tahoe appearance follows light/dark mode
 ./scripts/install-remmina-mac.sh  # Optional: Remmina in Simplified Chinese with a macOS look
 ./scripts/install-wechat-touch-scroll.sh  # Optional: existing WeChat Wayland touch launcher
 ./scripts/install-voice-overlay.sh

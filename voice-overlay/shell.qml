@@ -2,7 +2,7 @@
 //
 // bridge.py sends WowType and vinput recording events here as JSON lines. While you speak,
 // three overlapping curves (blue, violet, pink) swell with your real input level; while WowType recognizes, they
-// settle into a soft shimmer; the result flashes in the pill and it folds away.
+// settle into a soft shimmer. Live text and the waveform share the pill.
 //
 //   qs -c SilkyVoice                     run it (Hyprland starts it at login, see config/hypr/silky-voice.lua)
 //   SILKY_VOICE_DEMO=1 qs -c SilkyVoice  show the pill with a fake voice, to tweak the look
@@ -24,6 +24,7 @@ ShellRoot {
 
     property int state: demo ? stListening : stHide
     property string label: ""
+    property string draft: demo ? "我们来试试这段实时转写。" : ""
     property real voiceTarget: 0      // 0..1 from WowType's level
     property real voice: 0            // smoothed
     property real time: 0
@@ -52,7 +53,8 @@ ShellRoot {
         }
         root.state = m.s;
         root.ambientPulse = m.pulse === true;
-        root.label = (m.t && m.t.length) ? m.t : defaultLabel(m.s);
+        root.label = m.t || "";
+        root.draft = m.draft || "";
         root.voiceTarget = m.s === stListening ? levelToVoice(m.l || 0) : 0;
         root.shown = true;
         if (m.s === stDone || m.s === stError) doneTimer.restart();
@@ -111,7 +113,7 @@ ShellRoot {
         WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
         // sits above the Dock
         margins.bottom: 104
-        implicitWidth: 520
+        implicitWidth: Math.min(392, screen ? screen.width : 392)
         implicitHeight: 84
         color: "transparent"
         mask: Region {}           // never takes a click
@@ -122,89 +124,120 @@ ShellRoot {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.verticalCenter: parent.verticalCenter
             height: 52
-            width: Math.min(parent.width - 24, 26 + badge.width + 12 + wave.width + 14 + labelText.implicitWidth + 24)
-            Behavior on width { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+            width: parent.width - 24
 
             opacity: root.shown ? 1 : 0
             scale: root.shown ? 1 : 0.96
             Behavior on opacity { NumberAnimation { duration: root.shown ? 180 : 120; easing.type: Easing.OutCubic } }
             Behavior on scale { NumberAnimation { duration: root.shown ? 180 : 120; easing.type: Easing.OutCubic } }
 
-            // glass body: Hyprland blurs what is behind (layer rule "silky-voice"), this tints it
             Rectangle {
                 anchors.fill: parent
                 radius: height / 2
-                color: Qt.rgba(0.11, 0.11, 0.13, 0.62)
-                border.width: 1
-                border.color: Qt.rgba(1, 1, 1, 0.14)
-            }
-            // top sheen
-            Rectangle {
-                anchors { left: parent.left; right: parent.right; top: parent.top; margins: 1 }
-                height: parent.height / 2
-                radius: height
                 gradient: Gradient {
-                    GradientStop { position: 0; color: Qt.rgba(1, 1, 1, 0.10) }
-                    GradientStop { position: 1; color: Qt.rgba(1, 1, 1, 0.0) }
+                    GradientStop { position: 0; color: "#eb272830" }
+                    GradientStop { position: 1; color: "#ed15161c" }
+                }
+                border.width: 1
+                border.color: "#32ffffff"
+            }
+
+            Item {
+                id: badge
+                anchors.left: parent.left
+                anchors.leftMargin: 12
+                anchors.verticalCenter: parent.verticalCenter
+                width: 30
+                height: 30
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 30; height: 30; radius: 15
+                    scale: 1 + 0.26 * root.voice
+                    opacity: root.state === root.stListening ? 0.24 : 0
+                    color: "#5e5ce6"
+                    Behavior on opacity { NumberAnimation { duration: 200 } }
+                }
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 15
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0; color: root.state === root.stError ? "#ff453a" : "#497bf4" }
+                        GradientStop { position: 1; color: root.state === root.stError ? "#ff6961" : "#9a5de2" }
+                    }
+                }
+                Canvas {
+                    anchors.fill: parent
+                    Component.onCompleted: requestPaint()
+                    onPaint: {
+                        var c = getContext("2d");
+                        c.reset();
+                        c.strokeStyle = "white"; c.fillStyle = "white";
+                        c.lineWidth = 1.6; c.lineCap = "round";
+                        var cx = width / 2;
+                        // capsule
+                        c.beginPath();
+                        c.moveTo(cx - 3.2, 9.5); c.lineTo(cx - 3.2, 15);
+                        c.arc(cx, 15, 3.2, Math.PI, 0, true);
+                        c.lineTo(cx + 3.2, 9.5);
+                        c.arc(cx, 9.5, 3.2, 0, Math.PI, true);
+                        c.fill();
+                        // cradle and stem
+                        c.beginPath(); c.arc(cx, 14.6, 6, 0.15 * Math.PI, 0.85 * Math.PI, false); c.stroke();
+                        c.beginPath(); c.moveTo(cx, 20.6); c.lineTo(cx, 23); c.stroke();
+                    }
                 }
             }
 
-            Row {
+            Item {
+                id: caption
+                anchors.left: badge.right
+                anchors.leftMargin: 12
+                anchors.right: parent.right
+                anchors.rightMargin: 16
                 anchors.verticalCenter: parent.verticalCenter
-                x: 13
-                spacing: 12
+                height: 38
 
-                // microphone badge with a halo that breathes with your voice
-                Item {
-                    id: badge
-                    width: 30; height: 30
-                    anchors.verticalCenter: parent.verticalCenter
-                    Rectangle {
-                        anchors.centerIn: parent
-                        width: 30; height: 30; radius: 15
-                        scale: 1 + 0.42 * root.voice
-                        opacity: root.state === root.stListening ? 0.32 : 0
-                        color: "#5e5ce6"
-                        Behavior on opacity { NumberAnimation { duration: 200 } }
-                    }
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: 15
-                        gradient: Gradient {
-                            orientation: Gradient.Horizontal
-                            GradientStop { position: 0; color: root.state === root.stError ? "#ff453a" : "#0a84ff" }
-                            GradientStop { position: 1; color: root.state === root.stError ? "#ff6961" : "#bf5af2" }
-                        }
-                    }
-                    Canvas {
-                        anchors.fill: parent
-                        Component.onCompleted: requestPaint()
-                        onPaint: {
-                            var c = getContext("2d");
-                            c.reset();
-                            c.strokeStyle = "white"; c.fillStyle = "white";
-                            c.lineWidth = 1.6; c.lineCap = "round";
-                            var cx = width / 2;
-                            // capsule
-                            c.beginPath();
-                            c.moveTo(cx - 3.2, 9.5); c.lineTo(cx - 3.2, 15);
-                            c.arc(cx, 15, 3.2, Math.PI, 0, true);
-                            c.lineTo(cx + 3.2, 9.5);
-                            c.arc(cx, 9.5, 3.2, 0, Math.PI, true);
-                            c.fill();
-                            // cradle and stem
-                            c.beginPath(); c.arc(cx, 14.6, 6, 0.15 * Math.PI, 0.85 * Math.PI, false); c.stroke();
-                            c.beginPath(); c.moveTo(cx, 20.6); c.lineTo(cx, 23); c.stroke();
-                        }
-                    }
+                readonly property bool active: root.state === root.stListening
+                                               || root.state === root.stRecognizing
+                readonly property bool hasDraft: active && root.draft.length > 0
+
+                Text {
+                    id: labelText
+                    anchors.left: parent.left
+                    anchors.right: stateMark.visible ? stateMark.left : parent.right
+                    anchors.rightMargin: stateMark.visible ? 10 : 0
+                    y: caption.active ? 2 : (parent.height - height) / 2
+                    textFormat: Text.PlainText
+                    text: caption.hasDraft ? root.draft : (root.label || root.defaultLabel(root.state))
+                    elide: caption.hasDraft ? Text.ElideLeft : Text.ElideRight
+                    color: root.state === root.stError ? "#ffaaa6"
+                         : caption.hasDraft || root.state === root.stDone ? "#f6f4fc" : "#c5c2d1"
+                    font.family: "Sarasa UI SC"
+                    font.pixelSize: caption.hasDraft ? 15 : 13
+                    font.weight: caption.hasDraft ? Font.Medium : Font.Normal
                 }
 
-                // the waveform
+                Rectangle {
+                    id: stateMark
+                    visible: caption.hasDraft
+                    anchors.right: parent.right
+                    anchors.verticalCenter: labelText.verticalCenter
+                    width: 5
+                    height: 5
+                    radius: width / 2
+                    color: root.state === root.stRecognizing ? "#d0b8ff" : "#8fa9ff"
+                }
+
                 Canvas {
                     id: wave
-                    width: 168; height: 40
-                    anchors.verticalCenter: parent.verticalCenter
-                    renderTarget: Canvas.FramebufferObject
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 1
+                    height: 14
+                    opacity: caption.active ? 1 : 0
+                    Behavior on opacity { NumberAnimation { duration: 130 } }
                     readonly property var layers: [
                         // colour, cycles across the width, speed, amplitude share, phase
                         { c: [90, 200, 250],  f: 1.6, v: 2.9, a: 1.00, p: 0.0 },
@@ -237,19 +270,19 @@ ShellRoot {
                             for (var j = 0; j < pts.length; j++) c.lineTo(j * 2, pts[j]);
                             c.lineTo(w, mid);
                             c.closePath();
-                            c.fillStyle = "rgba(" + rgb + ",0.20)";
+                            c.fillStyle = "rgba(" + rgb + ",0.14)";
                             c.fill();
                             // the curve itself, open, so no straight closing edge is drawn
                             c.beginPath();
                             c.moveTo(0, pts[0]);
                             for (var k = 1; k < pts.length; k++) c.lineTo(k * 2, pts[k]);
-                            c.lineWidth = 1.8;
+                            c.lineWidth = 1.25;
                             c.lineJoin = "round";
                             // fade the tapered ends out, where the three colours would otherwise add up to white
                             var g = c.createLinearGradient(0, 0, w, 0);
                             g.addColorStop(0.0, "rgba(" + rgb + ",0)");
-                            g.addColorStop(0.2, "rgba(" + rgb + ",0.95)");
-                            g.addColorStop(0.8, "rgba(" + rgb + ",0.95)");
+                            g.addColorStop(0.2, "rgba(" + rgb + ",0.72)");
+                            g.addColorStop(0.8, "rgba(" + rgb + ",0.72)");
                             g.addColorStop(1.0, "rgba(" + rgb + ",0)");
                             c.strokeStyle = g;
                             c.stroke();
@@ -257,19 +290,6 @@ ShellRoot {
                     }
                 }
 
-                Text {
-                    id: labelText
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: Math.min(implicitWidth, 260)
-                    textFormat: Text.PlainText
-                    text: root.label || root.defaultLabel(root.state)
-                    elide: Text.ElideRight
-                    color: root.state === root.stError ? "#ff6961"
-                         : root.state === root.stDone ? Qt.rgba(1, 1, 1, 0.95) : Qt.rgba(1, 1, 1, 0.72)
-                    font.family: "Open Runde, Inter, Noto Sans CJK SC, sans-serif"
-                    font.pixelSize: 14
-                    font.weight: root.state === root.stDone ? Font.DemiBold : Font.Medium
-                }
             }
         }
     }

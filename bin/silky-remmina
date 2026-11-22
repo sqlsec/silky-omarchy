@@ -13,6 +13,21 @@ if [ -f "$module_dir/modules/libsilky-remmina.so" ]; then
   export GTK_PATH GTK_MODULES
 fi
 
+# The HiDPI RDP plugin in ~/.config/remmina/plugins replaces the packaged one
+# and is built for one Remmina version. After a Remmina upgrade, set it aside
+# so the packaged plugin loads, and say how to rebuild it.
+plugins="${XDG_CONFIG_HOME:-$HOME/.config}/remmina/plugins"
+if [ -f "$plugins/.silky-hidpi" ] && [ -f "$plugins/remmina-plugin-rdp.so" ]; then
+  built=$(cut -d' ' -f1 "$plugins/.silky-hidpi")
+  have=$(pacman -Q remmina 2>/dev/null | awk '{print $2}' | sed -E 's/^[0-9]+://; s/-[0-9.]+$//')
+  if [ -n "$have" ] && [ "$have" != "$built" ]; then
+    mv -f "$plugins/remmina-plugin-rdp.so" "$plugins/remmina-plugin-rdp.so.disabled-$built"
+    rm -f "$plugins/.silky-hidpi"
+    command -v notify-send >/dev/null && notify-send "Remmina" \
+      "已升级到 $have，暂停 $built 的高分屏 RDP 插件。重新运行 scripts/install-remmina-mac.sh 以更新。" || true
+  fi
+fi
+
 unset LC_ALL
 LANGUAGE=zh_CN:en
 LC_MESSAGES=zh_CN.UTF-8

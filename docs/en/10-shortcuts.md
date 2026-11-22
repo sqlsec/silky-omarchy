@@ -60,11 +60,21 @@ Use `Super+Alt+T` to tile a window on its own. Silky moves the other windows to 
 
 Silky skips windows that have since been closed, moved to another workspace, pinned, or grouped with unrelated windows. It records the moves when you tile the window and clears that history when Hyprland reloads its configuration or restarts.
 
-### WeChat's image viewer always floats
+### WeChat's image viewer and chat-history window sizes
 
-Even with the main WeChat window floating, the `图片和视频` ("Images and Videos") window that opens when you click a picture or video was tiled next to other windows on a tiling workspace. [`config/hypr/silky-app-windows.lua`](../../config/hypr/silky-app-windows.lua) matches it by `class` `wechat` and title `图片和视频`, floats it and centres it as it opens, and leaves the size to WeChat. It is registered through `o.window` as an app that floats on its own, so floating-workspace layouts no longer resize it either. WeChat does not destroy the viewer when you close it; the next picture reuses the same window (same address, no `openwindow` event), so the open-time rule only reaches viewers created after it was loaded. The same file also hooks `config.reloaded`: every `hyprctl reload` floats and centres any viewer that is still tiled. `Super+T` still tiles it on demand.
+Even with the main WeChat window floating, the `图片和视频` ("Images and Videos") window that opens when you click a picture or video was tiled next to other windows on a tiling workspace — and WeChat's own size runs tall: a long phone screenshot opened 874 logical px high, straight into the menu bar (screen here: 1472×920 @ scale 2). The chat-history window (titled `"群名"的聊天记录(条数)`) opens oversized too, with large empty margins on both sides. [`config/hypr/silky-app-windows.lua`](../../config/hypr/silky-app-windows.lua) matches both by `class` `wechat`, floats them, centres them and pins a moderate default size as they open: 900×620 for the viewer, 820×720 for the chat history. Both are registered through `o.window` as apps that float on their own, so floating-workspace layouts no longer resize them either. `Super+T` still tiles them on demand, the windows stay freely resizable, and WeChat's in-viewer zoom is unaffected.
 
-The title comes from WeChat 4.1.13 with the Chinese UI (a native Wayland window, not XWayland). With the English UI, or if a later version renames the window, the rule will not match; look up the new title with the command below and adjust the pattern.
+WeChat does not destroy the viewer when you close it; the next picture reuses the same window (same address, no `openwindow` event), so the open-time rule only reaches viewers created after it was loaded. The same file also hooks `config.reloaded`: every `hyprctl reload` floats any of the two windows that is still tiled, shrinks it back to the default size if either dimension grew past it, and centres it. Windows within the default size are left alone, so manually shrunk sizes survive.
+
+The chat-history window's minimum height is WeChat's own: on 2026-11-20 (WeChat 4.1.13) programmatic resize requests for 600/640/660/700 all snapped back to 720, while growing works freely, so 820×720 is as small as this window gets — the win here is the narrower width and the smaller side margins.
+
+The titles come from WeChat 4.1.13 with the Chinese UI (a native Wayland window, not XWayland). With the English UI, or if a later version renames the windows, the rules will not match; look up the new titles with the command below and adjust the patterns.
+
+### Stop WeChat from stealing focus in the background
+
+On a floating workspace, WeChat (XWayland, `class` `wechat`) sends X11 `_NET_ACTIVE_WINDOW` requests on incoming messages or background state updates. Because Omarchy enables global `misc.focus_on_activate = true` in `/usr/share/omarchy/default/hypr/looknfeel.lua`, Hyprland focuses WeChat and raises it above every other floating window (`pinned` is still `false`, even though it looks unexpectedly pinned on top). Upstream Omarchy already disables this for Telegram (`org.telegram.desktop`), but not for WeChat.
+
+[`config/hypr/silky-app-windows.lua`](../../config/hypr/silky-app-windows.lua) adds `focus_on_activate = false` (`silky-wechat-no-focus-steal`) for `^wechat$`, blocking unsolicited background raises without affecting clicking the window, the Dock, or `Alt+Tab`.
 
 ## How it works
 
@@ -74,7 +84,7 @@ The title comes from WeChat 4.1.13 with the Chinese UI (a native Wayland window,
 | `config/hypr/silky-shortcuts.lua` | Loaded **last** in `hyprland.lua` (after `hypr.macshell`). Unbinds the clashing keys, binds only MacShell's functions on them, and binds Omarchy's actions to the new keys |
 | `config/hypr/silky-keys.lua` | Starts the panel at login; `o.rebind("SUPER + K", …)`; adds background blur to the `silky-keys` layer |
 | `keys-panel/shell.qml` → `~/.config/quickshell/SilkyKeys/` | The panel itself (a resident Quickshell process, IPC target `keys`) |
-| `config/hypr/silky-app-windows.lua` | Per-app window rules: WeChat's `图片和视频` window always floats, centred |
+| `config/hypr/silky-app-windows.lua` | Per-app window rules: stop WeChat from stealing focus in the background; WeChat's `图片和视频` viewer and chat-history window always float, centred, at a moderate default size |
 
 Why a registry:
 
@@ -109,13 +119,15 @@ qs -c SilkyKeys ipc call keys search 截图                   # open the panel w
 hyprctl dispatch 'function() silky_keys.dump("/tmp/k.json") end' && jq length /tmp/k.json
 ```
 
-WeChat image viewer: click a picture in WeChat, then run
+WeChat image viewer and chat history: click a picture in WeChat and open a chat-history window, then run
 
 ```bash
-hyprctl clients -j | jq -c '.[] | select(.class=="wechat") | {title, floating}'
+hyprctl clients -j | jq -c '.[] | select(.class=="wechat") | {title, size, floating}'
 ```
 
-The `图片和视频` line should read `"floating":true`, and the window should be centred. Confirmed on this machine on 2026-11-18: `hyprctl configerrors` is empty, and after `hyprctl reload` the already-open viewer became floating and centred. A viewer newly created after restarting WeChat, floated by the open-time rule, is still to be checked.
+The `图片和视频` line should read `"size":[900,620]` with `"floating":true`, the chat history `"size":[820,720]`; both centred and clear of the menu bar. Confirmed on this machine on 2026-11-20: `hyprctl configerrors` is empty; a viewer created after the rules were loaded opened at 900×620 centred; the chat-history window narrowed and centred after `hyprctl reload`. Programmatically resizing the chat history below 720 height snaps back to WeChat's own minimum, not a rule problem; whether a reused old viewer is pulled back to the default size on reload is still to be checked.
+
+WeChat focus-stealing guard: verified on this machine on 2026-11-22 (Hyprland 0.57.2, WeChat 4.1.29 on XWayland): `hyprctl configerrors` is empty; sending `_NET_ACTIVE_WINDOW` to WeChat's X11 window raised and focused WeChat before the rule, and left the current active window untouched after reloading.
 
 The doctor's clash check exports every bind from the registry, groups them by "modifiers + key", and reports any key that has a MacShell/MacLock description plus some other description. If an Omarchy or MacShell update adds a new clash, it shows up here; move it in `silky-shortcuts.lua` the same way.
 
@@ -136,6 +148,6 @@ pkill -x -f 'qs -c SilkyKeys( -d)?'; rm -r ~/.config/quickshell/SilkyKeys
 hyprctl reload
 ```
 
-To undo only the floating WeChat image viewer, delete `~/.config/hypr/silky-app-windows.lua` and the `require("hypr.silky-app-windows")` line in `hyprland.lua`, and run `hyprctl reload`. A viewer that is already floating stays floating; press `Super+T` or restart WeChat to tile it again.
+To undo only the WeChat viewer and chat-history window rules, delete `~/.config/hypr/silky-app-windows.lua` and the `require("hypr.silky-app-windows")` line in `hyprland.lua`, and run `hyprctl reload`. Windows that are already floating stay floating; press `Super+T` or restart WeChat to tile them again.
 
 Super+K goes back to Omarchy's own menu, and the clashing keys trigger both sides again.

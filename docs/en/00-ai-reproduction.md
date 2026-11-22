@@ -26,7 +26,8 @@ A general prompt for the AI:
 ./scripts/install-silky-gestures.sh           # 03: workspace gesture plugin
 python3 scripts/install-macshell-overview.py  # 13: four fingers up / down window overview (needs 02, 03)
 ./scripts/install-macos-theme.sh              # 04: macOS Tahoe theme
-./scripts/install-foot-glass.sh               # 04: optional Foot light/dark frosted glass
+./scripts/install-folio-macos.sh              # 04: Optional Finder-style Folio (requires Folio 0.6.1)
+./scripts/install-foot-glass.sh               # 04: optional Foot Tahoe light/dark appearance
 ./scripts/install-remmina-mac.sh              # 04: optional Remmina in Chinese with a macOS look
 omarchy theme set macos-tahoe-dark
 ./scripts/install-voice-overlay.sh            # 05: voice overlay

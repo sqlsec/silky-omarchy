@@ -34,6 +34,16 @@ window.silky-glass.silky-light.background {
 
 /* ---------- main window ---------- */
 
+/* Keep the connection list, quick connect and status bar over a solid base.
+ * The headerbar supplies its own glass tint. */
+#remmina-main-window.silky-dark.background {
+  background-color: #1c1c1e;
+}
+
+#remmina-main-window.silky-light.background {
+  background-color: #f6f6f8;
+}
+
 #remmina-main-window headerbar {
   min-height: 40px;
   padding: 0 10px;
@@ -129,7 +139,7 @@ window.silky-glass.silky-light.background {
   background-color: alpha(@theme_fg_color, 0.11);
 }
 
-/* Connection list on glass: no grid, airy rows, quiet column headers, and a
+/* Connection list: no grid, airy rows, quiet column headers, and a
  * rounded selection pill painted by the module. */
 #remmina-main-window scrolledwindow,
 #remmina-main-window viewport,

@@ -1,0 +1,410 @@
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -461,7 +461,7 @@
+ | `C` | Numbered marker |
+ | `R` | Rectangle; hover the shape button for rectangle, ellipse, and fill controls; `Alt`+wheel rounds corners |
+ | `E` | Ellipse; shares the shape submenu and filled/hollow toggle |
+-| `D` | Redact; press again to cycle blur, solid fill, and mosaic. Use the style row or wheel to set Light, Medium, or Strong on blur and mosaic |
++| `D` | Redact; press again to cycle blur, solid fill, and mosaic. Click the shield or press Shift+D to show options in the toolbar. The panel closes after a choice. Use the wheel to adjust blur or mosaic without opening it |
+ | `X` | Cut out a band; drag to preview the crossed-out strip, then release to remove and collapse it. **Ctrl** (with Cut armed, or **Ctrl+X**) inserts a band instead; the cut icon becomes a split-plus |
+ | `T` | Text on a cream readability pill, with Neucha as the default. Click for a one-line label, or drag a box to give it room for several lines: Enter moves to the next line while there is room and commits on the last one; `Shift+Enter` always adds a line; `Esc` commits the text and dismisses the annotator; long text wraps at the current canvas edge by default, while moving it or dragging its width handle beyond that edge expands the canvas; clicking away keeps the text; press T again to toggle the pill |
+ | `Shift+T` | Cycle the next or selected text through Neucha, JetBrains Mono, and Inter Display |
+diff --git a/i18n/omasnap_zh_CN.ts b/i18n/omasnap_zh_CN.ts
+--- a/i18n/omasnap_zh_CN.ts
++++ b/i18n/omasnap_zh_CN.ts
+@@ -72,8 +72,12 @@
+       <translation>强</translation>
+     </message>
+     <message>
+-      <source>Redact · D · %1</source>
+-      <translation>遮挡 · D · %1</translation>
++      <source>Redact · %1 · Click or Shift+D for options</source>
++      <translation>遮挡 · %1 · 单击或按 Shift+D 调整</translation>
++    </message>
++    <message>
++      <source>Back to tools · Esc</source>
++      <translation>返回工具 · Esc</translation>
+     </message>
+     <message>
+       <source>Redact · %1</source>
+diff --git a/src/editor.cpp b/src/editor.cpp
+--- a/src/editor.cpp
++++ b/src/editor.cpp
+@@ -2165,20 +2165,6 @@
+   return {anchor.center().x() - 58, popupTop(anchor, 36, 4, height()), 116, 36};
+ }
+ 
+-QRectF CaptureEditor::redactionOptionsRect() const {
+-  if ((tool_ != Tool::Redact && !selectedRedaction()) ||
+-      colorPaletteOpen_ || customColorPickerOpen_ || shapeMenuOpen_ ||
+-      textSizeMenuOpen_)
+-    return {};
+-
+-  const QRectF anchor = toolbarButtonRect(QStringLiteral("tool-redact"));
+-  const qreal panelWidth = hasRedactionLevels(currentRedactionStyle()) ? 312 : 184;
+-  const qreal x = std::clamp(anchor.center().x() - panelWidth / 2, 4.0,
+-                             std::max(4.0, width() - panelWidth - 4));
+-  return {x, popupTop(anchor, 34, 6, height(), !windowedPresentation_),
+-          panelWidth, 34};
+-}
+-
+ QRectF CaptureEditor::textSizePanelRect() const {
+   const QRectF anchor = toolbarButtonRect(QStringLiteral("tool-text"));
+   return {anchor.center().x() - 51, popupTop(anchor, 34, 6, height()), 102, 34};
+@@ -2429,8 +2415,7 @@
+   if ((colorPaletteOpen_ && colorPaletteRect().contains(position)) ||
+       (customColorPickerOpen_ && customColorPanelRect().contains(position)) ||
+       (shapeMenuOpen_ && shapeMenuRect().contains(position)) ||
+-      (textSizeMenuOpen_ && textSizePanelRect().contains(position)) ||
+-      redactionOptionsRect().contains(position))
++      (textSizeMenuOpen_ && textSizePanelRect().contains(position)))
+     return false;
+   if (requiresSourcePixels(tool_))
+     return sourceFrameWidgetRect().contains(position);
+@@ -2854,6 +2839,8 @@
+   endGroup();
+ 
+   // Tools: everything that acts on the image via the cursor.
++  const qsizetype firstTool = buttons.size();
++  const qreal toolsLeft = x;
+   add(36, QStringLiteral("tool-select"), {},
+       QCoreApplication::translate(
+           "Omasnap", "Select/move · V · Ctrl+wheel zoom · outer handles crop"));
+@@ -2898,7 +2885,7 @@
+           .arg(spotlightMagnification_, 0, 'f', 1));
+   add(36, QStringLiteral("tool-redact"), {},
+       QCoreApplication::translate("Omasnap",
+-                                  "Redact · D · %1")
++                                  "Redact · %1 · Click or Shift+D for options")
+           .arg(redactionStyleName(currentRedactionStyle())));
+   add(36, QStringLiteral("tool-cut"), {},
+       cutInsertHint() ? QCoreApplication::translate(
+@@ -2915,6 +2902,26 @@
+           .arg(textBackgroundName(textBackground_)));
+   add(36, QStringLiteral("tool-ocr"), {},
+       QCoreApplication::translate("Omasnap", "Copy all text in the image · O"));
++  if (includeSubmenus && redactionOptionsOpen_) {
++    const qreal toolsRight = x;
++    buttons.resize(firstTool);
++    x = toolsLeft;
++    add(36, QStringLiteral("redaction-options-close"), QStringLiteral("‹"),
++        QCoreApplication::translate("Omasnap", "Back to tools · Esc"));
++    for (std::size_t index = 0; index < kRedactionStyles.size(); ++index) {
++      add(58, QStringLiteral("redaction-mode-%1").arg(index),
++          redactionStyleName(kRedactionStyles.at(index)), {});
++    }
++    if (hasRedactionLevels(currentRedactionStyle())) {
++      x += 7 * scale;
++      for (int level = kMinimumRedactionLevel; level <= kMaximumRedactionLevel;
++           ++level) {
++        add(46, QStringLiteral("redaction-level-%1").arg(level),
++            redactionLevelName(level), {});
++      }
++    }
++    x = toolsRight;
++  }
+   endGroup();
+ 
+   // Actions: pin and finish/exit the capture.
+@@ -2933,26 +2940,7 @@
+   add(36, QStringLiteral("close"), {},
+       QCoreApplication::translate("Omasnap", "Close · Esc"));
+ 
+-  if (const QRectF panel = includeSubmenus ? redactionOptionsRect() : QRectF{};
+-      !panel.isEmpty()) {
+-    for (int index = 0; index < static_cast<int>(kRedactionStyles.size());
+-         ++index) {
+-      const auto style = kRedactionStyles.at(static_cast<std::size_t>(index));
+-      buttons.push_back({{panel.left() + 4 + index * 59, panel.top() + 3, 58, 28},
+-                         QStringLiteral("redaction-mode-%1").arg(index),
+-                         redactionStyleName(style), {}, {}});
+-    }
+-    if (hasRedactionLevels(currentRedactionStyle())) {
+-      for (int level = kMinimumRedactionLevel; level <= kMaximumRedactionLevel;
+-           ++level) {
+-        buttons.push_back({{panel.left() + 188 + (level - 1) * 40,
+-                            panel.top() + 3, 40, 28},
+-                           QStringLiteral("redaction-level-%1").arg(level),
+-                           redactionLevelName(level), {}, {}});
+-      }
+-    }
+-  }
+-  if (includeSubmenus && shapeMenuOpen_) {
++  if (includeSubmenus && !redactionOptionsOpen_ && shapeMenuOpen_) {
+     const QRectF menu = shapeMenuRect();
+     buttons.push_back({{menu.left() + 4, menu.top() + 4, 32, 28},
+                        QStringLiteral("shape-rectangle"),
+@@ -2971,7 +2959,7 @@
+                            "Omasnap", "Toggle filled or outlined shapes"),
+                        {}});
+   }
+-  if (includeSubmenus && colorPaletteOpen_) {
++  if (includeSubmenus && !redactionOptionsOpen_ && colorPaletteOpen_) {
+     const QRectF palette = colorPaletteRect();
+     const int presetCount = static_cast<int>(paletteConfig_.palette.size());
+     for (int index = 0; index < presetCount; ++index) {
+@@ -4610,7 +4598,25 @@
+                                                          : RedactionStyle::Blur);
+ }
+ 
++void CaptureEditor::toggleRedactionOptions() {
++  if (!redactionOptionsOpen_ && tool_ != Tool::Redact && !selectedRedaction())
++    applyRedactionOption(redactionStyle_);
++  colorPaletteOpen_ = false;
++  customColorPickerOpen_ = false;
++  shapeMenuOpen_ = false;
++  textSizeMenuOpen_ = false;
++  redactionOptionsOpen_ = !redactionOptionsOpen_;
++  updatePointerCursor();
++  update();
++}
++
+ void CaptureEditor::handleToolbar(const QString &action) {
++  if (action == QStringLiteral("tool-redact") ||
++      action == QStringLiteral("redaction-options-close")) {
++    toggleRedactionOptions();
++    return;
++  }
++  redactionOptionsOpen_ = false;
+   const Tool toolBefore = tool_;
+   const QString statusBefore = status_;
+   if (action == QStringLiteral("tool-select"))
+@@ -4656,9 +4662,6 @@
+       tool_ = Tool::Spotlight;
+     }
+     selectedAnnotation_ = -1;
+-  }
+-  else if (action == QStringLiteral("tool-redact")) {
+-    activateRedaction();
+   } else if (action.startsWith(QStringLiteral("redaction-mode-"))) {
+     const auto index = static_cast<std::size_t>(action.sliced(15).toInt());
+     const auto style = kRedactionStyles.at(index);
+@@ -4808,6 +4811,12 @@
+     creationCenteredActive_ = true;
+     event->accept();
+     update();
++    return;
++  }
++  if (phase_ == Phase::Edit && event->key() == Qt::Key_Escape &&
++      redactionOptionsOpen_) {
++    toggleRedactionOptions();
++    event->accept();
+     return;
+   }
+   if (dismiss) {
+@@ -5083,7 +5092,13 @@
+     }
+     selectedAnnotation_ = -1;
+   } else if (event->key() == Qt::Key_D) {
+-    activateRedaction();
++    if (event->modifiers() == Qt::ShiftModifier) {
++      if (!dragging_ && !event->isAutoRepeat())
++        toggleRedactionOptions();
++    } else {
++      redactionOptionsOpen_ = false;
++      activateRedaction();
++    }
+   } else if (event->key() == Qt::Key_X) {
+     tool_ = Tool::Cut;
+     setStatus(heldModifiers(event->modifiers()).testFlag(Qt::ControlModifier)
+@@ -5147,6 +5162,8 @@
+   // Arming a tool says what it is set to, so its options are discoverable
+   // without pressing keys to find out. Handlers that report something more
+   // specific (a restyled layer, a toggled fill) have already set it.
++  if (tool_ != toolBefore && event->key() != Qt::Key_D)
++    redactionOptionsOpen_ = false;
+   if (tool_ != toolBefore && status_ == statusBefore)
+     setStatus(toolStatus());
+   updatePointerCursor();
+@@ -5657,8 +5674,6 @@
+   }
+   LiveCanvas oldCanvas;
+   const QRegion oldPointerVisual = pointerMotionRegion(cursor_, &oldCanvas);
+-  const QRectF oldRedactionPanel =
+-      phase_ == Phase::Edit ? redactionOptionsRect() : QRectF{};
+   const QRectF oldSelection = selection_;
+   const int oldHoveredWindow = hoveredWindow_;
+   cursor_ = event->position();
+@@ -5936,7 +5951,7 @@
+     bool overShapeAnchor = false;
+     bool overTextAnchor = false;
+     for (const ToolbarButton &button : toolbarButtons()) {
+-      if (button.action == QStringLiteral("palette") &&
++      if (!redactionOptionsOpen_ && button.action == QStringLiteral("palette") &&
+           button.rect.contains(cursor_)) {
+         overPaletteAnchor = true;
+         paletteIntentOrigin_ = cursor_;
+@@ -5996,13 +6011,8 @@
+   updatePointerCursor();
+   LiveCanvas canvas;
+   QRegion damage = oldPointerVisual | pointerMotionRegion(cursor_, &canvas);
+-  if (phase_ == Phase::Edit) {
++  if (phase_ == Phase::Edit)
+     damage |= liveCanvasDamage(oldCanvas, canvas);
+-    const QRectF panel = redactionOptionsRect();
+-    if (panel != oldRedactionPanel)
+-      damage |= oldRedactionPanel.united(panel).adjusted(-2, -2, 2, 2)
+-                    .toAlignedRect();
+-  }
+   if (phase_ == Phase::Select && dragging_ && oldSelection != selection_) {
+     const QRegion oldHole(oldSelection.normalized().toAlignedRect());
+     const QRegion newHole(selection_.normalized().toAlignedRect());
+@@ -6050,6 +6060,11 @@
+     dismissOcrOverlay();
+   if (event->button() == Qt::RightButton) {
+     if (phase_ == Phase::Edit) {
++      if (redactionOptionsOpen_) {
++        toggleRedactionOptions();
++        event->accept();
++        return;
++      }
+       if (textEditing())
+         acceptText();
+       if (dragging_) {
+@@ -6163,8 +6178,16 @@
+       return;
+     }
+   }
+-  if (redactionOptionsRect().contains(cursor_))
+-    return;
++  if (redactionOptionsOpen_) {
++    redactionOptionsOpen_ = false;
++    updatePointerCursor();
++    update();
++    const QRectF dock(toolbarLeft(), toolbarTop(),
++                      kToolbarWidth * toolbarScale(width()),
++                      36 * toolbarScale(width()));
++    if (dock.contains(cursor_))
++      return;
++  }
+   if (tool_ == Tool::Select && selectedAnnotations_.isEmpty()) {
+     const int cropHandle = cropHandleAt(cursor_);
+     if (cropHandle >= 0) {
+@@ -6862,8 +6885,10 @@
+   if (!modifiers.testFlag(Qt::AltModifier) &&
+       (selectedRedaction() || tool_ == Tool::Redact)) {
+     const auto style = currentRedactionStyle();
+-    if (hasRedactionLevels(style))
++    if (hasRedactionLevels(style)) {
++      redactionOptionsOpen_ = false;
+       applyRedactionOption(style, currentRedactionLevel() + step);
++    }
+   } else if (overLayer) {
+     adjustSelectedAnnotation(step);
+   } else if (tool_ == Tool::Text) {
+@@ -7294,6 +7319,7 @@
+   customColorPickerOpen_ = false;
+   shapeMenuOpen_ = false;
+   textSizeMenuOpen_ = false;
++  redactionOptionsOpen_ = false;
+   dismissOcrOverlay();
+   // Everything edited derives from the op log; an empty log is the untouched
+   // screen again.
+@@ -8294,15 +8320,6 @@
+     for (const qreal dividerX : std::as_const(toolbarDividers))
+       painter.drawLine(QPointF(dividerX, barY + 6),
+                        QPointF(dividerX, barY + barHeight - 6));
+-  }
+-  if (const QRectF panel = redactionOptionsRect(); !panel.isEmpty()) {
+-    const auto &theme = chromeTheme();
+-    painter.setPen(QPen(theme.panelBorder.brush(panel), 1));
+-    painter.setBrush(theme.surface);
+-    painter.drawRoundedRect(panel, 9, 9);
+-    if (hasRedactionLevels(currentRedactionStyle()))
+-      painter.drawLine(panel.topLeft() + QPointF(183, 7),
+-                       panel.bottomLeft() + QPointF(183, -7));
+   }
+   const auto modeIndex = std::ranges::find(kRedactionStyles, currentRedactionStyle())
+                          - kRedactionStyles.begin();
+@@ -8419,7 +8436,7 @@
+                          hoveredButton->tooltip);
+   } else if (tool_ == Tool::Arrow || tool_ == Tool::Line ||
+              tool_ == Tool::Freehand || tool_ == Tool::Highlighter ||
+-             tool_ == Tool::Marker || tool_ == Tool::Redact ||
++             tool_ == Tool::Marker ||
+              tool_ == Tool::Rectangle || tool_ == Tool::Ellipse ||
+              tool_ == Tool::Text) {
+     const QString selectedAction = toolAction(tool_);
+@@ -8437,8 +8454,6 @@
+                         .arg(QString::fromLatin1(kTextSizeNames.at(
+                             static_cast<std::size_t>(textSizeIndex_))))
+                         .arg(textBackgroundName(textBackground_));
+-        } else if (tool_ == Tool::Redact) {
+-          tooltip = redactionStatus();
+         } else if (tool_ == Tool::Highlighter) {
+           tooltip = highlighterTooltip();
+         } else if (tool_ == Tool::Rectangle) {
+diff --git a/src/editor.hpp b/src/editor.hpp
+--- a/src/editor.hpp
++++ b/src/editor.hpp
+@@ -494,12 +494,12 @@
+   [[nodiscard]] QRectF colorPaletteRect() const;
+   [[nodiscard]] QRectF customColorPanelRect() const;
+   [[nodiscard]] QRectF shapeMenuRect() const;
+-  [[nodiscard]] QRectF redactionOptionsRect() const;
+   [[nodiscard]] const Annotation *selectedRedaction() const;
+   [[nodiscard]] RedactionStyle currentRedactionStyle() const;
+   [[nodiscard]] int currentRedactionLevel() const;
+   [[nodiscard]] QString redactionStatus() const;
+   void activateRedaction();
++  void toggleRedactionOptions();
+   void applyRedactionOption(RedactionStyle style, int level = 0);
+   [[nodiscard]] QRectF textSizePanelRect() const;
+   [[nodiscard]] QVector<QRectF> cropHandleRects() const;
+@@ -901,6 +901,7 @@
+   /// Ring drawn around a spotlight's opening; 0 draws none.
+   qreal spotlightBorder_ = 4.0;
+   SpotlightShape spotlightShape_ = SpotlightShape::Ellipse;
++  bool redactionOptionsOpen_ = false;
+   RedactionStyle redactionStyle_ = RedactionStyle::Blur;
+   int blurLevel_ = kDefaultRedactionLevel;
+   int mosaicLevel_ = kDefaultRedactionLevel;
+diff --git a/tests/editor-smoke.cpp b/tests/editor-smoke.cpp
+--- a/tests/editor-smoke.cpp
++++ b/tests/editor-smoke.cpp
+@@ -13804,6 +13804,14 @@
+     const QImage beforeRedaction = flushedSnapshot(redactionEditor, snapshotPath);
+     const QImage beforeRedactionUi = redactionEditor.grab().toImage();
+     QTest::keyClick(&redactionEditor, Qt::Key_D);
++    if (!redactionEditor.toolbarButtonRectForTest(
++             QStringLiteral("redaction-mode-0")).isEmpty())
++      return 85;
++    QTest::keyClick(&redactionEditor, Qt::Key_D, Qt::ShiftModifier);
++    if (redactionEditor.toolbarButtonRectForTest(
++            QStringLiteral("redaction-mode-0")).isEmpty())
++      return 85;
++    // An immediate drag dismisses the options and still reaches the canvas.
+     QTest::mousePress(&redactionEditor, Qt::LeftButton, Qt::NoModifier,
+                       redactToScreen({175, 80}));
+     QTest::mouseMove(&redactionEditor, redactToScreen({295, 80}), 20);
+@@ -13828,13 +13836,25 @@
+     QTest::keyClick(&redactionEditor, Qt::Key_V);
+     QTest::mouseClick(&redactionEditor, Qt::LeftButton, Qt::NoModifier,
+                       QPoint(360, 242));
++    const QRectF dockTool = redactionEditor.toolbarButtonRectForTest(
++        QStringLiteral("tool-redact"));
++    const QRectF photo = redactionEditor.editImageRectForTest();
+     const auto clickOption = [&](const QString &action) {
+-      const QPoint target = redactionEditor.toolbarButtonCenterForTest(action);
+-      if (target.x() < 0 || target.y() < 0)
++      if (dockTool.isEmpty() ||
++          !redactionEditor.toolbarButtonRectForTest(action).isEmpty())
+         return false;
+-      QTest::mouseClick(&redactionEditor, Qt::LeftButton, Qt::NoModifier, target);
++      QTest::mouseClick(&redactionEditor, Qt::LeftButton, Qt::NoModifier,
++                        dockTool.center().toPoint());
++      const QRectF choice = redactionEditor.toolbarButtonRectForTest(action);
++      if (choice.isEmpty() || choice.top() != dockTool.top() ||
++          choice.bottom() != dockTool.bottom() ||
++          redactionEditor.editImageRectForTest() != photo)
++        return false;
++      QTest::mouseClick(&redactionEditor, Qt::LeftButton, Qt::NoModifier,
++                        choice.center().toPoint());
+       application.processEvents();
+-      return true;
++      return redactionEditor.toolbarButtonRectForTest(action).isEmpty() &&
++             redactionEditor.editImageRectForTest() == photo;
+     };
+     if (!clickOption(QStringLiteral("redaction-level-3")) ||
+         flushedSnapshot(redactionEditor, snapshotPath) == pixelatedRedaction ||

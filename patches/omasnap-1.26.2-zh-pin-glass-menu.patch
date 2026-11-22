@@ -1,0 +1,203 @@
+diff --git a/src/pin.cpp b/src/pin.cpp
+--- a/src/pin.cpp
++++ b/src/pin.cpp
+@@ -44,6 +44,9 @@
+ #include <QScreen>
+ #include <QSocketNotifier>
+ #include <QShowEvent>
++#include <QPointer>
++#include <QStandardPaths>
++#include <QStyleHints>
+ #include <QCloseEvent>
+ #include <QJsonArray>
+ #include <QJsonDocument>
+@@ -620,6 +623,123 @@
+   QImage drag;
+   bool replaced = false;
+ };
++
++void stylePinMenu(QMenu *menu, bool dark) {
++  // Hyprland blurs the translucent popup behind this tint. Keep the
++  // corners transparent and use the same light/dark tones as MacShell.
++  const QString top = dark ? QStringLiteral("rgba(48, 48, 52, 207)")
++                           : QStringLiteral("rgba(255, 255, 255, 227)");
++  const QString bottom = dark ? QStringLiteral("rgba(25, 25, 29, 194)")
++                              : QStringLiteral("rgba(234, 234, 240, 214)");
++  const QString rim = dark ? QStringLiteral("rgba(255, 255, 255, 46)")
++                           : QStringLiteral("rgba(0, 0, 0, 29)");
++  const QString separator = dark ? QStringLiteral("rgba(255, 255, 255, 36)")
++                                 : QStringLiteral("rgba(0, 0, 0, 25)");
++  const QColor foreground = dark ? QColor(245, 245, 247) : QColor(29, 29, 31);
++  const QColor accent = dark ? QColor(10, 100, 210) : QColor(12, 96, 199);
++  QPalette palette;
++  palette.setColor(QPalette::WindowText, foreground);
++  palette.setColor(QPalette::Text, foreground);
++  palette.setColor(QPalette::ButtonText, foreground);
++  palette.setColor(QPalette::Highlight, accent);
++  palette.setColor(QPalette::HighlightedText, Qt::white);
++  menu->setPalette(palette);
++  menu->setStyleSheet(QStringLiteral(
++      "QMenu { color: %1; border: 1px solid %2; border-radius: 13px; "
++      "padding: 5px; background: qlineargradient(x1:0,y1:0,x2:0,y2:1,"
++      "stop:0 %3,stop:1 %4); }"
++      "QMenu::item { padding: 5px 26px 5px 12px; border-radius: 6px; "
++      "min-width: 100px; background: transparent; }"
++      "QMenu::item:selected { color: white; background: %5; }"
++      "QMenu::separator { height: 1px; margin: 4px 6px; background: %6; }")
++      .arg(foreground.name(), rim, top, bottom, accent.name(), separator));
++  for (QAction *action : menu->actions()) {
++    if (auto *child = action->menu())
++      stylePinMenu(child, dark);
++  }
++}
++
++class PinMenuAppearance final {
++public:
++  PinMenuAppearance()
++      : settingsDir_(QDir(QStandardPaths::writableLocation(
++            QStandardPaths::GenericConfigLocation)).filePath(QStringLiteral("dconf"))) {
++    QObject::connect(&files_, &QFileSystemWatcher::directoryChanged, &reader_,
++                     [this] { watchSettings(); refresh(); });
++    QObject::connect(&files_, &QFileSystemWatcher::fileChanged, &reader_,
++                     [this] { watchSettings(); refresh(); });
++    QObject::connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged,
++                     &reader_, [this] { refresh(); });
++    QObject::connect(&reader_, &QProcess::finished, &reader_,
++                     [this](int exitCode, QProcess::ExitStatus status) {
++      const auto output = reader_.readAllStandardOutput().trimmed();
++      if (status == QProcess::NormalExit && exitCode == 0) {
++        if (output == "'prefer-dark'")
++          dark_ = true;
++        else if (output == "'prefer-light'")
++          dark_ = false;
++        else
++          dark_.reset();
++        restyle();
++      }
++      if (std::exchange(refreshPending_, false))
++        refresh();
++    });
++    watchSettings();
++    refresh();
++  }
++
++  void attach(QMenu *menu) {
++    menu_ = menu;
++    restyle();
++    refresh();
++  }
++
++private:
++  void watchSettings() {
++    const QString settingsFile = QDir(settingsDir_).filePath(QStringLiteral("user"));
++    if (QFileInfo::exists(settingsDir_) && !files_.directories().contains(settingsDir_))
++      files_.addPath(settingsDir_);
++    if (QFileInfo::exists(settingsFile) && !files_.files().contains(settingsFile))
++      files_.addPath(settingsFile);
++  }
++
++  void refresh() {
++    if (reader_.state() != QProcess::NotRunning) {
++      refreshPending_ = true;
++      return;
++    }
++    reader_.start(QStringLiteral("gsettings"),
++                  {QStringLiteral("get"), QStringLiteral("org.gnome.desktop.interface"),
++                   QStringLiteral("color-scheme")});
++  }
++
++  void restyle() const {
++    if (!menu_)
++      return;
++    const auto scheme = QGuiApplication::styleHints()->colorScheme();
++    const bool dark = dark_.value_or(
++        scheme == Qt::ColorScheme::Unknown
++            ? chromeTheme().surface.lightness() < 128
++            : scheme == Qt::ColorScheme::Dark);
++    stylePinMenu(menu_, dark);
++  }
++
++  const QString settingsDir_;
++  QPointer<QMenu> menu_;
++  QProcess reader_;
++  QFileSystemWatcher files_;
++  std::optional<bool> dark_;
++  bool refreshPending_ = false;
++};
++
++QMenu *makePinMenu(QWidget *parent) {
++  auto *menu = new QMenu(parent);
++  menu->setAttribute(Qt::WA_TranslucentBackground);
++  menu->setWindowFlag(Qt::NoDropShadowWindowHint);
++  menu->setFont(chromeFont(12));
++  return menu;
++}
+ 
+ class PinWindow final : public QWidget {
+   friend bool runPinRevealSmoke(QString &error);
+@@ -1067,14 +1187,7 @@
+       event->accept();
+       return;
+     }
+-    auto *menu = new QMenu(this);
+-    menu->setFont(chromeFont(12));
+-    QPalette palette;
+-    palette.setColor(QPalette::Window, chromeTheme().surface);
+-    palette.setColor(QPalette::WindowText, chromeTheme().foreground);
+-    palette.setColor(QPalette::Highlight, chromeTheme().accent);
+-    palette.setColor(QPalette::HighlightedText, chromeTheme().accentText);
+-    menu->setPalette(palette);
++    auto *menu = makePinMenu(this);
+     const auto text = [](const char *label) {
+       return QCoreApplication::translate("Omasnap", label);
+     };
+@@ -1085,7 +1198,9 @@
+     menu->addSeparator();
+     if (standalone_) {
+       menu->addAction(text("Original size"), this, [this] { resizePin(1.0); });
+-      auto *opacity = menu->addMenu(text("Opacity"));
++      auto *opacity = makePinMenu(menu);
++      opacity->setTitle(text("Opacity"));
++      menu->addMenu(opacity);
+       for (const int percent : {100, 75, 50, 25}) {
+         auto *level = opacity->addAction(QStringLiteral("%1%").arg(percent), this,
+                                         [this, percent] { setPinOpacity(percent / 100.0); });
+@@ -1105,6 +1220,7 @@
+       updateExpiryPause();
+       menu->deleteLater();
+     });
++    menuAppearance_.attach(menu);
+     menu->popup(event->globalPos());
+     event->accept();
+   }
+@@ -1968,6 +2084,7 @@
+   bool standalone_ = false;
+   bool promoting_ = false;
+   bool menuOpen_ = false;
++  PinMenuAppearance menuAppearance_;
+   qreal pinZoom_ = 1.0;
+   qreal pinOpacity_ = 1.0;
+   QTimer pinResizeTimer_;
+diff --git a/tests/pin-interaction-smoke.cpp b/tests/pin-interaction-smoke.cpp
+--- a/tests/pin-interaction-smoke.cpp
++++ b/tests/pin-interaction-smoke.cpp
+@@ -600,6 +600,19 @@
+     error = QStringLiteral("Standalone pin did not show its action menu");
+     return false;
+   }
++  const auto samplePanel = [&](bool dark) {
++    stylePinMenu(menu, dark);
++    // Sample the panel's padding, away from text and the selection highlight.
++    const QImage pixels = menu->grab().toImage();
++    return pixels.pixelColor(pixels.width() / 2, 3);
++  };
++  const QColor darkPanel = samplePanel(true);
++  const QColor lightPanel = samplePanel(false);
++  if (darkPanel.lightness() >= 80 || lightPanel.lightness() <= 210 ||
++      darkPanel.alpha() >= 255 || lightPanel.alpha() >= 255) {
++    error = QStringLiteral("The pin menu did not produce translucent light and dark panels");
++    return false;
++  }
+   menu->hide();
+   QTest::mouseDClick(&window, Qt::LeftButton, Qt::NoModifier, background);
+   if (window.isVisible()) {

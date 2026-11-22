@@ -1,0 +1,257 @@
+diff --git a/src/capture.cpp b/src/capture.cpp
+--- a/src/capture.cpp
++++ b/src/capture.cpp
+@@ -944,7 +944,7 @@
+   std::array<Bucket, 64> buckets{};
+   // A bounded, uniform sample keeps live dragging responsive on 4K captures.
+   // Coordinates are used only to choose samples; their positions are discarded
+-  // before the synthetic mosaic is generated.
++  // before the synthetic frost is generated.
+   constexpr int maximumSamples = 4096;
+   const qreal regionArea =
+       static_cast<qreal>(region.width()) * static_cast<qreal>(region.height());
+@@ -993,6 +993,22 @@
+   return palette;
+ }
+ 
++const QImage &redactionGrain() {
++  static const QImage texture = [] {
++    QImage grain(128, 128, QImage::Format_ARGB32_Premultiplied);
++    quint32 seed = 0x9e3779b9U;
++    for (int y = 0; y < grain.height(); ++y) {
++      for (int x = 0; x < grain.width(); ++x) {
++        const quint32 sample = nextRedactionRandom(seed);
++        const int tone = (sample & 16U) != 0 ? 255 : 0;
++        grain.setPixelColor(x, y, QColor(tone, tone, tone, sample & 15U));
++      }
++    }
++    return grain;
++  }();
++  return texture;
++}
++
+ void applyRedactions(QImage &image, const QVector<Annotation> &annotations,
+                      qreal scaleX, qreal scaleY,
+                      const QPointF &originOffset = {}) {
+@@ -1023,19 +1039,27 @@
+                     static_cast<quint32>(region.width()) * 83492791U ^
+                     static_cast<quint32>(region.height()) * 2654435761U;
+     }
+-    const int blockWidth = std::max(1, qRound(12.0 * scaleX));
+-    const int blockHeight = std::max(1, qRound(12.0 * scaleY));
+-    for (int y = region.top(); y <= region.bottom(); y += blockHeight) {
+-      for (int x = region.left(); x <= region.right(); x += blockWidth) {
++    // Interpolate only synthetic colors. The opaque field replaces the
++    // source before grain is added, leaving no original spatial detail.
++    QImage field(std::clamp(qCeil(region.width() / (28.0 * scaleX)), 2, 32),
++                 std::clamp(qCeil(region.height() / (28.0 * scaleY)), 2, 32),
++                 QImage::Format_RGB32);
++    const QColor base = palette.front();
++    for (int y = 0; y < field.height(); ++y) {
++      for (int x = 0; x < field.width(); ++x) {
+         const QColor color = palette.at(
+             static_cast<qsizetype>(nextRedactionRandom(randomState) %
+                                    static_cast<quint32>(palette.size())));
+-        painter.fillRect(QRect(x, y,
+-                               std::min(blockWidth, region.right() - x + 1),
+-                               std::min(blockHeight, region.bottom() - y + 1)),
+-                         color);
++        field.setPixel(x, y, qRgb((2 * color.red() + 3 * base.red() + 255) / 6,
++                                  (2 * color.green() + 3 * base.green() + 255) / 6,
++                                  (2 * color.blue() + 3 * base.blue() + 255) / 6));
+       }
+     }
++    painter.setRenderHint(QPainter::SmoothPixmapTransform);
++    painter.drawImage(region, field);
++    painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
++    painter.setBrushOrigin(region.topLeft());
++    painter.fillRect(region, QBrush(redactionGrain()));
+   }
+ }
+ 
+diff --git a/src/editor.cpp b/src/editor.cpp
+--- a/src/editor.cpp
++++ b/src/editor.cpp
+@@ -417,7 +417,7 @@
+   }
+ }
+ 
+-/// A redaction's mosaic seed; zero is reserved for "not yet seeded".
++/// A redaction's texture seed; zero is reserved for "not yet seeded".
+ quint32 freshRedactionSeed() {
+   const quint32 seed = QRandomGenerator::system()->generate();
+   return seed == 0 ? 1 : seed;
+@@ -619,7 +619,7 @@
+ QString redactionStyleName(RedactionStyle style) {
+   return style == RedactionStyle::Solid
+              ? QCoreApplication::translate("Omasnap", "Solid")
+-             : QCoreApplication::translate("Omasnap", "Pixelate");
++             : QCoreApplication::translate("Omasnap", "Frosted glass");
+ }
+ 
+ QString arrowStyleName(ArrowStyle style) {
+@@ -1807,7 +1807,7 @@
+   if (copy.kind == Annotation::Kind::Marker)
+     copy.number = nextMarker_;
+   if (copy.kind == Annotation::Kind::Redaction) {
+-    // A copy must not share the original's mosaic; give it its own seed.
++    // A copy must not share the original's texture; give it its own seed.
+     copy.redactionSeed = freshRedactionSeed();
+   }
+   commitAnnotate(std::move(copy));
+@@ -5939,20 +5939,19 @@
+ }
+ 
+ void CaptureEditor::mousePressEvent(QMouseEvent *event) {
+-  if (phase_ == Phase::Export || busy_ || capturePending_)
++  if (phase_ == Phase::Export || busy_)
++    return;
++  if (phase_ == Phase::Select && event->button() == Qt::RightButton) {
++    event->accept();
++    handleEscape();
++    return;
++  }
++  if (capturePending_)
+     return;
+   if (!ocrResultText_.isEmpty())
+     dismissOcrOverlay();
+   if (event->button() == Qt::RightButton) {
+-    if (phase_ == Phase::Select) {
+-      if (dragging_) {
+-        dragging_ = false;
+-        selection_ = {};
+-        if (smartMode_)
+-          hoveredWindow_ = windowAt(cursor_);
+-        update();
+-      }
+-    } else if (phase_ == Phase::Edit) {
++    if (phase_ == Phase::Edit) {
+       if (textEditing())
+         acceptText();
+       if (dragging_) {
+diff --git a/i18n/omasnap_zh_CN.ts b/i18n/omasnap_zh_CN.ts
+--- a/i18n/omasnap_zh_CN.ts
++++ b/i18n/omasnap_zh_CN.ts
+@@ -52,8 +52,8 @@
+       <translation>涂黑</translation>
+     </message>
+     <message>
+-      <source>Pixelate</source>
+-      <translation>马赛克</translation>
++      <source>Frosted glass</source>
++      <translation>磨砂玻璃</translation>
+     </message>
+     <message>
+       <source>Standard</source>
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -57,7 +57,7 @@
+   freehand fallback), plus hollow or filled rectangles (optionally rounded) and
+   ellipses, numbered markers, editable text in Neucha, JetBrains Mono, or Inter
+   Display (plain, outlined, or on a readability pill), and secure redaction with
+-  opaque or randomized non-spatial mosaic output.
++  solid or opaque frosted-glass output.
+ - Per-layer preset or custom colors (including highlighter ink), undo/redo history,
+   one-click whole-image or drag-region OCR (the recognized text is shown beside
+   the image and copied to the clipboard),
+@@ -439,7 +439,7 @@
+ | `Ctrl+A` | Select the full focused monitor |
+ | Hover the right-edge stack | Fan out the five most recent captures; click one to reopen it |
+ | `Space` | Hide or show the recent captures; the choice is remembered |
+-| `Esc` | Dismiss; cancel a selection drag if one is in progress |
++| `Esc` or right-click | Dismiss; cancel a selection drag if one is in progress |
+ 
+ Region memory is stored in Omasnap's private runtime directory. It survives
+ closing and reopening Omasnap and lasts until those runtime files are removed
+@@ -461,7 +461,7 @@
+ | `C` | Numbered marker |
+ | `R` | Rectangle; hover the shape button for rectangle, ellipse, and fill controls; `Alt`+wheel rounds corners |
+ | `E` | Ellipse; shares the shape submenu and filled/hollow toggle |
+-| `D` | Redact; press again to toggle randomized pixelation or solid redaction |
++| `D` | Redact; press again to toggle frosted glass or solid redaction |
+ | `X` | Cut out a band; drag to preview the crossed-out strip, then release to remove and collapse it. **Ctrl** (with Cut armed, or **Ctrl+X**) inserts a band instead; the cut icon becomes a split-plus |
+ | `T` | Text on a cream readability pill, with Neucha as the default. Click for a one-line label, or drag a box to give it room for several lines: Enter moves to the next line while there is room and commits on the last one; `Shift+Enter` always adds a line; `Esc` commits the text and dismisses the annotator; long text wraps at the current canvas edge by default, while moving it or dragging its width handle beyond that edge expands the canvas; clicking away keeps the text; press T again to toggle the pill |
+ | `Shift+T` | Cycle the next or selected text through Neucha, JetBrains Mono, and Inter Display |
+diff --git a/tests/editor-smoke.cpp b/tests/editor-smoke.cpp
+--- a/tests/editor-smoke.cpp
++++ b/tests/editor-smoke.cpp
+@@ -1510,31 +1510,28 @@
+       first.pixelColor(2, 2) != capture.source.pixelColor(2, 2))
+     return false;
+ 
+-  // Every exported mosaic cell is a flat synthetic color. No fine-grained
+-  // source pixels survive inside a cell.
+-  constexpr int blockSize = 12;
+-  for (int top = redactionBounds.top(); top <= redactionBounds.bottom();
+-       top += blockSize) {
+-    for (int left = redactionBounds.left(); left <= redactionBounds.right();
+-         left += blockSize) {
+-      const QColor cell = first.pixelColor(left, top);
+-      if (cell.alpha() != 255)
++  bool hasTexture = false;
++  const QColor firstPixel = first.pixelColor(redactionBounds.topLeft());
++  for (int y = redactionBounds.top(); y <= redactionBounds.bottom(); ++y) {
++    for (int x = redactionBounds.left(); x <= redactionBounds.right(); ++x) {
++      const QColor color = first.pixelColor(x, y);
++      if (color.alpha() != 255)
+         return false;
+-      const int bottom =
+-          std::min(top + blockSize - 1, redactionBounds.bottom());
+-      const int right = std::min(left + blockSize - 1, redactionBounds.right());
+-      for (int y = top; y <= bottom; ++y) {
+-        for (int x = left; x <= right; ++x) {
+-          if (first.pixelColor(x, y) != cell)
+-            return false;
+-        }
++      hasTexture |= color != firstPixel;
++      if (x > redactionBounds.left()) {
++        const QColor neighbor = first.pixelColor(x - 1, y);
++        if (std::abs(color.red() - neighbor.red()) > 20 ||
++            std::abs(color.green() - neighbor.green()) > 20 ||
++            std::abs(color.blue() - neighbor.blue()) > 20)
++          return false;
+       }
+     }
+   }
+-
+-  // Mirroring the source preserves the region's aggregate palette but changes
+-  // every spatial relationship. Identical redaction output proves the mosaic
+-  // does not retain source-block positions.
++  if (!hasTexture)
++    return false;
++
++  // Mirroring preserves the aggregate palette while rearranging the source
++  // pixels. The synthetic field must render identically.
+   CaptureData mirroredCapture = capture;
+   for (int y = 0; y < capture.source.height(); ++y) {
+     for (int x = 0; x < capture.source.width(); ++x) {
+@@ -11807,6 +11804,28 @@
+     application.processEvents();
+   }
+ 
++  // A right-click cancels an active area drag before dismissing the picker.
++  {
++    CaptureEditor editor(makeCapture(QStringLiteral("CANCEL")));
++    editor.resize(800, 600);
++    editor.show();
++    application.processEvents();
++    const QPoint target(520, 380);
++    QTest::mousePress(&editor, Qt::LeftButton, Qt::NoModifier, QPoint(120, 140));
++    QTest::mouseMove(&editor, target, 20);
++    QTest::mouseClick(&editor, Qt::RightButton, Qt::NoModifier, target);
++    QTest::mouseRelease(&editor, Qt::LeftButton, Qt::NoModifier, target);
++    if (!editor.isVisible() || !editor.currentSelection().isEmpty()) {
++      error = QStringLiteral("Right-click did not cancel only the region drag");
++      return false;
++    }
++    QTest::mouseClick(&editor, Qt::RightButton, Qt::NoModifier, target);
++    if (editor.isVisible()) {
++      error = QStringLiteral("Right-click did not dismiss the capture picker");
++      return false;
++    }
++  }
++
+   // A different monitor ignores it: R stays in the select phase.
+   {
+     CaptureEditor editor(makeCapture(QStringLiteral("OTHER")));

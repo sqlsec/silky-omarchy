@@ -48,7 +48,9 @@
 python3 scripts/install-macshell-overview.py
 python3 scripts/install-macshell-widgets.py  # 可选：通知中心小组件（需要顶栏系统监控）
 ./scripts/install-macos-theme.sh && omarchy theme set macos-tahoe-dark
-./scripts/install-foot-glass.sh   # 可选：Foot 磨砂玻璃，跟随日夜外观
+# 可选：Folio 的 Finder 图标和红黄绿窗口按钮
+./scripts/install-folio-macos.sh
+./scripts/install-foot-glass.sh   # 可选：Foot Tahoe 外观，跟随日夜模式
 ./scripts/install-remmina-mac.sh  # 可选：Remmina 简体中文与 macOS 外观
 ./scripts/install-wechat-touch-scroll.sh  # 可选：已配置微信 Wayland 触屏启动器
 ./scripts/install-voice-overlay.sh

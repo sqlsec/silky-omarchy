@@ -26,7 +26,8 @@
 ./scripts/install-silky-gestures.sh           # 03：工作区手势插件
 python3 scripts/install-macshell-overview.py  # 13：四指上滑 / 下滑窗口总览（需要 02、03）
 ./scripts/install-macos-theme.sh              # 04：macOS Tahoe 主题
-./scripts/install-foot-glass.sh               # 04：可选，Foot 日夜磨砂玻璃
+./scripts/install-folio-macos.sh              # 04：可选的 Folio Finder 外观（需要 Folio 0.6.1）
+./scripts/install-foot-glass.sh               # 04：可选，Foot Tahoe 日夜外观
 ./scripts/install-remmina-mac.sh              # 04：可选，Remmina 简体中文与 macOS 外观
 omarchy theme set macos-tahoe-dark
 ./scripts/install-voice-overlay.sh            # 05：语音浮条

@@ -60,11 +60,21 @@ Hyprland 切回浮动时会还原窗口的浮动尺寸和位置，微信曾因�
 
 已关闭、手动移到其他工作区、后来被置顶或与无关窗口重新分组的窗口会跳过。移窗记录从切入平铺时开始，Hyprland 重载配置或重启后会清除。
 
-### 微信图片查看器始终浮动
+### 微信图片查看器与聊天记录窗口的默认尺寸
 
-微信主窗口浮动时，点开图片或视频弹出的「图片和视频」窗口仍会在平铺工作区里和其他窗口分屏。[`config/hypr/silky-app-windows.lua`](../config/hypr/silky-app-windows.lua) 按 `class` `wechat`、标题 `图片和视频` 匹配这个窗口，打开时就浮动并居中，大小由微信自己决定。它通过 `o.window` 注册为自带浮动的应用，浮动工作区布局也不会再改它的尺寸。微信关闭查看器后并不销毁窗口，下一张图片复用同一个窗口（地址不变，也不发 `openwindow` 事件），所以打开时的规则只对规则加载之后新建的查看器生效；同一文件里还挂了 `config.reloaded`，每次 `hyprctl reload` 时把仍在平铺的查看器切为浮动并居中。打开后仍可用 `Super+T` 临时平铺。
+微信主窗口浮动时，点开图片或视频弹出的「图片和视频」窗口仍会在平铺工作区里和其他窗口分屏；而且微信自己给的尺寸常常偏高，竖长截图能开到 874 逻辑像素高、顶着菜单栏（本机屏幕 1472×920 @ scale 2）。聊天记录窗口（标题 `"群名"的聊天记录(条数)`）同样开得偏大，两侧还留大片空白。[config/hypr/silky-app-windows.lua](../config/hypr/silky-app-windows.lua) 按 `class` `wechat` 匹配这两个窗口，打开时就浮动、居中并给一个适中默认尺寸：查看器 900×620，聊天记录 820×720。两者通过 `o.window` 注册为自带浮动的应用，浮动工作区布局也不会再改它们的尺寸。打开后仍可用 `Super+T` 临时平铺，窗口也可以随意拉伸，微信内部的图片放大不受影响。
+
+微信关闭查看器后并不销毁窗口，下一张图片复用同一个窗口（地址不变，也不发 `openwindow` 事件），所以打开时的规则只对规则加载之后新建的查看器生效；同一文件里还挂了 `config.reloaded`，每次 `hyprctl reload` 时把这两类窗口中仍平铺的、或任一维度超过默认尺寸的，切为浮动、缩回默认尺寸并居中，没超的窗口不动，保住手动调小的结果。
+
+聊天记录窗口的高度下限是微信自己定的：实测（2026-11-20，微信 4.1.13）程序化请求 600/640/660/700 高度都被弹回 720，调大则随意，所以 820×720 已是能收到的最小高度，这条规则的收益主要是收窄宽度、减少两侧留白。
 
 标题来自微信 4.1.13 中文界面（Wayland 原生窗口，非 XWayland）。界面语言切成英文或以后版本改了标题时，规则不会命中，用下面的命令查新标题后改正则。
+
+### 微信后台不再自动抢焦点置顶
+
+在浮动工作区模式下，微信（XWayland，`class` `wechat`）收到新消息或后台状态更新时会发送 X11 `_NET_ACTIVE_WINDOW` 激活请求；Omarchy 在 `/usr/share/omarchy/default/hypr/looknfeel.lua` 默认开启了全局 `misc.focus_on_activate = true`，Hyprland 会直接把焦点切给微信并将其抬升到所有浮动窗口最前方（`pinned` 实际为 `false`，但视觉上像莫名其妙置顶）。Omarchy 上游已为 Telegram（`org.telegram.desktop`）单独关闭该行为，未覆盖微信。
+
+[config/hypr/silky-app-windows.lua](../config/hypr/silky-app-windows.lua) 为 `^wechat$` 增加了 `focus_on_activate = false` 规则（`silky-wechat-no-focus-steal`），拦住后台自动抢焦点，不影响鼠标点击、Dock、`Alt+Tab` 等主动切换窗口。
 
 ## 原理
 
@@ -74,7 +84,7 @@ Hyprland 切回浮动时会还原窗口的浮动尺寸和位置，微信曾因�
 | `config/hypr/silky-shortcuts.lua` | 在 `hyprland.lua` **最后**加载（在 `hypr.macshell` 之后）。先 `hl.unbind` 冲突键，再只绑 MacShell 的功能，把 Omarchy 的动作绑到新键 |
 | `config/hypr/silky-keys.lua` | 登录时启动面板；`o.rebind("SUPER + K", …)`；给 `silky-keys` 图层加背景模糊 |
 | `keys-panel/shell.qml` → `~/.config/quickshell/SilkyKeys/` | 面板本体（常驻 Quickshell，IPC 目标 `keys`） |
-| `config/hypr/silky-app-windows.lua` | 按应用的窗口规则：微信「图片和视频」窗口始终浮动、居中 |
+| `config/hypr/silky-app-windows.lua` | 按应用的窗口规则：禁止微信后台自动抢焦点置顶；微信「图片和视频」与聊天记录窗口始终浮动、居中，默认尺寸适中 |
 
 为什么要 registry：
 
@@ -109,13 +119,15 @@ qs -c SilkyKeys ipc call keys search 截图                   # 带着搜索词�
 hyprctl dispatch 'function() silky_keys.dump("/tmp/k.json") end' && jq length /tmp/k.json
 ```
 
-微信图片查看器：在微信里点开一张图片，然后执行
+微信图片查看器与聊天记录：在微信里点开一张图片、打开一个聊天记录窗口，然后执行
 
 ```bash
-hyprctl clients -j | jq -c '.[] | select(.class=="wechat") | {title, floating}'
+hyprctl clients -j | jq -c '.[] | select(.class=="wechat") | {title, size, floating}'
 ```
 
-「图片和视频」一行应为 `"floating":true`，窗口居中显示。2026-11-18 在本机实机确认：`hyprctl configerrors` 为空，`hyprctl reload` 后已打开的查看器变为浮动并居中。重启微信后新建查看器由打开时的规则浮动，这一步待验证。
+「图片和视频」一行应为 `"size":[900,620]`、`"floating":true`，聊天记录应为 `"size":[820,720]`，两者居中且不碰菜单栏。2026-11-20 在本机实机确认：`hyprctl configerrors` 为空；规则加载后新建的查看器打开即 900×620 居中；聊天记录窗口重载后收窄并居中。程序化把聊天记录高度调到 720 以下会被微信弹回，属微信自身的最小高度，不是规则问题；复用的旧查看器在重载时被收回默认尺寸这一步待验证。
+
+微信后台防抢焦点：2026-11-22 在本机（Hyprland 0.57.2、微信 4.1.29 XWayland）实机对比验证：`hyprctl configerrors` 为空；修复前向微信 X11 窗口发送 `_NET_ACTIVE_WINDOW` 会立刻将焦点切给微信并抬升到最前，修复后保持原焦点窗口不变。
 
 doctor 的冲突检查：从 registry 导出所有绑定，按“修饰键+键”分组，只要某个键既有 MacShell/MacLock 的说明又有别的说明就报错。Omarchy 或 MacShell 升级后新增了冲突，就会在这里看到，到 `silky-shortcuts.lua` 里照样挪走即可。
 
@@ -136,6 +148,6 @@ pkill -x -f 'qs -c SilkyKeys( -d)?'; rm -r ~/.config/quickshell/SilkyKeys
 hyprctl reload
 ```
 
-只撤销微信图片查看器浮动：删除 `~/.config/hypr/silky-app-windows.lua` 和 `hyprland.lua` 里的 `require("hypr.silky-app-windows")`，执行 `hyprctl reload`。已经浮动的查看器会保持浮动，按 `Super+T` 或重启微信即恢复平铺。
+只撤销微信图片查看器和聊天记录窗口规则：删除 `~/.config/hypr/silky-app-windows.lua` 和 `hyprland.lua` 里的 `require("hypr.silky-app-windows")`，执行 `hyprctl reload`。已经浮动的窗口会保持浮动，按 `Super+T` 或重启微信即恢复平铺。
 
 Super+K 回到 Omarchy 自带的菜单，冲突键恢复成同时触发两边。

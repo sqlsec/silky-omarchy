@@ -1669,9 +1669,9 @@ index f7f8454..b9bd1d9 100644
 -      borderSpec: Border.surfaceSpec("menu", "border", Commons.Color.menu.border, Math.max(1, Style.space(2)))
 +      anchors.fill: parent
 +      radius: 0
-+      // Silky Omarchy：菜单玻璃把 menu.background 调得很透（短菜单好看），编辑器的小字会被身后窗口干扰，至少 85% 不透明
-+      color: Qt.rgba(Commons.Color.menu.background.r, Commons.Color.menu.background.g, Commons.Color.menu.background.b,
-+        Math.max(Commons.Color.menu.background.a, 0.85))
++      // Keep the editor’s labels and controls on a solid background.
++      // The color still follows the active menu palette.
++      color: Qt.alpha(Commons.Color.menu.background, 1)
        padding: Style.spacing.panelPadding
        opacity: 0
  

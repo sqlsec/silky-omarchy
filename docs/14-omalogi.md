@@ -72,8 +72,10 @@ Omalogi 分两部分：Rust 写的助手 `omalogi`（通过 HID++ 2.0 读写鼠�
 - `bin/silky-omalogi`：已开就聚焦（会切到它所在的工作区），没开就 `qs -n -d -p …` 启动。Hyprland 是 Lua 配置，`hyprctl dispatch` 收的是 Lua 表达式：`hl.dsp.focus({ window = "class:^(io\\.github\\.elberacasa\\.omalogi)$" })`，旧的 `focuswindow class:…` 会报错
 - 入口文件名改成 `io.github.elberacasa.omalogi.desktop`、加 `StartupWMClass`，图标再软链一份同名，Dock 才能把运行中的窗口对上「罗技鼠标」
 - `config/hypr/silky-omalogi.lua`：居中浮动 1280×700：居中后下边停在 Dock 上方（窗口压到 Dock 区域时 Dock 会自动隐藏；最初的 1360×860 就把 Dock 挤没了），1280 的宽度给鼠标图和两侧标签留出空间。Omarchy 的“浮动工作区”会把新窗口统一缩成 1100×760，只有自带 float 规则的应用例外；窗口尺寸用逻辑像素写死，不走 `Style.space()`（这台机器缩放约 0.83，会把尺寸缩小、和规则打架）。Super+T 仍可切平铺
-- 卡片底色至少 85% 不透明（`Math.max(menu.background.a, 0.85)`）：[11 · 菜单玻璃](11-menu-glass.md) 把 `menu` 配色调成 55%，编辑器满屏小字需要更实的底；窗口模糊由 Hyprland 负责
+- 编辑器使用随主题变化的实色底。浮动工作区由 Hyprland 绘制共用的磨砂标题栏和红黄绿按钮。
 - 菜单栏指示器（Omarchy Shell 里）仍打开插件内的窗口；这套配置用 MacShell 菜单栏，平时走启动台入口
+
+[共用窗口控件](04-macos-theme.md#system-app-audit)按 960×600 的最小尺寸筛选布局。1472×920 逻辑分辨率下，半屏和四角选项均置灰。隔离 Wayland 会话验证了长按绿灯打开菜单，以及单击绿灯进入、退出全屏。运行 `./scripts/install-omalogi.sh` 更新编辑器样式后，从启动器重新打开。只回滚样式时，恢复 `~/.config/omarchy/plugins/io.github.elberacasa.omalogi/` 中上一版的 `plugin/Omalogi.qml` 并重新打开。
 
 ## 有线 + 无线两只鼠标
 
@@ -144,7 +146,7 @@ cat ~/.config/omalogi/device 2>/dev/null                                  # wire
 | 入口图标是橙底齿轮 | 那是 MacShell 的兜底图标：Qt 把“找不到 `omalogi`”缓存到进程重启 | `Icon=` 写绝对路径；入口先删再建 |
 | 自己画的深色图标在深色面板里看不清 | 深底 + 小鼠标 | 换成亮蓝渐变瓦片，鼠标放大到 96% |
 | 点「允许访问」后终端“失败（退出码 1）” | udev 规则没装；插件的 `install.sh` 在 ARM 上直接退出 | ARM 上转交 `install-omalogi.sh`，在终端里输 sudo |
-| 浮层太透、看不清 | 菜单玻璃把 `menu` 调到 55%，而浮层图层没有模糊规则 | 卡片至少 85% 不透明（后来改成窗口，由 Hyprland 模糊） |
+| 浮层太透、看不清 | 菜单玻璃把 `menu` 调到 55%，而浮层图层没有模糊规则 | 编辑区使用实色底，标题栏使用磨砂 |
 | 切工作区仍在最上面、不能切窗口模式 | 上游是 `Overlay` 图层的全屏浮层 | 改成 `FloatingWindow` |
 | 改完插件后打不开、日志无报错 | Omarchy Shell 还在用旧版本插件 | `omarchy-restart-shell` |
 | 菜单栏显示 MacShell、Dock 没图标 | Omarchy Shell 里的窗口 class 是 `org.quickshell` | 独立 Quickshell 进程 + `//@ pragma AppId` |

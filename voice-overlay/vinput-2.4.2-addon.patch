@@ -1,0 +1,65 @@
+diff --git i/src/addon/core/vinput.h w/src/addon/core/vinput.h
+index 74d2a1b..590138d 100644
+--- i/src/addon/core/vinput.h
++++ w/src/addon/core/vinput.h
+@@ -6,6 +6,7 @@
+ #include <cstdint>
+ #include <ctime>
+ #include <fcitx-utils/dbus/bus.h>
++#include <fcitx-utils/dbus/servicewatcher.h>
+ #include <fcitx-utils/event.h>
+ #include <fcitx-utils/eventdispatcher.h>
+ #include <fcitx-utils/handlertable.h>
+@@ -130,6 +131,9 @@ private:
+   std::unique_ptr<fcitx::dbus::Slot> error_slot_;
+   std::unique_ptr<fcitx::dbus::Slot> pending_start_call_slot_;
+   std::unique_ptr<fcitx::dbus::Slot> pending_stop_call_slot_;
++  std::optional<fcitx::dbus::ServiceWatcher> voice_overlay_watcher_;
++  std::unique_ptr<fcitx::dbus::ServiceWatcherEntry> voice_overlay_watch_;
++  bool voice_overlay_available_ = false;
+   struct Session {
+     enum class Phase : std::uint8_t { PendingStart, Recording, Inferring, Postprocessing };
+     Phase phase;
+diff --git i/src/addon/dbus/vinput_dbus.cpp w/src/addon/dbus/vinput_dbus.cpp
+index 7276dd8..cb3d4af 100644
+--- i/src/addon/dbus/vinput_dbus.cpp
++++ w/src/addon/dbus/vinput_dbus.cpp
+@@ -26,6 +26,7 @@ using namespace vinput::dbus;
+ 
+ namespace {
+ 
++constexpr char kVoiceOverlayName[] = "org.fcitx.Vinput.SilkyVoice";
+ constexpr uint64_t kStatusSyncIntervalUsec = 200 * 1000;
+ constexpr auto kPolledIdleRecoveryDelay =
+     std::chrono::milliseconds(vinput::runtime::kDbusCallTimeoutMs);
+@@ -309,6 +310,12 @@ void VinputEngine::setupDBusWatcher() {
+   if (!bus_)
+     return;
+ 
++  voice_overlay_watcher_.emplace(*bus_);
++  voice_overlay_watch_ = voice_overlay_watcher_->watchService(
++      kVoiceOverlayName, [this](const std::string&, const std::string&, const std::string& owner) {
++        voice_overlay_available_ = !owner.empty();
++      });
++
+   fcitx::dbus::MatchRule result_rule(kBusName, kObjectPath, kInterface, kSignalRecognitionResult);
+ 
+   result_slot_ = bus_->addMatch(result_rule, [this](fcitx::dbus::Message& msg) {
+@@ -1056,9 +1063,15 @@ void VinputEngine::updateVoicePresentation(fcitx::InputContext* ic, const std::s
+     return;
+   dismissMenusForVoiceActivity();
+   fcitx::Text preedit;
+-  preedit.append(preedit_text);
+   fcitx::Text aux_down;
+-  aux_down.append(aux_down_text);
++  // Command and postprocessing panels carry their own action prompts.
++  const bool overlay_handles_preview = voice_overlay_available_ && session_ &&
++                                       !session_->command_mode &&
++                                       session_->phase != Session::Phase::Postprocessing;
++  if (!overlay_handles_preview) {
++    preedit.append(preedit_text);
++    aux_down.append(aux_down_text);
++  }
+   ic->inputPanel().setPreedit(preedit);
+   ic->inputPanel().setAuxDown(aux_down);
+   ic->updatePreedit();

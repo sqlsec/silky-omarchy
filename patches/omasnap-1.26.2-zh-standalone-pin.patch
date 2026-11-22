@@ -1,0 +1,787 @@
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -505,86 +505,35 @@
+ 
+ ### Capture previews and pins
+ 
+-Normal captures show a preview that fades after 7 seconds of idle time, replacing
+-the completion notification. Hovering the stack and in-progress
+-actions pause the countdown; it resumes when the preview is idle again. Clicking,
+-scrolling, copying, or editing does not pin the preview. The pin button,
+-`Ctrl+P` on a focused preview, or `T` ("tack") while hovered keeps it until closed.
+-Dragging the preview also pins it, even if the drag only reorders the stack.
+-`T` remains the Text shortcut in the editor. Kept shots show a
+-pin icon in the active window-border color, even when the other controls are
+-hidden. Unpinning starts a fresh
+-7-second countdown.
+-New captures always go in front of the existing stack, including kept shots.
+-Opening Edit leaves the preview's expiry policy unchanged; pin it first to keep
+-the preview available throughout annotation.
+-
+-In the editor, `Ctrl+P` or `P` renders a capture that stays pinned. It writes a
+-`pin-<pid>-<n>-<random>.png` under the runtime snapshot directory, and launches
+-the same `omasnap` executable in
+-detached pin mode. Hyprland floats and pins each window on every workspace.
+-Idle pins overlap in a compact deck at the focused monitor's bottom-right
+-corner, newest in front. The front card stays straight; the cards behind it
+-alternate the same growing lean as the recents shelf: −3°, +6°, −9°, +12°.
+-Omasnap paints the rounded frames with the images so their edges tilt together,
+-with transparent corners that take no input. Theme changes keep this single frame
+-without adding a second compositor outline.
+-Hover to straighten and fan them upward into fully exposed cards, wrapping into
+-further columns when needed. The front card stays anchored; moving between cards
+-keeps the fan open, and leaving folds it after a short delay. Placement accounts for
+-monitor origins, scaling and rotation, respecting bars on any edge and leaving
+-a 14-pixel gap inside the usable area. It reserves each new target while the
+-compositor animates it. If no on-screen slot fits, automatic packing leaves the window
+-where the compositor placed it.
+-
+-Captures use fast lossless PNG encoding. The corner card loads a separate small
+-display image; the clipboard, saved files, and editor retain every original pixel.
+-
+-The preview is 200 logical pixels wide with the display's aspect ratio (height
+-clamped to 50–400 pixels). It fills that frame with a top-anchored cover crop;
+-copy, edit and drag-out still use the complete full-resolution image. Drag the
+-image background, or use `Super`+left-drag, to move a pin. Dragging over the stack
+-opens an insertion gap, and releasing snaps it into that gap. The fan stays open
+-during a drag. Moving or closing a stacked pin closes the gap; pins dragged entirely clear of the stack
+-stay freely placed and are left alone when the stack folds or opens.
+-A drop partly outside the usable area returns fully inside the monitor where the
+-drag started, keeping the same 14-pixel edge gap.
+-
+-Pinning neither touches the clipboard nor writes to the screenshot directory; it is a
+-fourth output alongside copy, save, and copy-and-save. `Ctrl+P` / `P` closes the editor and releases
+-the single-instance lock immediately. Pins from separate captures accumulate as independent
+-processes.
+-
+-Hover the pin to reveal its controls and use its keyboard shortcuts; the cursor
+-becomes a pointing hand over each button. **Edit** and **Copy** sit in the center
+-of the image, with text labels and no tooltips. The pin button sits beside **×**
+-at the top-right; the drag handle, file-path button, and folder button sit at
+-the top-left.
+-Icon buttons use compact, dark tooltips for their actions and shortcuts.
+-Pins follow normal mouse focus while hovered and keep focus with the current
+-app when first created.
+-Closing an active or hovered pin focuses the next pin on that monitor, starting
+-with the front of the remaining stack, so repeated `X` presses dismiss them
+-without needing another mouse movement. Opening a pin for annotation keeps
+-the pin in place and gives focus to the editor. One `Esc` dismisses the editor
+-and updates that same pin, including any text being typed. Reopening it restores
+-the editable layers and undo history. `P` / `Ctrl+P` in that editor returns to
+-the existing pin too.
+-While the overlay is open, a compositor close aimed at a pin (including stock
+-`Super+W`) dismisses the overlay as `Esc` would, leaving the pins in place.
+-Automatic expiry compacts the stack without transferring keyboard focus.
+-
+-| Input on a pin | Action |
++Normal captures show a temporary preview in the lower-right stack. It fades
++after seven seconds of idle time and pauses while hovered. Click the pin button
++or choose **Keep on screen** from its right-click menu to turn it into a
++standalone pin. Dragging a preview also keeps it available for reordering.
++
++In the editor, `P` or `Ctrl+P` opens a standalone pin near the pointer.
++`omasnap --pin-clipboard` opens a pin from the current clipboard image. Pins
++are floating windows across workspaces, sized to show the full image without
++cropping. Large captures open fitted to the work area. Drag anywhere on the
++image to move it. The right-click menu provides copy, save, edit, reveal,
++original size, opacity, and close.
++
++| Input on a standalone pin | Action |
+ |---|---|
+-| Pin button, `Ctrl+P` while focused, `T` while hovered | Keep on screen; press again to unpin and restart the countdown |
+-| Drag the image background, `Super`+left-drag | Move the preview and keep it on screen, including when reordering the stack |
+-| Edit button, `A` / `E` while hovered | Annotate the capture while keeping the same pin |
+-| Link button, `L` / `F` while hovered | Save the capture if needed and copy its file path |
+-| Folder button, `R` while hovered | Save the capture if needed and show it in the default file browser |
+-| Copy button, `C` while hovered, `Ctrl+C` | Copy the full-resolution PNG |
+-| Top-left six-dot drag handle | Drag the PNG into a file-capable drop target |
+-| Wheel | Keep the fixed preview size |
+-| Close button, `X` / `Super+W` while focused, `Esc`, middle-click | Close and focus the next pin |
++| Drag the image | Move the pin |
++| Wheel / `Alt`+wheel | Zoom by 10% / 1% |
++| `Ctrl`+wheel | Change opacity by 5% |
++| Middle-click | Restore original size, fitted to the work area if needed |
++| Double-click / `Esc` / `X` | Close the pin |
++| `Shift`+drag | Drag the full PNG into a file-capable drop target |
++| `A` / `E` while hovered | Edit the pin |
++| `Ctrl+C` | Copy the full image |
++
++Pinning leaves the screenshot in runtime storage until an explicit save, file
++reveal, or path-copy action. Copying, saving, and editing use the full-resolution
++image. Edit keeps the same pin in place while the annotator opens. One `Esc`
++in the annotator returns edits to that pin, with undo history available on reopen.
++A compositor close aimed at a pin underneath the active annotator dismisses the
++annotator first. Closing a pin can transfer focus to the next pin on the monitor.
+ 
+ Image and path copying use `wl-copy` rather than `QClipboard`, so clipboard data remains
+ available after the pin is closed. Copying a temporary capture's path or showing
+diff --git a/i18n/omasnap_zh_CN.ts b/i18n/omasnap_zh_CN.ts
+--- a/i18n/omasnap_zh_CN.ts
++++ b/i18n/omasnap_zh_CN.ts
+@@ -994,6 +994,38 @@
+     <message>
+       <source>Copied path</source>
+       <translation>已复制路径</translation>
++    </message>
++    <message>
++      <source>Copy image</source>
++      <translation>复制图像</translation>
++    </message>
++    <message>
++      <source>Save image</source>
++      <translation>保存图像</translation>
++    </message>
++    <message>
++      <source>Original size</source>
++      <translation>原始大小</translation>
++    </message>
++    <message>
++      <source>Opacity</source>
++      <translation>不透明度</translation>
++    </message>
++    <message>
++      <source>Opacity %1%</source>
++      <translation>不透明度 %1%</translation>
++    </message>
++    <message>
++      <source>Image saved</source>
++      <translation>图像已保存</translation>
++    </message>
++    <message>
++      <source>Show in folder</source>
++      <translation>在文件夹中显示</translation>
++    </message>
++    <message>
++      <source>Keep on screen</source>
++      <translation>保持贴图</translation>
+     </message>
+     <message>
+       <source>Pinned</source>
+diff --git a/src/pin.cpp b/src/pin.cpp
+--- a/src/pin.cpp
++++ b/src/pin.cpp
+@@ -8,6 +8,7 @@
+ #include "pin-expiry.hpp"
+ #include "pin-file.hpp"
+ #include "pin-layout.hpp"
++#include "png.hpp"
+ #include "startup-timing.hpp"
+ #include <QCoreApplication>
+ #include <QDateTime>
+@@ -33,6 +34,8 @@
+ #include <QImageReader>
+ #include <QKeyEvent>
+ #include <QMimeData>
++#include <QMenu>
++#include <QContextMenuEvent>
+ #include <QMouseEvent>
+ #include <QPainterPath>
+ #include <QPainter>
+@@ -186,6 +189,13 @@
+   return ok && output.trimmed() == QStringLiteral("ok");
+ }
+ 
++bool resizeCompositorPin(const QString &address, const QSize &frame) {
++  return hyprDispatch(
++      QStringLiteral("hl.dsp.window.resize({ x = %1, y = %2, relative = false, "
++                     "window = \"address:%3\" })")
++          .arg(frame.width()).arg(frame.height()).arg(address));
++}
++
+ bool preservePinFrame(const QString &address) {
+   // A theme reload discards runtime window rules. Per-window properties
+   // survive it, so the compositor cannot add a second frame around our card.
+@@ -236,6 +246,32 @@
+       focused = screen;
+   }
+   return focused;
++}
++
++std::optional<QPoint> compositorPointer() {
++  const QJsonObject cursor = QJsonDocument::fromJson(
++      runForOutput(QStringLiteral("hyprctl"),
++                   {QStringLiteral("-j"), QStringLiteral("cursorpos")}).toUtf8()).object();
++  if (!cursor.contains(QStringLiteral("x")) || !cursor.contains(QStringLiteral("y")))
++    return std::nullopt;
++  return QPoint(cursor.value(QStringLiteral("x")).toInt(),
++                cursor.value(QStringLiteral("y")).toInt());
++}
++
++QSize fittedPinImageSize(const QImage &image, const QSize &workArea, qreal zoom) {
++  const QSize logical = pngLogicalSize(image);
++  const QSize original = logical.isEmpty() ? image.size() : logical;
++  const QSize available = workArea.isEmpty() ? QSize(960, 600) : workArea;
++  const qreal limit = std::min(
++      std::max(1, available.width() - 2 * qRound(kCornerMargin)) /
++          qreal(original.width()),
++      std::max(1, available.height() - 2 * qRound(kCornerMargin)) /
++          qreal(original.height()));
++  const qreal minimum = std::min(1.0, 80.0 /
++      std::max(original.width(), original.height()));
++  const qreal scale = std::clamp(zoom, std::min(minimum, limit), limit);
++  return {std::max(1, qRound(original.width() * scale)),
++          std::max(1, qRound(original.height() * scale))};
+ }
+ 
+ struct CompositorPin {
+@@ -557,17 +593,13 @@
+     return {};
+   }
+ 
+-  const QJsonObject cursor = QJsonDocument::fromJson(
+-      runForOutput(QStringLiteral("hyprctl"),
+-                   {QStringLiteral("-j"), QStringLiteral("cursorpos")}).toUtf8()).object();
+-  if (!cursor.contains(QStringLiteral("x")) || !cursor.contains(QStringLiteral("y")))
++  const auto pointer = compositorPointer();
++  if (!pointer)
+     return {screen, placement.pins, true};
+   QVector<QRect> cards;
+   for (const auto &card : placement.column(screen))
+     cards.push_back(card.second.translated(screen.topLeft()));
+-  const QPoint pointer(cursor.value(QStringLiteral("x")).toInt(),
+-                        cursor.value(QStringLiteral("y")).toInt());
+-  const bool outside = !pinStackHotZone(cards, screen).contains(pointer);
++  const bool outside = !pinStackHotZone(cards, screen).contains(*pointer);
+   if (outside && mayClose) {
+     if (placement.arrange(screen, false)) {
+       placement.setHover({});
+@@ -595,7 +627,8 @@
+   explicit PinWindow(QImage image, QString path, const QSize &frame,
+                       PinLifetime lifetime = PinLifetime::Persistent)
+       : image_(std::move(image)), expiry_(lifetime == PinLifetime::Persistent),
+-        path_(std::move(path)), snapshotFile_(path_) {
++        path_(std::move(path)), snapshotFile_(path_),
++        standalone_(lifetime == PinLifetime::Persistent) {
+     setWindowTitle(pinTitle());
+     setWindowFlags(Qt::Window | Qt::FramelessWindowHint);
+     setAttribute(Qt::WA_ShowWithoutActivating);
+@@ -607,6 +640,9 @@
+     setAttribute(Qt::WA_AlwaysShowToolTips, true);
+     QToolTip::setFont(chromeFont(11));
+     setMouseTracking(true);
++    pinResizeTimer_.setSingleShot(true);
++    pinResizeTimer_.setInterval(45);
++    connect(&pinResizeTimer_, &QTimer::timeout, this, [this] { placeResizedPin(); });
+     connect(&expiry_, &PinExpiry::opacityChanged, this, [this](qreal opacity) {
+       opacity_ = opacity;
+       update();
+@@ -677,6 +713,8 @@
+         dragPreview_ = preview.drag;
+         path_ = pinDocument_->previewPath();
+         sharedPath_.clear();
++        if (standalone_)
++          resizePin(pinZoom_);
+         update();
+       }
+       if (std::exchange(documentReloadPending_, false))
+@@ -702,6 +740,18 @@
+     }));
+   }
+ 
++  void setInitialPinSize(const QRect &workArea) {
++    dragScreen_ = workArea;
++    const QSize logical = pngLogicalSize(image_);
++    const QSize original = logical.isEmpty() ? image_.size() : logical;
++    const QSize fit = fittedPinImageSize(image_, workArea.size() * 0.60, 1.0);
++    pinZoom_ = std::min(fit.width() / qreal(original.width()),
++                        fit.height() / qreal(original.height()));
++    setFixedSize(fit);
++  }
++
++  [[nodiscard]] bool standalone() const { return standalone_; }
++
+   void setPlacementSnapshot(const QRect &screen, const QVector<CompositorPin> &pins) {
+     dragScreen_ = screen;
+     cachedPins_ = pins;
+@@ -711,6 +761,8 @@
+   }
+ 
+   void openStack() {
++    if (standalone_)
++      return;
+     stackOpenRequested_ = true;
+     stackOutside_.invalidate();
+     requestStackWatch();
+@@ -862,7 +914,14 @@
+     painter.setCompositionMode(QPainter::CompositionMode_Source);
+     painter.fillRect(rect(), Qt::transparent);
+     painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+-    painter.setOpacity(opacity_);
++    painter.setOpacity(opacity_ * pinOpacity_);
++    if (standalone_) {
++      painter.drawImage(QRectF(rect()), image_);
++      if (!toast_.isEmpty())
++        paintToast(painter);
++      return;
++    }
++
+     painter.save();
+     painter.setTransform(pinCardTransform(size(), tilt_));
+     const QPainterPath card = cardPath();
+@@ -938,11 +997,26 @@
+ 
+   void mousePressEvent(QMouseEvent *event) override {
+     if (event->button() == Qt::MiddleButton) {
+-      close();
++      if (standalone_)
++        resizePin(1.0);
++      else
++        close();
++      event->accept();
+       return;
+     }
+     const QPointF position = event->position();
+     if (event->button() == Qt::LeftButton) {
++      if (standalone_) {
++        if (event->modifiers() == Qt::ShiftModifier) {
++          beginFileDrag();
++        } else {
++          if (QWindow *handle = windowHandle())
++            handle->startSystemMove();
++          beginDragWatch();
++        }
++        event->accept();
++        return;
++      }
+       if (closeButtonRect().contains(position)) {
+         close();
+         return;
+@@ -976,6 +1050,63 @@
+       beginDragWatch();
+       event->accept();
+     }
++  }
++
++  void mouseDoubleClickEvent(QMouseEvent *event) override {
++    if (standalone_ && event->button() == Qt::LeftButton &&
++        event->modifiers() == Qt::NoModifier) {
++      close();
++      event->accept();
++      return;
++    }
++    QWidget::mouseDoubleClickEvent(event);
++  }
++
++  void contextMenuEvent(QContextMenuEvent *event) override {
++    if (menuOpen_) {
++      event->accept();
++      return;
++    }
++    auto *menu = new QMenu(this);
++    menu->setFont(chromeFont(12));
++    QPalette palette;
++    palette.setColor(QPalette::Window, chromeTheme().surface);
++    palette.setColor(QPalette::WindowText, chromeTheme().foreground);
++    palette.setColor(QPalette::Highlight, chromeTheme().accent);
++    palette.setColor(QPalette::HighlightedText, chromeTheme().accentText);
++    menu->setPalette(palette);
++    const auto text = [](const char *label) {
++      return QCoreApplication::translate("Omasnap", label);
++    };
++    menu->addAction(text("Copy image"), this, &PinWindow::copyImage);
++    menu->addAction(text("Save image"), this, &PinWindow::saveImage);
++    menu->addAction(text("Edit"), this, &PinWindow::reopenInEditor);
++    menu->addAction(text("Show in folder"), this, &PinWindow::revealFile);
++    menu->addSeparator();
++    if (standalone_) {
++      menu->addAction(text("Original size"), this, [this] { resizePin(1.0); });
++      auto *opacity = menu->addMenu(text("Opacity"));
++      for (const int percent : {100, 75, 50, 25}) {
++        auto *level = opacity->addAction(QStringLiteral("%1%").arg(percent), this,
++                                        [this, percent] { setPinOpacity(percent / 100.0); });
++        level->setCheckable(true);
++        level->setChecked(qRound(pinOpacity_ * 100) == percent);
++      }
++    } else {
++      auto *keep = menu->addAction(text("Keep on screen"), this, &PinWindow::toggleKept);
++      keep->setCheckable(true);
++      keep->setChecked(expiry_.kept());
++    }
++    menu->addAction(text("Close"), this, &PinWindow::close);
++    menuOpen_ = true;
++    updateExpiryPause();
++    connect(menu, &QMenu::aboutToHide, this, [this, menu] {
++      menuOpen_ = false;
++      updateExpiryPause();
++      menu->deleteLater();
++    });
++    menu->popup(event->globalPos());
++    event->accept();
+   }
+ 
+   // startSystemMove hands the drag to the compositor and this side never
+@@ -1203,7 +1334,7 @@
+   // While the drag hovers the column, the others step aside around a hole
+   // where this pin would land, live; leaving the column packs them back.
+   void previewInsertion(const QRect &rect) {
+-    if (dragScreen_.isEmpty())
++    if (standalone_ || dragScreen_.isEmpty())
+       return;
+     QVector<QPair<QString, QRect>> column;
+     QVector<QRect> blockers;
+@@ -1298,6 +1429,14 @@
+           return ActionResult{error, {}, {}};
+         },
+         QCoreApplication::translate("Omasnap", "Copied to clipboard"));
++  }
++
++  void saveImage() {
++    runAction([path = path_, shared = sharedPath_] {
++      QString error;
++      const QString saved = sharedPinPath(path, shared, error);
++      return ActionResult{error, saved, {}};
++    }, QCoreApplication::translate("Omasnap", "Image saved"));
+   }
+ 
+   void copyPath() {
+@@ -1431,8 +1570,18 @@
+   }
+ 
+   void wheelEvent(QWheelEvent *event) override {
+-    // Pinned captures deliberately keep a stable display-shaped frame so the
+-    // controls remain usable and the image area never reflows.
++    const int delta = event->angleDelta().y() != 0 ? event->angleDelta().y()
++                                                 : event->pixelDelta().y();
++    if (standalone_ && delta != 0 && !dragWatchTimer_.isActive() &&
++        !finishRequested_ && !snapPending_) {
++      const int direction = delta > 0 ? 1 : -1;
++      if (event->modifiers().testFlag(Qt::ControlModifier)) {
++        setPinOpacity(pinOpacity_ + direction * 0.05);
++      } else {
++        const qreal step = event->modifiers().testFlag(Qt::AltModifier) ? 1.01 : 1.10;
++        resizePin(direction > 0 ? pinZoom_ * step : pinZoom_ / step);
++      }
++    }
+     event->accept();
+   }
+ 
+@@ -1515,6 +1664,7 @@
+     closing_ = true;
+     expiry_.setPaused(true);
+     stackStateReloadTimer_.stop();
++    pinResizeTimer_.stop();
+     tiltAnimation_.stop();
+     dragWatchTimer_.stop();
+     stackWatchTimer_.stop();
+@@ -1571,7 +1721,7 @@
+   }
+ 
+   void updateExpiryPause() {
+-    expiry_.setPaused(closing_ || hovered_ || stackInteracting_ || actionPending_ ||
++    expiry_.setPaused(closing_ || hovered_ || menuOpen_ || stackInteracting_ || actionPending_ ||
+                       fileDragActive_ || dragWatchTimer_.isActive() ||
+                       finishRequested_ || snapPending_);
+   }
+@@ -1579,13 +1729,100 @@
+   void toggleKept() {
+     expiry_.setKept(!expiry_.kept());
+     QToolTip::hideText();
++    if (expiry_.kept() && !standalone_)
++      promotePreview();
+     showToast(expiry_.kept() ? QCoreApplication::translate("Omasnap", "Pinned")
+                              : QCoreApplication::translate(
+                                    "Omasnap", "Fades after 7 seconds"));
+   }
+ 
++  void promotePreview() {
++    if (promoting_)
++      return;
++    promoting_ = true;
++    auto *watcher = new QFutureWatcher<QImage>(this);
++    connect(watcher, &QFutureWatcher<QImage>::finished, this,
++            [this, watcher, path = path_] {
++      QImage full = watcher->result();
++      watcher->deleteLater();
++      promoting_ = false;
++      if (closing_ || !expiry_.kept() || path_ != path || full.isNull())
++        return;
++      standalone_ = true;
++      image_ = std::move(full);
++      stackWatchTimer_.stop();
++      setTilt(0.0, false);
++      const QRect workArea = !dragScreen_.isEmpty() ? dragScreen_
++                           : screen() ? screen()->availableGeometry() : QRect{};
++      setInitialPinSize(workArea);
++      updateCardMask();
++      update();
++      placeResizedPin(true);
++    });
++    watcher->setFuture(QtConcurrent::run([path = path_] { return QImage(path); }));
++  }
++
++  void resizePin(qreal zoom) {
++    const QSize logical = pngLogicalSize(image_);
++    const QSize original = logical.isEmpty() ? image_.size() : logical;
++    const QSize workArea = !dragScreen_.isEmpty() ? dragScreen_.size()
++                         : screen() ? screen()->availableGeometry().size() : QSize{};
++    const QSize frame = fittedPinImageSize(image_, workArea, zoom);
++    // Keep subpixel steps at small sizes so fine zoom still accumulates.
++    const int longest = std::max(original.width(), original.height());
++    const int scaled = original.width() >= original.height() ? frame.width()
++                                                             : frame.height();
++    const qreal effective = scaled / qreal(longest);
++    const qreal halfPixel = 0.5 / longest;
++    pinZoom_ = std::clamp(zoom, effective - halfPixel, effective + halfPixel);
++    if (frame != size()) {
++      setFixedSize(frame);
++      pinResizeTimer_.start();
++    }
++  }
++
++  void placeResizedPin(bool promoted = false) {
++    if (closing_ || dragScreen_.isEmpty() ||
++        (!promoted && dragWatchTimer_.isActive()))
++      return;
++    static_cast<void>(QtConcurrent::run(&pinPool(),
++        [title = windowTitle(), area = dragScreen_, frame = size(), promoted] {
++      PinPlacement placement;
++      if (!placement.ready())
++        return;
++      auto own = std::find_if(placement.pins.cbegin(), placement.pins.cend(),
++                              [&](const CompositorPin &pin) { return pin.title == title; });
++      if (own == placement.pins.cend())
++        return;
++      const QPoint origin = own->rect.topLeft();
++      if (promoted) {
++        placement.setFree(title, true);
++        if (placement.hoverOwner() == title)
++          placement.setHover({});
++        placement.arrange(area, placement.hoverScreen() == area &&
++                                !placement.hoverOwner().isEmpty(), title);
++      }
++      const QRect target = pinVisibleRect(QRect(origin, frame), area,
++                                          qRound(kCornerMargin));
++      if (own->rect.size() != frame && !resizeCompositorPin(own->address, frame))
++        return;
++      if (target.topLeft() != origin)
++        placement.move(title, target);
++    }));
++  }
++
++  void setPinOpacity(qreal opacity) {
++    pinOpacity_ = std::clamp(opacity, 0.15, 1.0);
++    showToast(QCoreApplication::translate("Omasnap", "Opacity %1%")
++                  .arg(qRound(pinOpacity_ * 100)));
++  }
++
+   QPainterPath cardPath() const {
+     QPainterPath path;
++    if (standalone_) {
++      path.addRect(QRectF(rect()));
++      return path;
++    }
+     path.addRoundedRect(QRectF(rect()).adjusted(1, 1, -1, -1), 7, 7);
+     return path;
+   }
+@@ -1662,7 +1899,7 @@
+   [[nodiscard]] QRectF revealButtonRect() const { return controlRect(6); }
+ 
+   [[nodiscard]] QRectF controlRect(int index) const {
+-    return pinControlRect(size(), index);
++    return standalone_ ? QRectF{} : pinControlRect(size(), index);
+   }
+ 
+   [[nodiscard]] int controlRectAt(const QPointF &position) const {
+@@ -1728,6 +1965,12 @@
+   int dragPolls_ = 0;
+   int dragStablePolls_ = 0;
+   QString toast_;
++  bool standalone_ = false;
++  bool promoting_ = false;
++  bool menuOpen_ = false;
++  qreal pinZoom_ = 1.0;
++  qreal pinOpacity_ = 1.0;
++  QTimer pinResizeTimer_;
+   bool hovered_ = false;
+   int hoveredControl_ = -1;
+ };
+@@ -1738,7 +1981,7 @@
+   QImage image;
+   {
+     StartupTimingScope timing("load pin display image");
+-    if (PinSnapshotFile::isOwnedPath(path))
++    if (lifetime == PinLifetime::Timed && PinSnapshotFile::isOwnedPath(path))
+       image.load(PinSnapshotFile::thumbnailPath(path));
+     if (image.isNull())
+       image.load(path);
+@@ -1778,7 +2021,8 @@
+     const QString title = window.windowTitle();
+     const QSize frame = window.size();
+     const QRect geometry = *screen;
+-    watcher->setFuture(QtConcurrent::run(&pinPool(), [title, frame, screen = geometry]() -> PlacementResult {
++    watcher->setFuture(QtConcurrent::run(&pinPool(),
++        [title, frame, screen = geometry, standalone = window.standalone()]() -> PlacementResult {
+       PinPlacement placement;
+       if (!placement.ready() || screen.isEmpty())
+         return {};
+@@ -1792,6 +2036,16 @@
+         return {};
+       if (!preservePinFrame(own->address))
+         return {};
++      if (standalone) {
++        const QPoint anchor = compositorPointer().value_or(screen.center());
++        const QRect target = pinVisibleRect(QRect(anchor + QPoint(16, 16), frame),
++                                            screen, qRound(kCornerMargin));
++        if ((own->rect.size() != frame && !resizeCompositorPin(own->address, frame)) ||
++            !placement.move(title, target))
++          return {};
++        placement.setFree(title, true);
++        return {screen, placement.pins};
++      }
+       // A new capture is the front of the idle deck. Keep an already-open
+       // fan exposed, and never rearrange pins during somebody else's drag.
+       if (!placement.dragging().isEmpty())
+@@ -1818,11 +2072,20 @@
+     monitor->deleteLater();
+     if (screen->isEmpty()) {
+       qWarning("omasnap: could not determine the pin monitor after retries");
++      if (window.standalone()) {
++        window.setInitialPinSize({});
++        window.show();
++      }
+       settle->deleteLater();
+       watcher->deleteLater();
+       return;
+     }
+-    window.setFixedSize(pinFrameSize(result.geometry.size()));
++    if (window.standalone()) {
++      window.setInitialPinSize(result.workArea);
++      window.show();
++    } else {
++      window.setFixedSize(pinFrameSize(result.geometry.size()));
++    }
+     settle->start();
+   });
+   // Register before mapping: a post-capture preview must not take keyboard
+@@ -1855,9 +2118,15 @@
+       return;
+     }
+     rules->deleteLater();
+-    window.show();
+-    monitor->setFuture(QtConcurrent::run(&pinPool(), [] {
+-      return compositorMonitor(compositorMonitors());
++    if (!window.standalone())
++      window.show();
++    monitor->setFuture(QtConcurrent::run(&pinPool(), [standalone = window.standalone()] {
++      const auto monitors = compositorMonitors();
++      if (standalone) {
++        if (const auto pointer = compositorPointer())
++          return compositorMonitor(monitors, *pointer, true);
++      }
++      return compositorMonitor(monitors);
+     }));
+   });
+   rules->setFuture(QtConcurrent::run(&pinPool(), applyRules));
+diff --git a/tests/pin-interaction-smoke.cpp b/tests/pin-interaction-smoke.cpp
+--- a/tests/pin-interaction-smoke.cpp
++++ b/tests/pin-interaction-smoke.cpp
+@@ -50,8 +50,10 @@
+     error = QStringLiteral("Could not save the pin theme fixture");
+     return false;
+   }
+-  // No show/event loop: no compositor placement or interaction is requested.
+-  PinWindow pin(source, sourcePath, source.size());
++  // Render hovered preview chrome without mapping a compositor window.
++  PinWindow pin(source, sourcePath, source.size(), PinLifetime::Timed);
++  QEnterEvent enter(QPointF(160, 100), QPointF(160, 100), QPointF(160, 100));
++  QApplication::sendEvent(&pin, &enter);
+   QImage card(source.size(), QImage::Format_ARGB32_Premultiplied);
+   card.fill(Qt::transparent);
+   pin.render(&card);
+@@ -548,41 +550,60 @@
+   }
+   QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier,
+                      pinControlRect(window.size(), 5).center().toPoint());
+-  if (!isKept()) {
+-    error = QStringLiteral("The explicit pin button did not keep the preview");
+-    return false;
+-  }
+-  QTest::keyClick(&window, Qt::Key_P, Qt::ControlModifier);
+-  if (!expectTimed(QStringLiteral("Unpinning with Ctrl+P")))
+-    return false;
+-  QTest::keyClick(&window, Qt::Key_P, Qt::ControlModifier);
+-  if (!isKept()) {
+-    error = QStringLiteral("Ctrl+P did not keep the preview");
+-    return false;
+-  }
+-  QApplication::sendEvent(&window, &enter);
+-  QTest::keyClick(&window, Qt::Key_T);
+-  if (!expectTimed(QStringLiteral("Unpinning with T")))
+-    return false;
+-  QTest::keyClick(&window, Qt::Key_T, Qt::ControlModifier);
+-  if (!expectTimed(QStringLiteral("Ctrl+T")))
+-    return false;
+-  QEvent leave(QEvent::Leave);
+-  QApplication::sendEvent(&window, &leave);
+-  QTest::keyClick(&window, Qt::Key_T);
+-  if (!expectTimed(QStringLiteral("T without hovering")))
+-    return false;
+-  QApplication::sendEvent(&window, &enter);
+-  QTest::keyClick(&window, Qt::Key_T);
+-  if (!isKept()) {
+-    error = QStringLiteral("T did not keep the hovered preview");
+-    return false;
+-  }
+-  QKeyEvent repeat(QEvent::KeyPress, Qt::Key_T, Qt::NoModifier,
+-                   QStringLiteral("t"), true);
+-  QApplication::sendEvent(&window, &repeat);
+-  if (!isKept()) {
+-    error = QStringLiteral("Holding T repeatedly toggled the preview pin");
++  if (!QTest::qWaitFor([&] { return window.standalone(); }, 3000)) {
++    error = QStringLiteral("Keeping the preview did not switch to a full-image pin");
++    return false;
++  }
++  const QSize native = image.size();
++  if (window.size() != native) {
++    error = QStringLiteral("The standalone pin changed the image's proportions");
++    return false;
++  }
++  const auto scroll = [&](Qt::KeyboardModifiers modifiers) {
++    QWheelEvent zoom(background, window.mapToGlobal(background), {}, QPoint(0, 120),
++                     Qt::NoButton, modifiers, Qt::NoScrollPhase, false);
++    QApplication::sendEvent(&window, &zoom);
++  };
++  scroll(Qt::NoModifier);
++  if (window.width() != qRound(native.width() * 1.10) ||
++      window.height() != qRound(native.height() * 1.10)) {
++    error = QStringLiteral("Pin wheel gesture did not enlarge the whole image");
++    return false;
++  }
++  scroll(Qt::AltModifier);
++  if (window.width() != qRound(native.width() * 1.10 * 1.01)) {
++    error = QStringLiteral("Pin Alt+wheel gesture did not zoom one percent");
++    return false;
++  }
++  QTest::mouseClick(&window, Qt::MiddleButton, Qt::NoModifier, background);
++  if (window.size() != native || !window.isVisible()) {
++    error = QStringLiteral("Middle-click did not restore the pin's original size");
++    return false;
++  }
++  const auto opaque = window.grab().toImage().pixelColor(1, 1).alpha();
++  QWheelEvent fade(background, window.mapToGlobal(background), {}, QPoint(0, -120),
++                   Qt::NoButton, Qt::ControlModifier, Qt::NoScrollPhase, false);
++  QApplication::sendEvent(&window, &fade);
++  if (window.grab().toImage().pixelColor(1, 1).alpha() >= opaque ||
++      window.size() != native) {
++    error = QStringLiteral("Pin Ctrl+wheel gesture did not adjust opacity independently");
++    return false;
++  }
++  QContextMenuEvent right(QContextMenuEvent::Mouse, background,
++                          window.mapToGlobal(background));
++  QApplication::sendEvent(&window, &right);
++  auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
++  const auto actions = menu ? menu->actions() : QList<QAction *>{};
++  if (std::none_of(actions.cbegin(), actions.cend(), [](QAction *action) {
++        return action->text() == QStringLiteral("Save image");
++      })) {
++    error = QStringLiteral("Standalone pin did not show its action menu");
++    return false;
++  }
++  menu->hide();
++  QTest::mouseDClick(&window, Qt::LeftButton, Qt::NoModifier, background);
++  if (window.isVisible()) {
++    error = QStringLiteral("Double-click did not close the standalone pin");
+     return false;
+   }
+   QToolTip::hideText();

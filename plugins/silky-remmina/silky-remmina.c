@@ -269,6 +269,10 @@ static gboolean draw_icon(GtkWidget *w, cairo_t *cr, gpointer data)
 static GtkWidget *line_icon(const gchar *svg, gint size)
 {
     GtkWidget *area = gtk_drawing_area_new();
+    /* A GtkDrawingArea normally gets its own GdkWindow, which would take the
+     * press over the icon away from the button: clicks in the middle of a
+     * button did nothing. Draw into the button's window instead. */
+    gtk_widget_set_has_window(area, FALSE);
     gtk_widget_set_size_request(area, size, size);
     gtk_widget_set_halign(area, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(area, GTK_ALIGN_CENTER);
@@ -399,6 +403,17 @@ static void on_menu_item(GtkMenuItem *mi, gpointer data)
     }
 }
 
+static gboolean destroy_menu(gpointer menu)
+{
+    gtk_widget_destroy(menu);
+    return G_SOURCE_REMOVE;
+}
+
+static void destroy_later(GtkWidget *menu)
+{
+    g_idle_add(destroy_menu, menu);
+}
+
 static void on_more_clicked(GtkButton *button, gpointer data)
 {
     GtkToolbar *toolbar = data;
@@ -426,7 +441,9 @@ static void on_more_clicked(GtkButton *button, gpointer data)
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), mi);
     }
     gtk_widget_show_all(menu);
-    g_signal_connect(menu, "deactivate", G_CALLBACK(gtk_widget_destroy), NULL);
+    /* GtkMenuShell deactivates the menu before it activates the chosen item,
+     * so destroying it right away would drop the click. */
+    g_signal_connect(menu, "deactivate", G_CALLBACK(destroy_later), NULL);
     gtk_menu_attach_to_widget(GTK_MENU(menu), GTK_WIDGET(button), NULL);
     gtk_menu_popup_at_widget(GTK_MENU(menu), GTK_WIDGET(button),
                              GDK_GRAVITY_SOUTH_EAST, GDK_GRAVITY_NORTH_EAST, NULL);
@@ -443,9 +460,21 @@ static void toggle_maximize(GtkWindow *win)
 static void on_close(GtkButton *b, gpointer win) { gtk_window_close(GTK_WINDOW(win)); }
 static void on_zoom(GtkButton *b, gpointer win) { toggle_maximize(GTK_WINDOW(win)); }
 
+/* GTK3 buttons let their press propagate, so a press that reached a
+ * toolbar or tab row may have started on a button. Starting a move there
+ * hands the pointer to the compositor and the button never sees its
+ * release, which swallows the click. Only drag from bare space. */
+static gboolean pressed_on_control(GtkWidget *handler, GdkEventButton *ev)
+{
+    for (GtkWidget *w = gtk_get_event_widget((GdkEvent *)ev); w && w != handler; w = gtk_widget_get_parent(w))
+        if (GTK_IS_BUTTON(w) || GTK_IS_ENTRY(w) || GTK_IS_RANGE(w))
+            return TRUE;
+    return FALSE;
+}
+
 static gboolean on_title_press(GtkWidget *w, GdkEventButton *ev, gpointer win)
 {
-    if (ev->button != GDK_BUTTON_PRIMARY)
+    if (ev->button != GDK_BUTTON_PRIMARY || pressed_on_control(w, ev))
         return FALSE;
     if (ev->type == GDK_2BUTTON_PRESS) {
         toggle_maximize(GTK_WINDOW(win));
@@ -542,12 +571,27 @@ static gboolean on_tabs_press(GtkWidget *nb, GdkEventButton *ev, gpointer u)
     return on_title_press(nb, ev, gtk_widget_get_toplevel(nb));
 }
 
+/* Tabs only with two or more sessions, whatever always_show_tab says;
+ * Remmina re-applies its own choice when pages come and go. */
+static void sync_tabs(GtkNotebook *nb)
+{
+    gboolean want = gtk_notebook_get_n_pages(nb) > 1;
+    if (g_strcmp0(g_getenv("SILKY_REMMINA_TOOLBAR"), "native") != 0 && gtk_notebook_get_show_tabs(nb) != want)
+        gtk_notebook_set_show_tabs(nb, want);
+}
+
+static void on_tabs_changed(GtkNotebook *nb) { sync_tabs(nb); }
+
 static void drag_from_tabs(GtkWidget *w, gpointer u)
 {
     if (GTK_IS_NOTEBOOK(w) && !g_object_get_data(G_OBJECT(w), MODULE_NAME)) {
         g_object_set_data(G_OBJECT(w), MODULE_NAME, GINT_TO_POINTER(1));
         gtk_widget_add_events(w, GDK_BUTTON_PRESS_MASK);
         g_signal_connect_after(w, "button-press-event", G_CALLBACK(on_tabs_press), NULL);
+        g_signal_connect(w, "notify::show-tabs", G_CALLBACK(on_tabs_changed), NULL);
+        g_signal_connect_after(w, "page-added", G_CALLBACK(on_tabs_changed), NULL);
+        g_signal_connect_after(w, "page-removed", G_CALLBACK(on_tabs_changed), NULL);
+        sync_tabs(GTK_NOTEBOOK(w));
     }
 }
 
@@ -571,9 +615,36 @@ static GtkToolItem *more_item(GtkToolbar *toolbar)
     return item;
 }
 
+/* Remmina only reads toolbar_placement from remmina.pref at startup and
+ * rewrites that file when it quits, so a placement set by the installer can
+ * be lost. Put a windowed connection toolbar across the top regardless:
+ * toolbar in row 0, notebook in row 1 of Remmina's grid.
+ * SILKY_REMMINA_TOOLBAR=native keeps Remmina's own placement. */
+static void place_on_top(GtkToolbar *toolbar)
+{
+    GtkWidget *grid = gtk_widget_get_parent(GTK_WIDGET(toolbar));
+    if (!GTK_IS_GRID(grid) || g_strcmp0(g_getenv("SILKY_REMMINA_TOOLBAR"), "native") == 0)
+        return;
+    gtk_orientable_set_orientation(GTK_ORIENTABLE(toolbar), GTK_ORIENTATION_HORIZONTAL);
+    gtk_widget_set_hexpand(GTK_WIDGET(toolbar), TRUE);
+    gtk_widget_set_vexpand(GTK_WIDGET(toolbar), FALSE);
+    gtk_container_child_set(GTK_CONTAINER(grid), GTK_WIDGET(toolbar),
+                            "left-attach", 0, "top-attach", 0, "width", 1, "height", 1, NULL);
+    GList *kids = gtk_container_get_children(GTK_CONTAINER(grid));
+    for (GList *l = kids; l; l = l->next) {
+        if (l->data == (gpointer)toolbar)
+            continue;
+        gtk_container_child_set(GTK_CONTAINER(grid), l->data,
+                                "left-attach", 0, "top-attach", 1, "width", 1, "height", 1, NULL);
+    }
+    g_list_free(kids);
+}
+
 static void rework_toolbar(GtkToolbar *toolbar, GtkWidget *win)
 {
     gboolean windowed = g_strcmp0(gtk_widget_get_name(win), "remmina-connection-window-fullscreen") != 0;
+    if (windowed)
+        place_on_top(toolbar);
     gboolean horizontal = gtk_orientable_get_orientation(GTK_ORIENTABLE(toolbar)) == GTK_ORIENTATION_HORIZONTAL;
     gint n = gtk_toolbar_get_n_items(toolbar);
     gint disconnect_at = -1;
