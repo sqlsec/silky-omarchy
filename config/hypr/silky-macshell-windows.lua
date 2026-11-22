@@ -1,3 +1,15 @@
+-- Map new windows at their final size and opacity to avoid exposing the desktop on open.
+hl.animation({ leaf = "windowsIn", enabled = false })
+hl.animation({ leaf = "fadeIn", enabled = false })
+
+-- Firefox-based browsers are opaque; skipping compositor blur prevents the
+-- first-frame GTK3 CSD shadow margin from flashing as a blurred halo.
+hl.window_rule({
+  name = "silky-firefox-no-blur",
+  match = { tag = "firefox-based-browser" },
+  no_blur = true,
+})
+
 -- Silky Omarchy: MacShell's own windows (About This Mac, Settings, Clock, Installer: class org.quickshell).
 --
 -- * float on their own account: Omarchy's floating-workspace mode then leaves them alone. Otherwise it resizes every

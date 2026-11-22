@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 SOURCE_DIR = Path(__file__).resolve().parents[1] / "config/macshell/overview"
@@ -39,10 +40,18 @@ def main():
         print("already installed (will refresh SilkyOverview.qml)" if installed else "can be installed")
         return
 
-    shutil.copyfile(SOURCE, target / "SilkyOverview.qml")
+    qml = target / SOURCE.name
+    out = target / "silkyround.frag.qsb"
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    for path in (qml, out):
+        if path.is_file():
+            backup = path.with_name(f"{path.name}.bak-overview-{stamp}")
+            shutil.copy2(path, backup)
+            print(f"Backed up {backup}")
+
+    shutil.copyfile(SOURCE, qml)
     # the rounded-corner shader: compiled here when Qt's shader baker is available, otherwise the prebuilt copy
     qsb = next((c for c in QSB_CANDIDATES if shutil.which(c)), None)
-    out = target / "silkyround.frag.qsb"
     if qsb:
         subprocess.run([qsb, "--qt6", "-o", str(out), str(SHADER)], check=True)
     else:

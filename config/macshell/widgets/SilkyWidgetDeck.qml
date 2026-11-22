@@ -17,6 +17,15 @@ Item {
     property Component glass: null          // liquid-glass background for cards and the menu (see SilkyWidget.glass)
     property bool open: false               // the notification centre is open
     property real maxHeight: 600
+    // the part of the deck the surrounding scroll shows (deck coordinates); viewHeight 0 = everything is in view
+    property real viewTop: 0
+    property real viewHeight: 0
+    function edgeFade(top, h) {
+        if (viewHeight <= 0 || h <= 1) return 1;
+        var seen = (Math.min(top + h, viewTop + viewHeight) - Math.max(top, viewTop)) / h;
+        var t = Math.max(0, Math.min(1, seen));       // the share of the card still in view
+        return 0.12 + 0.88 * t * t;
+    }
     property bool editing: false
     readonly property bool wantsKeyboard: menuOpen && (menuKind === "weather" || menuKind === "stocks" || menuKind === "ai")
 
@@ -152,6 +161,7 @@ Item {
                         width: card.width
                         height: card.height
                         z: dragging ? 10 : 0
+                        opacity: dragging ? 1 : deck.edgeFade(y, height)
 
                         SilkyWidget {
                             id: card

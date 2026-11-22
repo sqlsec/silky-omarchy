@@ -8,7 +8,8 @@ The same as macOS:
 
 | Gesture | Effect |
 | --- | --- |
-| Four fingers up on the touchpad or touch screen | Every window of the current workspace (Mission Control) |
+| Touchpad / touchscreen four fingers up | Show workspace previews above the windows of the current workspace |
+| Touchpad four fingers left or right while the workspace overview is open | Switch workspaces and keep the overview open. Clicking a workspace preview also switches. |
 | Four fingers down on the touchpad or touch screen | Every window of the current app (App Exposé), including its windows on other workspaces |
 | The opposite swipe once open | Back to the desktop |
 
@@ -67,13 +68,13 @@ A touch screen has no libinput gestures, so the plugin tracks the touch points i
 `SilkyOverview.qml` has a single progress value `p` (0 = desktop, 1 = overview):
 
 - With fingers down: `p = starting progress ± travel / distance`; up opens the workspace overview, down opens the app's windows; clamped to 0–1
-- Every window is a window capture (MacShell's own `SafeCapture`, which never releases a capture while a frame is in flight, so the Wayland connection cannot die), and its rectangle is `lerp(real rect, grid rect, p)`. The picture keeps the window's own fixed size: a new frame is only copied into a texture (`ShaderEffectSource`, no effect pass), and a small shader, [`silkyround.frag`](../../config/macshell/overview/silkyround.frag), draws it with anti-aliased rounded corners at the current size, so moving and scaling cost nothing extra. Every window gets one fresh frame, all in one batch, when a gesture begins; after that (also while the overview stands open) nothing is refreshed or streamed; why is under "Smoothness" below
+- Every window is a window capture (MacShell's own `SafeCapture`, which never releases a capture while a frame is in flight, so the Wayland connection cannot die), and its rectangle is `lerp(real rect, grid rect, p)`. The picture keeps the window's own fixed size: a new frame is only copied into a texture (`ShaderEffectSource`, no effect pass), and a small shader, [`silkyround.frag`](../../config/macshell/overview/silkyround.frag), draws it with anti-aliased rounded corners at the current size, so moving and scaling cost nothing extra. The overview requests a batch of frames when a gesture begins and refreshes active windows once a workspace switch settles. See “Smoothness” for why the pictures are snapshots.
 - In app mode the workspace's other windows stay where they are with opacity `1 − p`; the app's windows on other workspaces grow linearly in their grid places from 88 % size and opacity 0 to 100 %
-- The background is the current wallpaper (the same image and crop as the desktop) under a `0.22·p` dim, with no blur: a full-screen blur recomputed every frame took longer than a 90 Hz frame on this GPU; the menu bar's reserved strip is left uncovered, so the menu bar stays as it is
+- The static wallpaper keeps the desktop’s brightness and crop. When Omarchy’s background layer draws the wallpaper, the overview reads Omarchy’s current wallpaper link. Otherwise it prefers the image currently shown by awww or swww. The menu bar and Dock keep their reserved desktop strips.
 - Each thumbnail has a Hyprland-like shadow from the first frame on
 - On release: the fingers' speed over the last ~90 ms projects where `p` would be 0.12 s later; past half opens, otherwise closes. It then moves to the end at a **constant speed** of `max(finger speed, minSpeed)`
 - Four fingers down again mid-animation: the animation stops and the fingers carry on from the current `p`
-- **Solid all the way back**: opening cross-fades the overview in over the first 12 % of the progress; once it has been fully opaque, the thumbnails stay opaque on the way back until they sit exactly on the real windows (same places and stacking, the picked one on top, no dim left), and only then does the whole layer fade out over 80 ms (`outroMs`). The only thing that changes then is what a capture does not have: Hyprland's borders, title bars and shadows. Earlier versions cross-faded on the way back too: the half-transparent overview over the real desktop made a double image, and after a fast swipe the fade started as early as p = 0.5, so the windows went see-through half-way back and the picked one turned solid again at the end
+- **Solid all the way back**: opening cross-fades the overview in over the first 12 % of the progress; once it has been fully opaque, the thumbnails stay opaque on the way back until they sit exactly on the real windows (same places and stacking, the picked one on top), and only then does the whole layer fade out over 80 ms (`outroMs`). The only thing that changes then is what a capture does not have: Hyprland's borders, title bars and shadows. Earlier versions cross-faded on the way back too: the half-transparent overview over the real desktop made a double image, and after a fast swipe the fade started as early as p = 0.5, so the windows went see-through half-way back and the picked one turned solid again at the end
 - **The fingers are sampled by time**: the plugin adds to every `update` the time the fingers were really there (libinput's event time as wall-clock ms). socket2 delivers the events to MacShell in bursts (more than half arrive within 1 ms of each other, then nothing for 30 ms or more), so setting the progress on arrival moved the picture in jumps although every frame was on time. Now each frame reads the progress off the timestamped finger track at its own time minus `lagMs` (10 ms), extrapolating at the fingers' speed for at most `extrapMs` (16 ms) past the newest sample, so every step matches the fingers' real speed. The release speed uses these times too
 - **By the clock**: the constant-speed animation after release computes its position from the clock, not by adding up the last frame's duration: a late frame used to make the next one take a double step, a visible hitch. A stall longer than 50 ms does not make it jump; it carries on from where it stopped
 - **The layer fades as one picture**: while the overview is on screen it has `layer.enabled`, so it is flattened first and its opacity applied to the result. QML's `opacity` is otherwise applied to every child on its own: each thumbnail turned half-transparent and the windows stacked under it showed through (Firefox and Claude through Chrome), so the two or three frames of the fade were a mix of every window, seen as a flash at the very end. Flattened, the fading picture is exactly the real desktop underneath and nothing shows through. In a frame-by-frame screen recording, the brightness change between frames dropped from 10–20 to about 1
@@ -84,7 +85,10 @@ Details that make the start seamless:
 - **Captures stay attached**: windows on the current workspace keep a capture attached (no frames requested, so practically free while idle), and a fresh frame is requested the moment the fingers come down, so the pictures are already there when the swipe starts. This does not follow the Dock's "live window capture" switch (that one is about Dock previews); only MacShell's crash-safety pauses (a capture storm, a close in progress, Game Mode) hold it. An earlier version followed that switch: with it off the overview had no pictures at all and showed every window as a grey app-icon card (each looking up and rendering its icon synchronously on the GUI thread), which was the flash and the stall at the start
 - **Wait for the first frame, cross-fade in**: fresh frames get at most 60 ms (at least 24 ms, so the refreshed ones arrive); finger travel during that wait still counts. Once the picture appears the overview cross-fades from fully transparent to opaque over the next 12 % of travel, so the real windows' Hyprland shadow, border and title bar (none of them is in a window capture) dissolve instead of vanishing in one frame
 - **Stacking order**: fullscreen windows on top, then floating windows, each ordered by most recent focus, matching Hyprland's real order
-- **Dock**: the Dock is another layer below the overview, so covering it would make it vanish on the first frame. While the Dock is shown a rounded hole is left where it is and closes over the first 35 % of the progress, so the Dock fades out. While the Dock is auto-hidden there is no hole (it would show the real windows behind it)
+
+### Workspace previews and navigation
+
+The preview cards show each workspace’s windows in their desktop positions and stacking order. Empty workspaces show the wallpaper. A highlighted outline and label mark the current workspace. Click a card or use the existing Hyprland four-finger horizontal gesture. The lower window grid slides in the selected direction. A four-finger swipe moves the windows with your fingers, then settles on the new workspace or slides back when you release. The wallpaper and preview strip stay in place. Closing the overview leaves you on the selected workspace. The cards reuse the overview’s window snapshots and show placeholders when the compositor cannot supply a frame. Silky Gestures 0.8.3 publishes native swipe progress, and Hyprland decides whether to commit the switch. Reinstall both the gesture plugin and the overview component, then reload MacShell.
 
 Once open:
 
@@ -100,7 +104,7 @@ Grid layout: windows keep their relative sizes (one uniform scale, at most 0.88)
 No frame may be late, so nothing extra is asked of Hyprland or the apps during the motion. All of this was measured on this machine (`ipc call overview debug true` logs every frame; a second script asks Hyprland's socket every 4 ms to see whether its main loop stalls):
 
 - **The keyboard goes back only after landing**: the overview takes the keyboard as soon as it appears and keeps it until the windows have flown back. An app that has keyboard focus keeps redrawing (a blinking caret, a focus ring), and every redraw makes Hyprland composite every window under the full-screen overview again: as long as an app had focus, about one frame in six was missed. Handing the keyboard back when closing began missed ~18 % of the closing frames; now it is ~5 %. In the last 20 % of the way back (`handoverAt`, about the last 60 ms) the keyboard goes back and the picked window is focused (the keyboard release is double-buffered Wayland state that only takes effect with the overview's next commit, so the focus is re-sent every 50 ms until the window is active). By the landing it is normally active and raised already and the fade starts at once; otherwise it waits at most 200 ms. Earlier versions handed over only at the landing, which measured a 230 ms standstill before the fade, so picking a window felt slow
-- **No live streaming**: every request for a new window picture stalls Hyprland's main loop for tens of ms (every app, the mouse pointer and the overview with it). A batch stalls it once, so all windows are requested together when a gesture begins, while the overview is waiting for its first frames anyway. After that nothing streams: all 16 windows streaming live stalled Hyprland for 45–70 ms about once a second, and even the hovered window alone did whenever it redrew; with no stream, an open overview never stalled Hyprland. Spreading the refreshes out (one every 10 ms, or one every 150 ms in rotation while open) was tried and was worse: every request stalled on its own
+- **No live streaming**: every request for a new window picture stalls Hyprland's main loop for tens of ms (every app, the mouse pointer and the overview with it). A batch stalls it once, so all windows are requested together when a gesture begins, while the overview is waiting for its first frames anyway. A workspace switch requests one refresh of its active windows. While the overview stands open, nothing streams: all 16 windows streaming live stalled Hyprland for 45–70 ms about once a second, and even the hovered window alone did whenever it redrew; with no stream, an open overview never stalled Hyprland. Spreading the refreshes out (one every 10 ms, or one every 150 ms in rotation while open) was tried and was worse: every request stalled on its own
 - Result: about 5 % missed frames (frame gap > 16 ms) both opening and closing. Hyprland still stalls for 40–70 ms now and then; how often varies a lot with what the apps are doing at the time, with no clear link to the overview
 
 ## Install
@@ -111,7 +115,7 @@ python3 scripts/install-macshell-overview.py        # copies SilkyOverview.qml i
 qs -c MacShell ipc call macshell reload
 ```
 
-`install-macshell-overview.py` backs `shell.qml` up as `shell.qml.bak-overview` and only adds `SilkyOverview { id: silkyOverview; hub: sharedHub }` after the `AboutApp { … }` line. Running it again only refreshes the QML file. `--check` checks without changing anything.
+`install-macshell-overview.py` backs `shell.qml` up as `shell.qml.bak-overview` and only adds `SilkyOverview { id: silkyOverview; hub: sharedHub }` after the `AboutApp { … }` line. Re-running the installer backs up and updates `SilkyOverview.qml` and `silkyround.frag.qsb` in `~/.config/quickshell/MacShell/`. `--check` checks without changing anything. To roll back, restore the matching `.bak-overview-<timestamp>` files to their original names and run `qs -c MacShell ipc call macshell reload`.
 
 ## Tuning
 
@@ -125,7 +129,6 @@ Constants at the top of `SilkyOverview.qml`:
 | `project` | 0.12 | How many seconds ahead the release speed is projected to decide open or close |
 | `primeMs` | 60 | Longest wait for the first frames |
 | `fadeIn` | 0.12 | Travel the cross-fade at the start takes |
-| `dim` | 0.22 | How much the wallpaper darkens when fully open |
 | `maxScale` | 0.88 | Largest scale of a window in the grid |
 
 Re-run `install-macshell-overview.py` and reload MacShell after a change.
@@ -142,6 +145,8 @@ qs -c MacShell ipc call overview end          # release
 qs -c MacShell ipc call overview toggle workspace   # or app: open / close directly
 ```
 
+With the workspace overview open, click cards for occupied and empty workspaces and check that the highlight and window grid update together. To verify compositor events, run `hyprctl dispatch 'hl.dsp.focus({ workspace = "2" })'` and check that `overview state` reports the target workspace with `p` still at 1. The reported `workspacePosition` passes through intermediate values. From workspace 1, `qs -c MacShell ipc call overview workspaceSwipe 2 40` simulates a 40% swipe toward workspace 2. Call `qs -c MacShell ipc call overview workspaceSwipeEnd` to check that the windows slide back. On a physical touchpad, swipe four fingers left and right while open, then close the overview and confirm the selected workspace stays active.
+
 Check that the plugin sends events:
 
 ```bash
@@ -155,7 +160,7 @@ Verified on this machine (the built-in `sim` pushes an update every 7 ms, like t
 ## Known limitations
 
 - Hyprland borders and title bars are not part of a window capture: they dissolve during the cross-fade at the start, and windows in the overview have no title bar
-- MacShell's desktop icons and widgets are not shown in the overview (the wallpaper covers them)
+- The overview background supports static wallpaper. Video wallpaper, desktop icons, and widgets are omitted.
 - An app window on another workspace that Hyprland will not capture shows as an app-icon card
 - Only shown on the focused monitor
 

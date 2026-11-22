@@ -127,11 +127,36 @@ TRAY_KIND_V3 = """                                readonly property string silky
                                 }
 """
 
-TRAY_KIND = TRAY_KIND_V3.replace(
+TRAY_KIND_V4 = TRAY_KIND_V3.replace(
     '                                    case "wechat": return "wechat";\n',
     '                                    case "wechat": return "wechat";\n'
     '                                    case "netease-cloud-music-gtk4": return "netease-cloud-music";\n',
 )
+
+TRAY_KIND = """                                readonly property string silkyIconKind: {
+                                    const item = tray.modelData;
+                                    if (item.status === Status.NeedsAttention)
+                                        return "";
+                                    const name = (item.tooltipTitle || item.title).trim().toLowerCase();
+                                    const appId = item.id.toLowerCase();
+                                    if (name.startsWith("antigravity") || appId.startsWith("antigravity"))
+                                        return "antigravity";
+                                    switch (appId) {
+                                    case "remmina-icon": return "remmina";
+                                    case "tray-icon tray app clash-verge-rev-tray": return "clash";
+                                    case "clippy": return "clippy";
+                                    case "netcatty_status_icon_1": return "netcatty";
+                                    case "wechat": return "wechat";
+                                    case "netease-cloud-music-gtk4": return "netease-cloud-music";
+                                    case "chrome_status_icon_1": {
+                                        if (name === "chatgpt") return "chatgpt";
+                                        if (name === "google chrome") return "chrome";
+                                        return "";
+                                    }
+                                    default: return "";
+                                    }
+                                }
+"""
 
 TRAY_ICON_STYLED = TRAY_KIND + """                                SilkyStatusIcon {
                                     anchors.centerIn: parent
@@ -197,7 +222,7 @@ def integrate(text):
     for old_indicator in (BATTERY_INDICATOR_V1, BATTERY_INDICATOR_V2, BATTERY_INDICATOR_V3):
         if old_indicator in text:
             text = text.replace(old_indicator, BATTERY_INDICATOR, 1)
-    for old_kind in (TRAY_KIND_V1, TRAY_KIND_V2, TRAY_KIND_V3):
+    for old_kind in (TRAY_KIND_V1, TRAY_KIND_V2, TRAY_KIND_V3, TRAY_KIND_V4):
         if old_kind in text:
             text = text.replace(old_kind, TRAY_KIND, 1)
     if STATUS_OPEN not in text:

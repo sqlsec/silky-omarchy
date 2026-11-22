@@ -52,4 +52,4 @@ if [[ -n ${errors//[[:space:]]/} ]]; then
   printf '%s\n' "$errors" >&2
   exit 1
 fi
-printf 'WeChat opacity applied. Quit and reopen WeChat to load the new touch scrolling adapter.\n'
+printf 'WeChat main-window appearance applied. Quit and reopen WeChat to load the new touch scrolling adapter.\n'

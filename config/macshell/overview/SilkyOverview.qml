@@ -43,7 +43,7 @@ Scope {
     readonly property int primeMs: 60         // longest wait for the first captured frames before anything is drawn
     readonly property int freshMs: 24         // after a begin, give the refreshed frames this long to arrive (≈ 2 frames)
     readonly property real fadeIn: 0.12       // the overview cross-fades in over this much of the progress
-    readonly property real dim: 0.22          // how much the wallpaper darkens when fully open
+    readonly property real workspaceStripHeight: 126
     readonly property real gap: 28            // between windows in the grid
     readonly property real labelH: 30         // room under each row for the hovered window's title
     readonly property real maxScale: 0.88     // a single small window still visibly shrinks
@@ -54,6 +54,7 @@ Scope {
     property string mode: ""                  // "workspace" | "app"
     property string screenName: ""
     property int wsId: -1
+    property int entryWsId: -1
     property string appClass: ""
     property bool gesture: false
     property real base: 0                     // p when the fingers came down
@@ -64,7 +65,7 @@ Scope {
     property bool primed: false
     property real fadeFrom: 0                 // the progress at which the picture first appeared: the cross-fade starts there
     // Closing never cross-fades. Once the overview has been fully opaque (`solid`), the thumbnails stay solid all the way
-    // back until they sit exactly on the real windows (same places, same stacking, the picked one on top, no dim left), and
+    // back until they sit exactly on the real windows (same places, same stacking, the picked one on top), and
     // only then does the whole layer fade out over `outroMs`. What changes then is only what a capture does not have:
     // Hyprland's borders, title bars and shadows. The old cross-fade over the last part of the progress showed the
     // half-transparent overview over the real desktop (a double image), and after a fast swipe its start had been pushed up
@@ -85,19 +86,30 @@ Scope {
     property string picked: ""                // address of a clicked window: raised above the others while closing
     property bool fadeOut: false              // the clicked window is on another workspace: dissolve instead of flying back
     property var slots: ({})                  // address -> layout entry (see build())
+    property var workspacePictures: ({})      // workspace id -> its windows in desktop stacking order
+    property var workspaceWindows: ({})       // address -> the window's grid entry on its own workspace
+    property var workspaceIds: []
+    property real workspacePosition: 0
+    property bool workspaceDragging: false
+    readonly property bool workspaceMoving: workspaceDragging || workspaceSlide.running
+    property var activeWallpapers: ({})       // output name -> the desktop's current image
     property int revision: 0
     // ── fresh pictures ──
     // Every request for a new window picture costs Hyprland's main loop tens of ms, more or less independent of how many
     // windows are in the batch: requested one window at a time (tried: one every 10 ms, or one every 150 ms while open)
     // each request froze Hyprland (every app, the cursor and this overview) for ~50 ms; requested together, the batch
-    // freezes it once. So: one batch at each begin, before the first frame is drawn (the overview waits for those frames
-    // anyway, see primeCheck), and nothing after it: no live stream while the overview stands open either. A live window
+    // freezes it once. Request one batch before the first frame and refresh the active windows after a workspace switch.
+    // There is no live stream while the overview stands open. A live window
     // sends a picture every time it redraws (a blinking caret, a spinner), and every one of those froze Hyprland, the mouse
     // pointer included: all 16 streaming froze it for 45-70 ms about once a second, even the hovered one alone did it
     // whenever that window was busy. With none, an open overview costs Hyprland nothing (measured: no freeze at all).
-    function freshen() {
+    function freshen(activeOnly) {
         var pre = screenName + "|";
-        for (var a in slots) { var c = captures[pre + a]; if (c && c.want !== null) c.snap(); }
+        for (var key in captures) {
+            var capture = captures[key];
+            if (key.startsWith(pre) && (!activeOnly || capture.onWs) && capture.want !== null)
+                capture.snap();
+        }
     }
     // MacShell's crash-safety pauses for window captures (a capture storm, a close in progress, Game Mode)
     readonly property bool captureOk: !hub || (!hub.storm && !hub.preClose && !(hub.bar && hub.bar.gaming))
@@ -146,6 +158,145 @@ Scope {
             if (q && q.focusHistoryID !== undefined && q.focusHistoryID < bestId && q.workspace && q.workspace.id > 0) { best = q; bestId = q.focusHistoryID; }
         }
         return best ? String(best["class"] || "") : "";
+    }
+
+    function wallpaperUrl(path) {
+        if (!path || /\.(mp4|webm|mkv|mov|gif)$/i.test(path)) return "";
+        if (path.startsWith("file:")) return path;
+        return path.startsWith("/") ? "file://" + path.split("/").map(encodeURIComponent).join("/") : "";
+    }
+    function refreshWallpaper() {
+        if (hub && hub.refreshWallpaper) hub.refreshWallpaper();
+        wallpaperQuery.running = true;
+    }
+    Component.onCompleted: refreshWallpaper()
+    Process {
+        id: wallpaperQuery
+        command: ["sh", "-c",
+            'readlink -f "${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/current/background" || printf "\n"; '
+            + 'hyprctl -j layers; printf "\n--\n"; awww query -j 2>/dev/null || swww query -j 2>/dev/null']
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var paths = {};
+                var sections = text.split("\n--\n");
+                try {
+                    var groups = JSON.parse(sections[1]);
+                    for (var group in groups) {
+                        for (var output of groups[group]) {
+                            if (output.name && output.displaying && output.displaying.image)
+                                paths[output.name] = output.displaying.image;
+                        }
+                    }
+                } catch (err) {}
+                try {
+                    var newline = sections[0].indexOf("\n");
+                    var omarchyPath = sections[0].slice(0, newline);
+                    var layers = JSON.parse(sections[0].slice(newline + 1));
+                    // Omarchy's wallpaper layer can be above a running awww daemon.
+                    for (var name in layers) {
+                        if (root.wallpaperUrl(omarchyPath) && layers[name].levels["0"].some(layer => layer.namespace === "omarchy-background"))
+                            paths[name] = omarchyPath;
+                    }
+                } catch (err) {}
+                root.activeWallpapers = paths;
+            }
+        }
+    }
+
+    function updateWorkspaceIds() {
+        var ids = Hyprland.workspaces.values
+            .filter(ws => ws.id > 0 && ws.monitor && ws.monitor.name === screenName)
+            .map(ws => ws.id);
+        if (!ids.includes(wsId)) ids.push(wsId);
+        ids.sort((a, b) => a - b);
+        if (ids.join() === workspaceIds.join()) return;
+
+        // Keep the same visual anchor when an empty workspace is added or removed.
+        var oldIndex = workspaceIds.indexOf(wsId);
+        var newIndex = ids.indexOf(wsId);
+        var offset = oldIndex >= 0 ? workspacePosition - oldIndex : 0;
+        var wasSliding = workspaceSlide.running;
+        workspaceSlide.stop();
+        workspaceIds = ids;
+        workspacePosition = newIndex + offset;
+        if (wasSliding) animateWorkspace();
+    }
+
+    function animateWorkspace() {
+        workspaceRelease.stop();
+        workspaceDragging = false;
+        workspaceSlide.stop();
+        var target = workspaceIds.indexOf(wsId);
+        var distance = Math.abs(workspacePosition - target);
+        if (distance < 0.001) {
+            workspacePosition = target;
+            return;
+        }
+        workspaceSlide.to = target;
+        workspaceSlide.duration = Math.round(165 + 95 * Math.min(distance, 1.5));
+        workspaceSlide.start();
+    }
+
+    function resetWorkspaceSlide() {
+        workspaceRelease.stop();
+        workspaceSlide.stop();
+        workspaceDragging = false;
+        workspacePosition = Math.max(0, workspaceIds.indexOf(wsId));
+    }
+
+    function followWorkspace(name, origin, target, progress) {
+        if (!settledOpen || mode !== "workspace" || screenName !== name || wsId !== origin) return;
+        var start = workspaceIds.indexOf(origin), end = workspaceIds.indexOf(target);
+        if (start < 0 || end < 0 || !Number.isFinite(progress)) return;
+        workspaceSlide.stop();
+        workspaceRelease.stop();
+        workspaceDragging = true;
+        workspacePosition = start + (end === start ? progress : (end - start) * clamp01(Math.abs(progress)));
+    }
+
+    function releaseWorkspace(name) {
+        if (screenName === name && workspaceDragging) workspaceRelease.restart();
+    }
+    Timer {
+        id: workspaceRelease
+        // The native swipe publishes its final workspace asynchronously on socket2.
+        interval: 45
+        onTriggered: root.animateWorkspace()
+    }
+    NumberAnimation {
+        id: workspaceSlide
+        target: root
+        property: "workspacePosition"
+        easing.type: Easing.OutCubic
+    }
+
+    function syncWorkspace(id) {
+        if (mode !== "workspace" || kbdFree || id <= 0 || id === wsId) return;
+        wsId = id;
+        build();
+        if (settledOpen) animateWorkspace();
+        else resetWorkspaceSlide();
+        // Refresh geometry and the frames once the compositor has settled the native swipe.
+        relayout.restart();
+        workspaceCapture.restart();
+        refreshWallpaper();
+    }
+    function selectWorkspace(id) {
+        if (mode !== "workspace" || !settledOpen || id === wsId) return;
+        // Hyprland's workspace dispatcher works while the overview holds the keyboard.
+        Hyprland.dispatch(workspaceFocus(id));
+    }
+    function workspaceFocus(id) {
+        return 'hl.dsp.focus({ workspace = "' + id + '" })';
+    }
+    Timer {
+        id: workspaceCapture
+        interval: 260
+        onTriggered: {
+            if (root.mode !== "workspace" || root.goal !== 1) return;
+            if (root.workspaceMoving) restart();
+            else root.freshen(true);
+        }
     }
 
     // Uniform-scale grid, like Mission Control: windows keep their relative sizes and roughly their places (rows are
@@ -198,14 +349,16 @@ Scope {
         var mo = mon ? mon.lastIpcObject : null;
         var res = (mo && mo.reserved) ? mo.reserved : [0, 0, 0, 0];
         var W = scr.width, H = scr.height, ox = scr.x, oy = scr.y;
-        var ts = Hyprland.toplevels.values, mains = [], out = {};
+        var ts = Hyprland.toplevels.values, mains = [], out = {}, pictures = {}, pages = {};
         for (var i = 0; i < ts.length; i++) {
             var o = ts[i].lastIpcObject;
             if (!o || !o.address || !o.at || !o.size || !o.workspace || o.workspace.id <= 0) continue;
             if (o.hidden || o.mapped === false || o.size[0] < 2 || o.size[1] < 2) continue;
             var onWs = o.workspace.id === wsId;
             var isMain = mode === "workspace" ? onWs : String(o["class"]) === appClass;
-            if (!onWs && !isMain) continue;
+            var workspace = ts[i].workspace;
+            var inStrip = mode === "workspace" && workspace && workspace.monitor && workspace.monitor.name === screenName;
+            if (!onWs && !isMain && !inStrip) continue;
             var e = {
                 addr: String(o.address).replace(/^0x/, ""),
                 x: o.at[0] - ox, y: o.at[1] - oy, w: o.size[0], h: o.size[1],
@@ -216,12 +369,26 @@ Scope {
             };
             e.cx = e.x + e.w / 2; e.cy = e.y + e.h / 2;
             e.tx = e.x; e.ty = e.y; e.tw = e.w; e.th = e.h;
-            out[e.addr] = e;
+            if (onWs || isMain) out[e.addr] = e;
             if (isMain) mains.push(e);
+            if (inStrip || (mode === "workspace" && onWs)) {
+                (pictures[e.ws] || (pictures[e.ws] = [])).push(e);
+                pages[e.addr] = e;
+            }
         }
-        var top = res[1] + 44, bottom = res[3] + 64;
-        grid(mains, { x: res[0] + 48, y: top, w: W - res[0] - res[2] - 96, h: H - top - bottom });
+        var top = res[1] + (mode === "workspace" ? workspaceStripHeight + 16 : 44);
+        var bottom = res[3] + (mode === "workspace" ? 20 : 64);
+        var area = { x: res[0] + 48, y: top, w: W - res[0] - res[2] - 96, h: H - top - bottom };
+        if (mode === "workspace") {
+            updateWorkspaceIds();
+            for (var id in pictures) {
+                pictures[id].sort((a, b) => a.z - b.z);
+                grid(pictures[id], area);
+            }
+        } else grid(mains, area);
         slots = out;
+        workspacePictures = pictures;
+        workspaceWindows = pages;
         revision++;
         if (dbg) { var w = 0, c = 0; for (var k in captures) { if (captures[k].want !== null) w++; if (captures[k].hasContent) c++; } log("captures want=" + w + " content=" + c); }
     }
@@ -238,8 +405,12 @@ Scope {
             if (m === "app" && appClass === "") return;       // App Exposé needs an app
             screenName = fm.name;
             wsId = fm.activeWorkspace ? fm.activeWorkspace.id : -1;
+            entryWsId = wsId;
             picked = ""; fadeOut = false; pendingLua = ""; kbdFree = false;
-            try { Hyprland.refreshToplevels(); Hyprland.refreshMonitors(); } catch (err) {}
+            refreshWallpaper();
+            Hyprland.refreshToplevels();
+            Hyprland.refreshMonitors();
+            if (m === "workspace") Hyprland.refreshWorkspaces();
             p = 0;
             mode = m;
             build();
@@ -249,6 +420,7 @@ Scope {
             primeCheck.start();
             refreshLater.restart();
         }
+        resetWorkspaceSlide();
         sign = mode === "workspace" ? 1 : -1;
         runner.stop();
         outroAnim.stop(); outro = 1;
@@ -345,7 +517,10 @@ Scope {
         if (kbdFree) return;
         log("hand over pending=" + (pendingLua !== ""));
         kbdFree = true;
-        if (pendingLua !== "") {
+        // Releasing an exclusive layer can restore the previously focused window's workspace.
+        var switched = mode === "workspace" && wsId !== entryWsId;
+        if (pendingLua !== "" || switched) {
+            focusLater.workspace = switched ? wsId : -1;
             focusLater.lua = pendingLua;
             focusLater.tries = 0;
             pendingLua = "";
@@ -357,7 +532,7 @@ Scope {
         landing = true;
         handOver();
         // a picked window that is not the active one yet: wait for it (at most landMaxMs); otherwise fade right away
-        if (picked !== "" && !isActive(picked)) landWait.restart();
+        if ((picked !== "" && !isActive(picked)) || (focusLater.running && focusLater.workspace > 0)) landWait.restart();
         else fadeNow();
     }
     function fadeNow() { landWait.stop(); if (landing && !outroAnim.running) { log("outro"); outroAnim.restart(); } }
@@ -375,6 +550,10 @@ Scope {
         outroAnim.stop(); landWait.stop(); focusLater.interval = 30;
         landing = false; kbdFree = false; pendingLua = "";
         mode = ""; picked = ""; fadeOut = false; primed = false; fadeFrom = 0; solid = false; outro = 1; slots = ({});
+        workspacePictures = ({});
+        workspaceWindows = ({});
+        workspaceIds = [];
+        resetWorkspaceSlide();
     }
     NumberAnimation {
         id: outroAnim
@@ -383,7 +562,11 @@ Scope {
         duration: root.outroMs
         onFinished: if (!root.gesture && root.goal <= 0 && root.p <= 0.0005) root.finish()
     }
-    function close() { if (mode !== "" && !gesture) animateTo(0, 0); }
+    function close() {
+        if (mode === "" || gesture) return;
+        resetWorkspaceSlide();
+        animateTo(0, 0);
+    }
     function toggle(m) {
         if (mode !== "" && (goal > 0.5 || gesture)) { close(); return; }
         startGesture(m === "app" ? "down" : "up");
@@ -396,7 +579,7 @@ Scope {
     // dropped and the previously active window stayed on top), so the focus is sent once the keyboard has been released:
     // at landing (land()), or, for a window on another workspace, right away (the overview dissolves while it switches).
     function pick(e) {
-        if (!e || gesture) return;
+        if (!e || gesture || workspaceMoving) return;
         log("pick " + e.addr);
         picked = e.addr;
         fadeOut = e.ws !== wsId;
@@ -407,6 +590,7 @@ Scope {
         animateTo(0, pickSpeed);
         if (fadeOut) {
             kbdFree = true;
+            focusLater.workspace = -1;
             focusLater.lua = lua;
             focusLater.tries = 0;
             focusLater.restart();
@@ -415,15 +599,24 @@ Scope {
     Timer {
         id: focusLater
         property string lua: ""
+        property int workspace: -1
         interval: 30          // the keyboard release reaches the compositor first
         // The keyboard release is double-buffered Wayland state: it reaches Hyprland with the overview's next commit, and a
         // landed overview may not draw (commit) again right away, so a focus sent too early is still refused. Sent again
         // every 50 ms until the window is the active one (landWait gives up after landMaxMs and fades anyway).
         property int tries: 0
         onTriggered: {
-            if (root.picked !== "" && root.isActive(root.picked) && !root.fadeOut) return;
-            root.log("focus try " + tries + ": " + lua);
-            Quickshell.execDetached(["hyprctl", "eval", lua]);
+            var monitor = root.monitorObj(root.screenName);
+            var wrongWorkspace = workspace > 0 && monitor && (!monitor.activeWorkspace || monitor.activeWorkspace.id !== workspace);
+            var needsWindow = root.picked !== "" && (root.fadeOut || !root.isActive(root.picked));
+            if (!wrongWorkspace && !needsWindow) {
+                if (root.landing) root.fadeNow();
+                return;
+            }
+            var command = wrongWorkspace ? "hl.dispatch(" + root.workspaceFocus(workspace) + "); " : "";
+            if (needsWindow) command += lua;
+            root.log("focus try " + tries + ": " + command);
+            Quickshell.execDetached(["hyprctl", "eval", command]);
             if (!root.fadeOut && ++tries < 4) { interval = 50; restart(); } else interval = 30;
         }
     }
@@ -482,7 +675,12 @@ Scope {
                 if (a[0] === "begin") root.startGesture(a[1]);
                 else if (a[0] === "update") root.moveGesture(parseFloat(a[1]) || 0, parseFloat(a[2]) || 0);
                 else if (a[0] === "end") root.endGesture(a[1] === "cancel");
+                else if (a[0] === "workspace-move") root.followWorkspace(a[1], Number(a[2]), Number(a[3]), Number(a[4]));
+                else if (a[0] === "workspace-end") root.releaseWorkspace(a[1]);
                 return;
+            }
+            if (root.mode === "workspace" && /^(workspace|createworkspace|destroyworkspace|moveworkspace|renameworkspace)v2$/.test(event.name)) {
+                Hyprland.refreshWorkspaces();
             }
             // a window opened / closed / moved while the overview is up: lay out again
             if (root.mode !== "" && !root.gesture && /^(openwindow|closewindow|movewindow)/.test(event.name)) relayout.restart();
@@ -514,12 +712,14 @@ Scope {
         // what a click on a window does, by address (hex, with or without 0x): pick 0x5d3a...
         function pick(addr: string): void { root.pick(root.slots[String(addr).replace(/^0x/, "")]); }
         function debug(on: bool): void { root.dbg = on; }
+        function workspaceSwipe(id: int, percent: int): void { root.followWorkspace(root.screenName, root.wsId, id, percent / 100); }
+        function workspaceSwipeEnd(): void { root.releaseWorkspace(root.screenName); }
         function hub(): string { var h = root.hub; return h ? JSON.stringify({ previewHold: h.previewHold, windowCapture: h.windowCapture, storm: h.storm, preClose: h.preClose, captureQuiet: h.captureQuiet, n: Object.keys(root.captures).length }) : "no hub"; }
         // replays a swipe through the gesture path with an update every 7 ms (like the touchpad): sim up 600
         function sim(dir: string, ms: int): void { simT.dir = dir; simT.total = Math.max(50, ms); simT.t0 = Date.now(); root.startGesture(dir); simT.start(); }
         // every capture's picture size next to its window's size (debugging the landing)
         function sizes(): string { var o = []; for (var k in root.captures) { var c = root.captures[k]; o.push(k + " src=" + c.sourceSize.width + "x" + c.sourceSize.height + " item=" + Math.round(c.width) + "x" + Math.round(c.height) + " content=" + c.hasContent); } return o.join("\n"); }
-        function state(): string { return JSON.stringify({ mode: root.mode, p: root.p, primed: root.primed, fadeFrom: root.fadeFrom, windows: Object.keys(root.slots).length }); }
+        function state(): string { return JSON.stringify({ mode: root.mode, p: root.p, primed: root.primed, fadeFrom: root.fadeFrom, workspace: root.wsId, workspacePosition: root.workspacePosition, workspaceMoving: root.workspaceMoving, windows: Object.keys(root.slots).length, wallpaper: root.activeWallpapers[root.screenName] || "" }); }
     }
 
     Variants {
@@ -551,6 +751,9 @@ Scope {
             // this screen's active workspace: its windows keep a capture attached while closed (see `warmCap`)
             readonly property var hmon: Hyprland.monitorFor(modelData)
             readonly property int activeWs: hmon && hmon.activeWorkspace ? hmon.activeWorkspace.id : -1
+            onActiveWsChanged: if (targetScreen) root.syncWorkspace(activeWs)
+            readonly property var workspaces: Hyprland.workspaces.values.filter(ws =>
+                ws.id > 0 && ws.monitor && ws.monitor.name === win.modelData.name).sort((a, b) => a.id - b.id)
             readonly property var res: {
                 root.revision;
                 var m = root.monitorObj(modelData.name), o = m ? m.lastIpcObject : null;
@@ -558,9 +761,11 @@ Scope {
             }
             readonly property string wallpaper: {
                 var m = root.hub ? root.hub.wallpaperMap : null;
-                if (!m) return "";
-                var f = m["wallpaper.monitors." + modelData.name] || m["wallpaper.last"] || m["wallpaper.default"] || "";
-                return /\.(mp4|webm|mkv|mov|gif)$/i.test(f) ? "" : f;
+                var bar = root.hub ? root.hub.bar : null;
+                return root.wallpaperUrl(root.activeWallpapers[modelData.name]
+                    || (m && m["wallpaper.monitors." + modelData.name])
+                    || (bar && bar.wallpaperPath)
+                    || (m && (m["wallpaper.last"] || m["wallpaper.default"])));
             }
 
             Item {
@@ -589,8 +794,7 @@ Scope {
                 }
                 property string hoverAddr: ""
 
-                // The desktop below the menu bar's reserved strip (left uncovered: the bar stays where it is). Only the wallpaper
-                // and a dim on top: a full-screen blur re-computed every frame cost more than a 90 Hz frame on this GPU.
+                // Match the desktop's centered fill and leave the menu bar and Dock uncovered.
                 Item {
                     id: desk
                     x: win.res[0]; y: win.res[1]
@@ -601,13 +805,14 @@ Scope {
                     Image {
                         x: -desk.x; y: -desk.y
                         width: stage.width; height: stage.height
-                        source: win.wallpaper !== "" ? "file://" + win.wallpaper : ""
+                        source: win.wallpaper
                         fillMode: Image.PreserveAspectCrop
-                        sourceSize: Qt.size(stage.width * 2, stage.height * 2)
+                        sourceSize: Qt.size(Math.ceil(width * win.modelData.devicePixelRatio),
+                                            Math.ceil(height * win.modelData.devicePixelRatio))
+                        asynchronous: true
                         smooth: true
                         cache: true
                     }
-                    Rectangle { anchors.fill: parent; color: "black"; opacity: root.dim * root.vp }
                     MouseArea { anchors.fill: parent; onClicked: root.close() }
                 }
 
@@ -617,8 +822,15 @@ Scope {
                         id: cell
                         required property var modelData
                         readonly property string addr: String(modelData.address).replace(/^0x/, "")
-                        readonly property var e: { root.revision; return root.slots[addr] || null; }
-                        readonly property bool live: e !== null && win.mine
+                        readonly property var pageEntry: root.workspaceWindows[addr] || null
+                        readonly property int page: pageEntry ? root.workspaceIds.indexOf(pageEntry.ws) : -1
+                        readonly property bool paged: page >= 0 && root.mode === "workspace" && root.settledOpen
+                        readonly property real pageDelta: paged ? page - root.workspacePosition : 0
+                        readonly property var e: paged ? pageEntry : root.slots[addr] || null
+                        readonly property bool live: e !== null && win.mine && (!paged || Math.abs(pageDelta) < 1)
+                        readonly property bool inStrip: win.mine && root.mode === "workspace"
+                            && !!modelData.workspace && modelData.workspace.id > 0
+                            && !!modelData.workspace.monitor && modelData.workspace.monitor.name === win.modelData.name
                         // A window on this screen's active workspace keeps its capture attached while closed (no frames are
                         // requested then), so a swipe starts on a picture that is already there; every begin asks for a fresh one.
                         // Independent of the Dock's "live window capture" switch (that one is about the Dock's previews); only
@@ -631,17 +843,18 @@ Scope {
                         }
                         readonly property real t: root.vp
                         readonly property real k: !e ? 0 : (e.main ? t : 0)
-                        readonly property bool hovered: hov.hovered && root.settledOpen && e && e.main
+                        readonly property bool interactive: !!e && e.main && !root.workspaceMoving && !root.gesture
+                        readonly property bool hovered: hov.hovered && root.settledOpen && interactive
                         // where it is drawn: a straight line from the real window to its grid place
                         readonly property real bx: !e ? 0 : (e.onWs ? e.x : e.tx + e.tw * 0.06)
                         readonly property real by: !e ? 0 : (e.onWs ? e.y : e.ty + e.th * 0.06)
                         readonly property real bw: !e ? 1 : (e.onWs ? e.w : e.tw * 0.88)
                         visible: live && opacity > 0.001
                         z: !e ? 0 : (addr === root.picked ? 5000 : (e.onWs ? e.z : -3000 + e.z))        // the desktop's own stacking
-                        opacity: !e ? 0 : (e.main ? (e.onWs ? 1 : t) : 1 - t)
-                        x: !e ? 0 : root.lerp(bx, e.tx, k)
-                        y: !e ? 0 : root.lerp(by, e.ty, k)
-                        width: !e ? 0 : root.lerp(bw, e.tw, k)
+                        opacity: !e ? 0 : (paged ? 1 : (e.main ? (e.onWs ? 1 : t) : 1 - t))
+                        x: !e ? 0 : (paged ? e.tx + pageDelta * stage.width : root.lerp(bx, e.tx, k))
+                        y: !e ? 0 : (paged ? e.ty : root.lerp(by, e.ty, k))
+                        width: !e ? 0 : (paged ? e.tw : root.lerp(bw, e.tw, k))
                         height: !e ? 0 : width * e.h / e.w
                         onEChanged: if (!e) stage.hoverAddr = stage.hoverAddr === addr ? "" : stage.hoverAddr
 
@@ -676,7 +889,8 @@ Scope {
                                 id: cap
                                 anchors.fill: parent
                                 readonly property bool onWs: cell.e ? cell.e.onWs : false
-                                want: (cell.live || cell.warmCap) && root.captureOk ? cell.modelData.wayland : null
+                                want: (cell.live || cell.warmCap || cell.inStrip) && root.captureOk ? cell.modelData.wayland : null
+                                readonly property alias previewTexture: faceTex
                                 // Nonmatching App Exposé windows fade out. Keep their last frame for the return gesture.
                                 wantLive: false          // never: see freshen()
                                 graceMs: 300
@@ -690,7 +904,7 @@ Scope {
                             sourceItem: face
                             hideSource: true
                             visible: false
-                            live: cell.live
+                            live: cell.live || cell.inStrip
                             smooth: true
                         }
                         ShaderEffect {
@@ -735,15 +949,132 @@ Scope {
                         }
                         HoverHandler {
                             id: hov
-                            enabled: cell.e !== null && cell.e.main
+                            enabled: cell.interactive
                             onHoveredChanged: {
                                 if (hovered) stage.hoverAddr = cell.addr;
                                 else if (stage.hoverAddr === cell.addr) stage.hoverAddr = "";
                             }
                         }
                         TapHandler {
-                            enabled: cell.e !== null && cell.e.main && !root.gesture
+                            enabled: cell.interactive
                             onTapped: root.pick(cell.e)
+                        }
+                    }
+                }
+                Flickable {
+                    id: strip
+                    x: win.res[0] + 16
+                    y: win.res[1] + 12 - 12 * (1 - root.vp)
+                    width: Math.max(0, stage.width - win.res[0] - win.res[2] - 32)
+                    height: root.workspaceStripHeight
+                    z: 6000
+                    visible: win.mine && root.mode === "workspace" && root.vp > 0
+                    opacity: root.vp
+                    clip: true
+                    contentWidth: Math.max(width, cards.implicitWidth)
+                    flickableDirection: Flickable.HorizontalFlick
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    function reveal(card) {
+                        var left = cards.x + card.x;
+                        contentX = Math.max(0, Math.min(contentWidth - width,
+                            Math.max(left + card.width - width, Math.min(contentX, left))));
+                    }
+
+                    Row {
+                        id: cards
+                        x: (strip.contentWidth - width) / 2
+                        width: implicitWidth
+                        spacing: 14
+                        Repeater {
+                            model: win.workspaces
+                            delegate: Item {
+                                id: card
+                                required property var modelData
+                                readonly property int workspaceId: modelData.id
+                                readonly property bool selected: workspaceId === root.wsId
+                                readonly property real ratio: preview.width / stage.width
+                                width: preview.width + 8
+                                height: strip.height
+                                onSelectedChanged: if (selected && strip.visible) Qt.callLater(() => strip.reveal(card))
+                                Component.onCompleted: if (selected) Qt.callLater(() => strip.reveal(card))
+                                Connections {
+                                    target: strip
+                                    function onVisibleChanged() { if (strip.visible && card.selected) strip.reveal(card); }
+                                }
+
+                                Rectangle {
+                                    anchors.fill: preview
+                                    anchors.margins: -3
+                                    radius: 12
+                                    color: card.selected ? "#8de2d4" : "#35404a"
+                                }
+                                Item {
+                                    id: preview
+                                    x: 4; y: 4
+                                    height: Math.min(90, 164 * stage.height / stage.width)
+                                    width: height * stage.width / stage.height
+                                    layer.enabled: strip.visible
+                                    layer.effect: ShaderEffect {
+                                        property var source
+                                        property size size: Qt.size(width, height)
+                                        property real radius: 9
+                                        fragmentShader: Qt.resolvedUrl("silkyround.frag.qsb")
+                                    }
+                                    clip: true
+                                    Rectangle { anchors.fill: parent; color: "#1c1c1e" }
+                                    Image {
+                                        anchors.fill: parent
+                                        source: win.wallpaper
+                                        fillMode: Image.PreserveAspectCrop
+                                        asynchronous: true
+                                    }
+                                    Repeater {
+                                        model: strip.visible ? root.workspacePictures[card.workspaceId] || [] : []
+                                        delegate: Rectangle {
+                                            required property var modelData
+                                            readonly property var capture: root.captures[win.modelData.name + "|" + modelData.addr]
+                                            x: modelData.x * card.ratio
+                                            y: modelData.y * card.ratio
+                                            width: modelData.w * card.ratio
+                                            height: modelData.h * card.ratio
+                                            color: "#3a444e"
+                                            radius: 2
+                                            ShaderEffect {
+                                                anchors.fill: parent
+                                                visible: !!parent.capture && parent.capture.hasContent
+                                                property var source: parent.capture ? parent.capture.previewTexture : null
+                                                property size size: Qt.size(width, height)
+                                                property real radius: 2
+                                                fragmentShader: Qt.resolvedUrl("silkyround.frag.qsb")
+                                            }
+                                        }
+                                    }
+                                }
+                                Rectangle {
+                                    anchors.top: preview.bottom
+                                    anchors.topMargin: 8
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    width: Math.min(label.implicitWidth + 16, parent.width)
+                                    height: 20
+                                    radius: 6
+                                    color: card.selected ? "#8de2d4" : "#29323a"
+                                    Text {
+                                        id: label
+                                        anchors.centerIn: parent
+                                        width: Math.min(implicitWidth, parent.width - 12)
+                                        horizontalAlignment: Text.AlignHCenter
+                                        elide: Text.ElideRight
+                                        text: card.modelData.name
+                                        color: card.selected ? "#152c29" : "#f4f5f6"
+                                        font.pixelSize: 12
+                                    }
+                                }
+                                TapHandler {
+                                    enabled: root.settledOpen
+                                    onTapped: root.selectWorkspace(card.workspaceId)
+                                }
+                            }
                         }
                     }
                 }

@@ -38,6 +38,8 @@
 | `install-macshell-status.py`（顶栏监控） | 支持 | 支持 | 支持 |
 | `install-macshell-overview.py`（[13 窗口总览](13-window-overview.md)） | 未验证 | 支持 | 未验证 |
 
+**不限制版本**：安装脚本不再拒绝其他版本的 MacShell。0.5.1 用自己的补丁，其他版本一律用最新的 0.5.2 补丁，然后由补丁检查决定怎么处理：已带 Silky 改动的安装会根据运行时标记识别为“已应用”，只更新各项调整；补丁对不上的全新安装会在改动任何文件之前停下，并报告原因。如果上游已经自带某项调整，调整脚本会识别出来并跳过。例如 0.5.3 的 Dock 收起后本来就会暂停玻璃捕获，`tune-macshell-performance.py` 就不再改这一处。已在本机已带 Silky 改动的 **MacShell 0.5.3** 上验证：`--check` 通过；在隔离的 `HOME` 中完整安装一遍后，所有 QML 文件和现有安装完全一致。全新的 0.5.3 还没有验证。
+
 0.5.2 补丁基于上游标签 `0.5.2`（提交 `5d17abadd5de192919416990ad2ecf7f31b38b51`）。现有上游 0.5.1 标签与旧补丁基线不同，全新安装建议使用 0.5.2。`--check` 会在临时目录试跑补丁和全部调优步骤。
 
 ## 安装
@@ -116,7 +118,7 @@ python3 scripts/install-macshell-status.py
 
 点击温度可查看实时 CPU 占用最高的 10 个进程，以及显卡、固态硬盘、无线网卡和风扇等硬件概览。硬件概览下方显示整机 CPU、内存和系统盘（`/`）的占用率。进程占用按相邻两次采样的 CPU 时间增量计算，100% 表示占满一个逻辑核心。点击电池图标可查看供电来源、功率、电压、电量、容量、循环次数和健康度，内容随硬件暴露的字段变化。MacShell 运行时每 3 秒采样一次，面板中部的「整机功耗」曲线保留最近约 5 分钟，关闭面板后继续采样。只有电池供电时才能测到整机功耗：此时电池放电功率就是整机的耗电。接上电源后，Yoga Slim 7x（Snapdragon X，`qcom-battmgr`）既不报告适配器输入功率（USB-C 端口 `voltage_now` 为 0，`2.00 A` 只是 PD 协商值），也不报告整机负载（不充电时电池 `power_now` 为 0），所以接电源期间曲线留空，「供电来源」里的「整机功耗」显示「接电源时不可读」。充电或放电功率改为数值，放在「电池」分组的「充电功率 / 放电功率 / 电池功率」一行。健康度是电池计量芯片给出的满充容量 `energy_full` 除以设计容量 `energy_full_design`。芯片会不定期重新校准满充容量，健康度可能一次跳几个百分点；长期开着充电上限时校准更少、跳得更明显。为了能回看变化，顶栏每 10 分钟检查一次，每天和满充容量变化时向 `~/.local/state/silky/battery-health.csv` 追加一行（时间、型号、满充/设计容量、健康度、循环次数）。Yoga Slim 7 14Q8X9 可在电池面板拖动滑条设置 55%–100% 的充电上限，点「应用」后通过系统授权写入并校验内核回读。右键电池图标可以切换系统提供的电源模式，所选模式由 Omarchy 按外接电源和电池供电分别记忆。右键面板底部还有「显示电量百分比」开关，关掉后电池里只显示电量条，不显示数字；它就是 MacShell 设置里的 `showBatteryPercent`，会保存到 `~/.config/macbar/settings.json`。
 
-托盘图标统一成和菜单栏其他图标一样的单色线条（跟随深浅色）：按托盘项的 id 换成 `SilkyStatusIcon` 里手绘的图标，目前覆盖 Chrome、ChatGPT、Clippy、Netcatty、Remmina、Clash Verge 和微信（id `wechat`，两个叠在一起的对话气泡）。其他应用保持原图标；需要提醒（`NeedsAttention`）时也显示原图标。查托盘 id：`busctl --user get-property <服务> /StatusNotifierItem org.kde.StatusNotifierItem Id`。装完后执行 `qs -c MacShell ipc call macshell reload` 让 MacShell 重新加载。
+托盘图标统一成和菜单栏其他图标一样的单色线条（跟随深浅色）：按托盘项的 id 或标题换成 `SilkyStatusIcon` 里手绘的图标，目前覆盖 Antigravity（拱形 A 轮廓线条）、Chrome、ChatGPT、Clippy、Netcatty、Remmina、Clash Verge、网易云音乐和微信（id `wechat`，两个叠在一起的对话气泡）。其他应用保持原图标；需要提醒（`NeedsAttention`）时也显示原图标。查托盘 id：`busctl --user get-property <服务> /StatusNotifierItem org.kde.StatusNotifierItem Id`。装完后执行 `qs -c MacShell ipc call macshell reload` 让 MacShell 重新加载。
 
 ## 通知中心小组件
 
@@ -146,6 +148,29 @@ python3 scripts/install-macshell-status.py
 | 名称，如 `茅台`、`英伟达`、`toyota` | 先查腾讯搜索（中文名），再查 Yahoo 搜索 | 解析出的来源 |
 
 解析结果在数据进程运行期间缓存；查不到的条目在菜单里只显示原文，下一轮再试。在右键菜单里上下拖动某一行（或左侧的 ≡）可以调整顺序，小组件按这个顺序显示，小尺寸显示第一项。
+
+### 通知按应用堆叠、和小组件一起滚动
+
+通知很多时，通知区和小组件之间原来是两个各自滚动、边缘硬切的区域，衔接生硬。现在：
+
+- **按应用堆叠**（同 macOS）：同一应用的通知叠成一摞，只显示最新一条，下面露出一到两层「纸边」。点一下展开这一摞，其他卡片平滑让位；展开后上方出现应用名、「收起」和「✕」（清除这个应用的全部通知，逐张化为尘埃）。单条通知点击仍是打开。
+- **只显示最近 3 个应用**：更早的应用收进「还有 N 个应用的通知」，点开后可「收起」。关闭面板时恢复折叠。
+- **一个滚动区**：通知和小组件在同一个滚动区里，不再各自滚动；面板高度不超过屏幕。滚到边缘的卡片和小组件按露出的比例淡出（露出 70% 时约 55% 不透明），而不是被硬切一半。「没有通知」在小组件滚上来时隐藏。
+
+实现：安装脚本把 `MacBar.qml` 里通知列表的 `Column` 换成按 `notifPop.silkyPlan`（按应用分组、按最新通知排序）手动布局的 `Item`，每张卡片的位置由 `silkyY()` 计算并带 420 ms 动画；小组件 `SilkyWidgetDeck` 移进通知的 `Flickable`（`nfl`），面板高度改为 `92 + nfl.height + 14`。淡出不用着色器遮罩：液态玻璃放进离屏图层会发白，所以改为每张卡片按自身在视口里的比例设置不透明度。
+
+展开 / 收起时不再重影。最初的版本里，被折叠的卡片和最新那张叠在同一位置、按同样节奏淡入淡出，而且每张卡片的目标位置取自邻居「正在动画中」的高度，目标一直在变、动画反复重启，于是多张半透明卡片叠在一起。现在：布局只用每张卡片的最终高度（`silkyFinalH`，含应用标题和纸边的最终值），每张卡片只朝一个固定目标滑动一次；折叠卡片的不透明度是过渡进度的三次方，滑出最新那张之后才显现，收起时在滑回之前就消失；每个应用最新那张始终画在它的折叠卡片上面；应用标题、纸边、「还有 N 个应用」按钮和小组件区都以同样的 420 ms 曲线移动。「全部清除」仍按动画中的高度连续收拢。
+
+用示例通知检查（不发真实通知，只加到列表里，`undemo` 只删除带 `[Silky demo]` 标记的条目）：
+
+```bash
+qs -c MacShell ipc call silkynotif demo      # 微信 3 条、邮件 2 条、Slack、日历
+qs -c MacShell ipc call notifications open
+qs -c MacShell ipc call silkystack toggle wechat   # 不用点击，展开 / 收起某个应用的一摞
+qs -c MacShell ipc call silkynotif undemo
+```
+
+实机验证：示例通知显示为微信、邮件两摞（带纸边）、Slack 单条和「还有 1 个应用的通知」，下面接小组件，底部卡片淡出。用 `silkystack toggle` 逐帧截图检查了展开和收起：折叠卡片在最新那张下面不可见，收起时不再残留重影。清除一个应用和「还有 N 个应用」的展开需要在面板里点击确认。面板在浅色窗口上方时玻璃会整体变亮，这是玻璃半透明的正常表现。
 
 ### 安装
 
@@ -302,7 +327,19 @@ python3 -I -c 'import importlib.util as u; s=u.spec_from_file_location("w", "con
 
 ## Dock 液态玻璃插件（原型）
 
-**效果**：Dock 恢复 Liquid Glass 的斜面折射、色散和边缘高光，但由 Hyprland 在合成同一帧时画出，拖动窗口经过 Dock 时玻璃里的画面和窗口同步，没有延迟。MacShell 不再抓取窗口，拖动期间几乎不占 CPU。这是原型，只覆盖 Dock，需要 Dock 处于普通模糊样式（见上一节）。插件 0.2 曾把菜单栏的玻璃（下拉菜单、控制中心、通知中心、应用程序面板）也交给它画，试用后撤回，菜单栏保持普通模糊。标记格式（每个图层最多 16 个矩形，带不透明度和种类）和按种类区分的参数仍保留在插件和 [`SilkyGlassMarker.qml`](../config/macshell/SilkyGlassMarker.qml) 里，以后可以再扩展。
+Hyprland 在全屏时会隐藏 Dock 图层，图层仍可能处于已映射状态。插件 0.2.2 使用和合成器相同的可见性判断，避免在全屏窗口上留下只有玻璃的 Dock 轮廓。用 `./scripts/install-dock-glass-plugin.sh` 更新，进入真正全屏检查 Dock 完全隐藏，再退出确认玻璃恢复。安装器备份同版本的旧插件文件。
+
+**效果**：Dock 与 MacShell 菜单栏浮层（左上角苹果菜单、应用下拉菜单、Wi-Fi、蓝牙、音量、电池/状态、控制中心、通知中心及通知横幅）以及其他浮层（Spotlight / 应用面板 `macspot`、窗口切换器 `macswitch`、壁纸选择 `macwall`、音量/亮度浮窗 `macosd`）统一改由 Hyprland 插件在合成同一帧时画出 Liquid Glass 的斜面折射、色散和边缘高光，拖动窗口经过时同帧跟随、没有延迟，MacShell 也不再逐帧抓取窗口。顶部菜单栏细条本身（`macbarbg`）保持原生模糊不变。需要 MacShell 处于普通模糊样式（`barStyle` / `dockStyle` 为 `"blur"`）。
+
+插件 0.4.0 的关键改进（升级为 macOS 26/27 光学液态玻璃，并新增控制中心独立悬浮气泡材质）：
+- 新增第 3 种材质 `kind = 2`（`cc_*` 控制中心悬浮气泡），在 [`SilkyGlassMarker.qml`](../config/macshell/SilkyGlassMarker.qml) 里把单层最多上报矩形数从 16 提升到 24，支持无外框大底板的悬浮气泡模式。
+- 着色器升级为更贴近 macOS 26/27 的物理光学模型：**Convex Squircle 曲面高度场 $h(u)=(1-(1-u)^4)^{1/4}$ + 真实 Snell 定律向内折射（折射率 1.50）**。平坦区偏移严格为 0（穿过玻璃的窗口边框与外部严格对齐成一条直线），凸面倒角区把视线向玻璃内部弯折，自然把玻璃下方的按钮或色彩倒映到弧形边缘上，不再把外部壁纸向内拽造成错位；同时搭配边缘自适应模糊、细微色散与 360° 精细高光描边，Dock、下拉菜单、通知中心、Spotlight 和控制中心同步受益。
+- [`dock-glass.conf`](../config/silky-omarchy/dock-glass.conf) 支持三组热调前缀：无前缀（Dock，`kind = 0`）、`menu_`（菜单/通知/Spotlight，`kind = 1`）、`cc_`（控制中心独立气泡，`kind = 2`）。
+
+插件 0.3.0 的基础能力：
+- 覆盖图层扩展到 `macdock`、`macbar`、`macspot`、`macosd`、`macswitch`、`macwall`（排除 `macbarbg`）。插件成功加载时，[`config/hypr/silky-dock-glass.lua`](../config/hypr/silky-dock-glass.lua) 自动关闭这些图层的 Hyprland 原生模糊，避免控制中心、通知中心内层半透明卡片出现双重模糊；插件未加载时自动保留原生模糊回退。
+- 按单矩形分别做 `requiresFullDamage` 损伤判断和 `glBlitFramebuffer` 背景拷贝，多个弹窗相距较远时不再合并成覆盖全屏的大外包框。
+- [`SilkyGlassMarker.qml`](../config/macshell/SilkyGlassMarker.qml) 支持 `poke` 立即触发轮询（弹窗打开同帧上报，不再等 120 ms 定时器），并把标记像素统一放进独立子容器以消除 Qt `stackAfter` 警告；当大面板包住内层卡片时，内层卡片自动保留自身 Qt 半透明叠层，不重复折射。
 
 **为什么能做到无延迟**：macOS 的 Liquid Glass 由合成器 WindowServer 在合成一帧时直接读取刚画好的下层像素，所以没有延迟。Wayland 不允许客户端读取自己下面的画面，MacShell 只能截取窗口、轮询位置，再交给合成器显示，至少慢 1–2 帧。所以要做到无延迟，只能在合成器里实现：[`plugins/silky-dock-glass`](../plugins/silky-dock-glass/main.cpp) 是一个 Hyprland 插件，做法如下：
 
@@ -332,19 +369,19 @@ python3 -I -c 'import importlib.util as u; s=u.spec_from_file_location("w", "con
 
 脚本按已安装的 Hyprland 头文件编译插件，装到 `~/.local/lib/silky-omarchy/silky-dock-glass-<版本>.so`，安装 [`config/hypr/silky-dock-glass.lua`](../config/hypr/silky-dock-glass.lua) 并在 `hyprland.lua` 里 `require`（登录时自动加载），立即加载插件。它还会运行 [`tune-dock-glass-plugin.py`](../scripts/tune-dock-glass-plugin.py)（MacDock 写隐藏标记、不再画自己的着色），并在 `~/.config/macshell/env` 里加上 `export SILKY_DOCK_GLASS_PLUGIN=1`。改动的 `MacDock.qml` 和 `env` 备份在 `~/.local/state/macshell/silky-backup-dock-glass-<时间>/`。之后从「设置 > 工具 > 重新启动」重启 MacShell。Hyprland 更新后要重跑脚本。依赖 `g++`、`make`、`pkg-config` 和 Hyprland 头文件。
 
-**调参**：安装脚本在 `~/.config/silky-omarchy/dock-glass.conf` 不存在时放一份带注释的[默认配置](../config/silky-omarchy/dock-glass.conf)，以后不会覆盖。每行一个 `键 = 值`：`blur`（模糊半径，逻辑像素）、`tint`（浅色外观的着色，0–1）、`tint_dark`（深色外观的着色，默认 0.22，比浅色略深）、`bezel`（斜面最宽）、`thickness`（折射强度）、`dispersion`（色散）、`magnify`（整体纵向放大）、`saturation`、`lift`（提亮）、`rim`（边缘高光）。保存后插件在 1 秒内重新读取，不用重载 Hyprland。删掉某行即恢复默认值。调到默认值后，拖动测试中 Hyprland GPU 约为 57%（测试窗口比上表略大），模糊半径越小越省。
+**调参**：安装脚本在 `~/.config/silky-omarchy/dock-glass.conf` 不存在时放一份带注释的[默认配置](../config/silky-omarchy/dock-glass.conf)，以后不会覆盖。每行一个 `键 = 值`：不带前缀的键控制 Dock（`blur`、`tint`、`tint_dark`、`bezel`、`thickness`、`dispersion`、`magnify`、`saturation`、`lift`、`rim`），加 `menu_` 前缀的键控制菜单栏与各浮层，加 `cc_` 前缀的键控制控制中心独立悬浮气泡。保存后插件在 1 秒内重新读取，不用重载 Hyprland。删掉某行即恢复默认值。
 
 **限制**：
 
-- 只覆盖 Dock。右键菜单、悬停标签仍是普通模糊。
-- 玻璃参数不跟随 MacShell 的玻璃滑块，改在 `~/.config/silky-omarchy/dock-glass.conf` 里调（见下方「调参」）。
+- 顶部菜单栏细条（`macbarbg`）、Dock 右键菜单与悬停标签仍保持原生模糊。
+- 玻璃参数不跟随 MacShell 的玻璃滑块，改在 `~/.config/silky-omarchy/dock-glass.conf` 里调（见上方「调参」）。
 - 依赖 Hyprland 0.57 的内部渲染接口（渲染阶段事件、渲染元素、`requiresFullDamage`），升级 Hyprland 后可能需要改代码。
-- 设置了 `SILKY_DOCK_GLASS_PLUGIN=1` 但插件没加载时，Dock 没有玻璃底（只有图标）。
+- 设置了 `SILKY_DOCK_GLASS_PLUGIN=1` 但插件没加载时，已接管图层没有插件底板（需重跑安装脚本或关闭该环境变量）。
 - 只在单显示器、无旋转、缩放 2 的内屏上验证过。
 
-**验证**：先在嵌套 Hyprland（窗口里再跑一个 Hyprland，用一个写同样标记的测试 Dock）里反复加载、卸载插件，确认不会崩溃，再装到实机。实机验证：`hyprctl plugin list` 能看到 `silky-dock-glass`，Dock 显示斜面折射和边缘高光。用 `hyprctl` 拖动窗口穿过 Dock 时截图，玻璃里窗口边缘的位置和玻璃外完全对齐（同一帧），玻璃里没有残留的 Dock 图标。设置环境变量 `SILKY_DOCK_GLASS_DEBUG=1` 启动 Hyprland 时，标记解码失败的位置显示品红色；`SILKY_DOCK_GLASS_RAW=1` 显示未处理的复制画面。
+**验证**：实机验证（Hyprland 0.57.2、MacShell 0.5.3、插件 0.4.0）：`hyprctl configerrors` 为空，`hyprctl plugin list` 显示 `silky-dock-glass` 0.4.0；`MacShell.log` 重载后无 QML 报错或 `stackAfter` 警告；实机截取控制中心独立气泡与 Dock 确认边缘凸透镜折射、细微色散、360° 镜面高光环、纯白激活态圆钮与顶部菜单栏细条（`macbarbg`）均正常。
 
-**回滚**：从 `hyprland.lua` 删掉 `require("hypr.silky-dock-glass")`，运行 `hyprctl plugin unload ~/.local/lib/silky-omarchy/silky-dock-glass-<版本>.so`。从备份目录恢复 `MacDock.qml` 和 `~/.config/macshell/env`（或删掉 `SILKY_DOCK_GLASS_PLUGIN=1` 一行），然后重启 MacShell，Dock 回到普通模糊。
+**回滚**：从 `hyprland.lua` 删掉 `require("hypr.silky-dock-glass")`，运行 `hyprctl plugin unload ~/.local/lib/silky-omarchy/silky-dock-glass-<版本>.so` 并 `hyprctl reload`。从备份目录 `~/.local/state/macshell/silky-backup-dock-glass-<时间>/` 恢复 `MacDock.qml`、`MacBar.qml` 和 `~/.config/macshell/env`（或删掉 `SILKY_DOCK_GLASS_PLUGIN=1` 一行），然后重启 MacShell，所有浮层回到普通模糊。
 
 ## 默认玻璃参数
 
@@ -360,6 +397,24 @@ python3 -I -c 'import importlib.util as u; s=u.spec_from_file_location("w", "con
 ```
 
 菜单和控制中心只在可见时捕获，而且只捕获与玻璃区域相交的窗口；Dock 同样只处理其附近窗口。窗口静止或玻璃关闭后，几何轮询会自动降频。
+
+## 90 Hz 下拖动窗口卡顿
+
+在 Snapdragon X Elite（Adreno X1-85）、Hyprland 0.57.2、2944×1840 @ 90 Hz 的内屏上，多个窗口重叠时拖动 foot，实时背景模糊让合成器隔一个刷新周期才送显一次。用模拟鼠标拖动浮动窗口，通过 Wayland `wp_presentation` 记录送显时间，foot 从约 45 FPS 提升到 89.6 FPS，帧间隔的第 95 百分位从 22.25 ms 降到 11.13 ms。重载安装后的配置，GTK（Zenity）和 XWayland（XTerm）测试窗口分别测得 89.9 和 89.4 FPS，两者的第 95 百分位帧间隔均为 11.13 ms。
+
+在 [`silky-native-blur.lua`](../config/hypr/silky-native-blur.lua) 中启用这项优化后，浮动窗口的磨砂复用预先模糊的桌面背景，背景主要取自壁纸。Hyprland 使用着色器混合模糊，模糊遍数从 3 降到 2。MacShell 的面板和菜单从实际画面取背景，Dock 折射插件和窗口动画照常运行。[Hyprland 模糊选项](https://wiki.hypr.land/0.57.0/configuring/core/config-options/#blur)
+
+从仓库根目录更新用户配置中的模块，先为已安装的模块留一份备份：
+
+```bash
+hypr_dir="${XDG_CONFIG_HOME:-$HOME/.config}/hypr"
+if [ -f "$hypr_dir/silky-native-blur.lua" ]; then
+  cp -a "$hypr_dir/silky-native-blur.lua" "$hypr_dir/silky-native-blur.lua.bak.$(date +%Y%m%d-%H%M%S)"
+fi
+install -m 644 config/hypr/silky-native-blur.lua "$hypr_dir/silky-native-blur.lua"
+```
+
+在 `hyprland.lua` 的 `require("hypr.silky-native-blur")` 前加 `silky_cached_window_blur = true`，然后运行 `hyprctl reload`。`hyprctl configerrors` 应为空，`hyprctl getoption render:use_shader_blur_blend` 应为 `true`。拖动浮动窗口跨过其他窗口，检查窗口跟手程度和磨砂；用 `hyprctl monitors` 核对屏幕模式。回滚时删除这行开关并重新加载，主题原有的模糊参数会恢复。无需重启应用或重新登录。
 
 ## 鼠标指针周期性卡顿
 
@@ -437,6 +492,75 @@ Omarchy 把 `PRINT` 绑定到 omasnap，MacShell 的 `macshell.lua` 又把同一
 - Omarchy 默认的截图命令带 `--notify`。[`config/hypr/bindings-screenshot.lua`](../config/hypr/bindings-screenshot.lua) 把 `PRINT` 改为直接运行 `omasnap`：截图照样保存并复制到剪贴板，右下角显示一个和 macOS 一样的浮动预览（7 秒后消失，可拖出或点“编辑”标注），不进通知中心
 - MacShell 的 `screenshotNotify` 设为 `false`
 
+## 截图遮挡档位与右键取消
+
+按 `PrtSc` 进入 Omasnap 截图选择界面。右键退出，拖框时第一次右键取消当前拖动，再点一次退出。
+
+按 `D` 可直接开始画遮挡。点工具栏的盾牌图标或按 `Shift+D`，模式和档位会显示在同一排工具栏内。选定后自动收起，点回截图可直接开始操作。模糊和马赛克各有轻、中、强三档，滚轮也可以调档。模糊参考 MacShell 的预模糊和淡色玻璃层，对选区做近似高斯滤波，轻微降低饱和度并抬高暗部。边缘从选区内部镜像取样。马赛克用分块平均色。切换模式时会记住各自的档位，初次打开默认为中档模糊。按 `V` 选中已有遮挡，也可以当场更换模式和档位，并可撤销。需要完全盖住敏感内容时，选「涂黑」。
+
+[右键与旧磨砂补丁](../patches/omasnap-1.26.2-zh-frost.patch)和[遮挡档位补丁](../patches/omasnap-1.26.2-zh-redaction-levels.patch)、[工具栏补丁](../patches/omasnap-1.26.2-zh-inline-redaction.patch)和[玻璃模糊补丁](../patches/omasnap-1.26.2-zh-glass-blur.patch)适用于 Omasnap 1.26.2 中文源码（上游提交 `6150151`，含 `i18n/omasnap_zh_CN.ts`）。旧磨砂图层仍能按原样重新打开。选中后可以改用新模式。构建依赖 Qt 6、LayerShellQt、Wayland、libdeflate 和 Qt Linguist 的 `lrelease`。从 Silky Omarchy 仓库根目录运行：
+
+```bash
+src="$HOME/.local/src/omasnap-zh"
+(
+  set -e
+  frost="$PWD/patches/omasnap-1.26.2-zh-frost.patch"
+  levels="$PWD/patches/omasnap-1.26.2-zh-redaction-levels.patch"
+  inline="$PWD/patches/omasnap-1.26.2-zh-inline-redaction.patch"
+  glass="$PWD/patches/omasnap-1.26.2-zh-glass-blur.patch"
+  if ! git -C "$src" apply --reverse --check "$glass" 2>/dev/null; then
+    if ! git -C "$src" apply --reverse --check "$inline" 2>/dev/null; then
+      if ! git -C "$src" apply --reverse --check "$levels" 2>/dev/null; then
+        git -C "$src" apply --reverse --check "$frost" 2>/dev/null ||
+          git -C "$src" apply "$frost"
+        git -C "$src" apply "$levels"
+      fi
+      git -C "$src" apply "$inline"
+    fi
+    git -C "$src" apply "$glass"
+  fi
+  "$src/bin/test"
+)
+```
+
+测试通过后，备份旧程序并替换本机中文版。下一次启动生效。
+
+```bash
+cp -an "$HOME/.local/bin/omasnap" "$HOME/.local/bin/omasnap.pre-glass-blur"
+install -m 755 "$src/build/omasnap" "$HOME/.local/bin/omasnap"
+```
+
+离屏测试覆盖档位渲染、选中后调整、撤销、重新打开和工具栏内联选项的自动收起。使用临时深色列表对比了三档模糊的边缘和颜色过渡。已在 Hyprland 实测右键退出。回滚最新改动时，恢复 `~/.local/bin/omasnap.pre-glass-blur`，并对玻璃模糊补丁执行 `git apply -R`。
+
+## 独立截图贴图
+
+截图标注后按 `P` 或 `Ctrl+P`，也可以点预览上的图钉把它变成正式贴图。本机的 `Shift+PrtSc` 直接贴出剪贴板里的图片。正式贴图按原比例显示完整图片，大图初始适配到可用屏幕范围。新贴图出现在鼠标附近，可直接拖走。
+
+右键菜单提供复制、保存到截图目录、编辑、显示文件夹、不透明度和关闭。滚轮放大缩小，`Alt` 加滚轮按 1% 微调，`Ctrl` 加滚轮调不透明度。中键恢复原始大小，大图仍会适配屏幕。双击或按 `Esc` 关闭，`Shift` 加拖动可将 PNG 拖到其他应用。
+
+右键菜单和不透明度子菜单使用圆角玻璃面板、细描边和高对比文字。日间与夜间配色读取 MacShell 使用的系统 `color-scheme`。已打开的菜单也会跟随变化，背景虚化由 Hyprland 的弹出菜单模糊提供。
+
+[贴图补丁](../patches/omasnap-1.26.2-zh-standalone-pin.patch)和[玻璃菜单补丁](../patches/omasnap-1.26.2-zh-pin-glass-menu.patch)适用于本机 Omasnap 1.26.2 中文源码，使用上节的构建依赖。缩放和置顶依赖 Hyprland。以下命令从 Silky Omarchy 仓库根目录运行。
+
+```bash
+src="$HOME/.local/src/omasnap-zh"
+patch="$PWD/patches/omasnap-1.26.2-zh-standalone-pin.patch"
+(
+  set -e
+  glass="$PWD/patches/omasnap-1.26.2-zh-pin-glass-menu.patch"
+  if ! git -C "$src" apply --reverse --check "$glass" 2>/dev/null; then
+    git -C "$src" apply --reverse --check "$patch" 2>/dev/null ||
+      git -C "$src" apply "$patch"
+    git -C "$src" apply "$glass"
+  fi
+  "$src/bin/test"
+  cp -an "$HOME/.local/bin/omasnap" "$HOME/.local/bin/omasnap.pre-pin-glass-menu"
+  install -m 755 "$src/build/omasnap" "$HOME/.local/bin/omasnap"
+)
+```
+
+下次新建贴图时生效。离屏测试覆盖预览转为正式贴图、缩放、恢复大小、不透明度和右键菜单。已在 Hyprland 0.57.2 实测竖图完整显示、滚轮缩放、中键恢复和右键菜单。在独立的设置会话内实测了打开菜单时的日夜切换。回滚玻璃菜单时恢复 `~/.local/bin/omasnap.pre-pin-glass-menu`，并用 `git apply -R` 撤回玻璃菜单补丁。
+
 ## 电池图标
 
 菜单栏电池改成 macOS 26 的样式：更窄的胶囊（电池本体 24 px，按钮 32 px），里面只有数字，没有 `%`。数字通常只有两位，所以不需要更长。右键电池可以开关数字（见上方「顶栏系统监控」）。
@@ -491,6 +615,38 @@ o.window("^(org\\.quickshell)$", { float = true, center = true, border_size = 0 
 
 注意：规则只对新创建的窗口生效，修改后需要重启 MacShell 一次。
 
+## 打开窗口时壁纸闪现与「关于本机」实时磨砂
+
+[窗口配置](../config/hypr/silky-macshell-windows.lua)关闭 Hyprland 的 `windowsIn` 和 `fadeIn`，让新窗口直接以完整尺寸和不透明度显示，同时为 Firefox 系浏览器（`firefox-based-browser` 标签）关闭合成器模糊（`no_blur`）。配套的 [GTK3 CSD 样式](../config/gtk-3.0/silky-csd.css) 去掉 `window.csd decoration` 的透明阴影外边距（由 `~/.config/gtk-3.0/gtk.css` 引入），避免 Firefox 等 GTK3 CSD 窗口在首帧先闪出一圈虚化光晕和约 26 px 的偏移。窗口关闭、工作区切换和 Dock 最小化保留各自的动画。[模糊规则](../config/hypr/silky-native-blur.lua)给「关于本机」单独关闭 `xray`，让面板实时取样其下方窗口。此前它使用了浮动窗口的壁纸缓存。
+
+从仓库根目录运行 `./scripts/install-macshell-optimizations.sh`，再运行 `hyprctl reload`。在 Hyprland 0.57.2 的 Wayland 会话中，前后逐帧对比打开重叠测试窗口与 Firefox，检查底层窗口是否透过开场淡入露出以及 Firefox 首帧是否严丝合缝。把「关于本机」叠放在不同颜色的测试窗口上，磨砂底色应随下方窗口变化。回滚时从安装器的 `~/.local/state/macshell/silky-backup-*/settings/` 恢复这两个 Lua 文件及 `gtk3.css`（或移除 `~/.config/gtk-3.0/gtk.css` 中的 `@import url("silky-csd.css");`）并重载 Hyprland。
+
+## “关于本机”里 Edge 版本像降级
+
+切到 Edge 渠道后，Omarchy 从 `omarchy` 包（如 `4.5.0-3`）换成 `omarchy-dev` 包。后者的版本号由 master 分支的 `git describe` 生成，例如 `4.0.0.r8103.ge4635a4`：`4.0.0` 只是 master 上能找到的最近一个 tag，`r8103` 是之后的提交数，`ge4635a4` 是提交哈希。正式版的 tag 不在 master 上，所以“关于本机”原样显示这个版本号时，比 4.5.0 更新的构建看起来反而像降级了。
+
+现在只要装的是 `omarchy-dev`，这一行就改成显示渠道和短提交，例如 `Edge · e4635a4`，后面跟着小号淡色的包构建日期 `11-20 构建`，样式和“12 核”“8448 MT/s”这类辅助信息一致。渠道读取 `omarchy-channel-current`，`dev` 显示为 `Dev`，其余都显示为 `Edge`。构建日期取自 `/var/lib/pacman/local/omarchy-dev-*/desc` 的 `%BUILDDATE%`，按本地时区格式化为 `月-日`。稳定版和 RC 仍显示原来的版本号。英文界面显示 `11-20 build`。
+
+**实现**：[`scripts/tune-about-version.py`](../scripts/tune-about-version.py) 修改三个文件：`assets/about-info.sh` 额外输出 `osver` 和 `osbuilddate`；`AboutApp.qml` 把日期放进辅助文字；`lang/zh-CN.js` 增加 `"%1 build"` 的翻译。脚本可以重复执行，`install-macshell-optimizations.sh` 每次都会运行它。
+
+**安装**：在仓库根目录运行 `scripts/install-macshell-optimizations.sh`。安装脚本会备份这三个文件，任何 MacShell 版本都可以运行（见[版本](#版本)）。只想单独应用这一项时，先手动备份三个文件，再直接运行调整脚本：
+
+```bash
+python3 scripts/tune-about-version.py ~/.config/quickshell/MacShell
+qs -c MacShell ipc call macshell reload
+```
+
+**验证**（MacShell 0.5.3、`omarchy-dev 4.0.0.r8103.ge4635a4-1`、Edge 渠道，已实机验证）：
+
+```bash
+sh ~/.config/quickshell/MacShell/assets/about-info.sh | grep -E '^os(ver|build)'
+qs -c MacShell ipc call about open
+```
+
+`about-info.sh` 输出的最后一条 `osver=` 应为 `Edge · e4635a4`，同时还应有 `osbuilddate=11-20`。“关于本机”的 Omarchy 一行应显示 `Edge · e4635a4`，后面跟着小号淡色的 `11-20 构建`。稳定版 / RC 渠道的显示还没有实机测过。按脚本逻辑，没有 `omarchy-dev` 时会显示原版本号。
+
+**回滚**：从备份目录（安装脚本的 `~/.local/state/macshell/silky-backup-*/MacShell/`，或手动备份的位置）恢复 `AboutApp.qml`、`assets/about-info.sh` 和 `lang/zh-CN.js`，然后运行 `qs -c MacShell ipc call macshell reload`。
+
 ## 崩溃后出现两个菜单栏、两个 Dock
 
 MacShell 崩溃时有两套机制同时把它拉起来：Quickshell 自带的崩溃处理会弹出报告窗口并**自己重新启动一份**（进程名是不带参数的 `/usr/bin/quickshell`，环境里有 `__QUICKSHELL_CRASH_*`），而 `macshell-start` 也会再启动一份。两份各画一套菜单栏和 Dock。
@@ -512,19 +668,43 @@ MacShell 崩溃时有两套机制同时把它拉起来：Quickshell 自带的崩
 
 ## 控制中心
 
-[`tune-control-center-glass.py`](../scripts/tune-control-center-glass.py)：分组后的控制中心和菜单栏下拉菜单共用同一套玻璃材质（同一块底板、渐变和描边，以后调一处两边都变）。MacShell 0.5.2 把控制中心固定成深色，浅色外观下也是黑的；现在跟随外观，浅色下是浅色玻璃。
+[`tune-control-center-glass.py`](../scripts/tune-control-center-glass.py)：默认采用类似 macOS 26/27 的独立悬浮液态玻璃气泡样式（`ccStyle: "tiles"`），Wi-Fi / 蓝牙 / 专注模式 / 显示器 / 声音等控件均以全圆角胶囊或正圆独立悬浮在桌面上，通过 `silky-dock-glass` 的 `kind = 2`（`cc_*`）材质渲染清透边缘折射与 360° 亮边，开启态 1×1 圆钮切换为纯白实心底且自动隐藏底层重复描边；仍可在 MacShell 设置（或 `~/.config/macbar/settings.json` 把 `ccStyle` 设为 `"macos"`）随时切回统一的毛玻璃大底板模式。深浅外观跟随系统切换。
 
 [`tune-display-controls.py`](../scripts/tune-display-controls.py)：控制中心新增「显示」页，入口和「声音」一样（左边点名称进页面，右边直接拖滑条）。页面里有亮度滑条，以及「夜览」和「外观」（深色 / 浅色）两个开关。
 
 ## Dock 图标与设置窗口
 
+MacShell 的 Dock 图标采用 Silky 的深紫玻璃圆角底和银紫色 M 字标记，方便在 52 px 的默认尺寸下辨认。MacShell 的窗口切换器和设置页也使用这枚[图标](../config/icons/macshell-logo.png)。
+
+从仓库根目录运行 `./scripts/install-macshell-optimizations.sh` 会将图标安装到 `~/.config/quickshell/MacShell/assets/macshell-logo.png`。运行 `qs -c MacShell ipc call macshell reload` 后打开 MacShell 的设置，在 Dock 右侧检查 MacShell 图标。要恢复原图，从安装器打印的备份目录复制 `MacShell/assets/macshell-logo.png` 回原位，再重载 MacShell。
+
 - [`tune-dock-icons.py`](../scripts/tune-dock-icons.py)：Dock 图标的光学缩放以图标中心为基准，悬停放大时不会往一边偏；旋转（抖动）的支点不变。
 - [`tune-settings-scroll.py`](../scripts/tune-settings-scroll.py)：设置窗口左侧导航列表原来滚轮一格只动几像素。现在每格 140 px，多格累加后逐帧平滑过去；触控板的像素级滚动仍交给列表自己处理，保留原生惯性。
+
+### Dock 中文件打不开
+
+Omarchy 移除 Nautilus 并将目录默认应用切换为 Folio 后，旧的 Dock 固定项仍会尝试启动 Nautilus。残留的桌面入口仍能显示「文件」图标，Dock 会在等待窗口时反复跳动。
+
+从仓库根目录运行 `./scripts/install-macshell-optimizations.sh`。如果 Nautilus 已卸载，且 Folio 已安装并设为目录默认应用，[迁移脚本](../scripts/migrate-macshell-files.py)会将 `~/.config/macdock/pinned.json` 中的 Nautilus 固定项换成 Folio，保留其他图标顺序。脚本也会移除旧的 Silky Nautilus 中文快捷键覆盖，让 Hyprland 恢复系统的文件快捷键，并将旧的 Silky 桌面入口归档为备份，避免它继续出现在应用面板。
+
+只修复这三个设置时可运行 `python3 scripts/migrate-macshell-files.py`。更新后执行 `hyprctl reload` 和 `qs -c MacShell ipc call macshell reload`。点击 Dock 中文件图标应打开 Folio，再点击应激活已有窗口。也可用 `Super+Shift+F` 验证快捷键。若已重新安装 Nautilus 并要恢复旧设置，将脚本打印的 `.bak.folio.*` 文件复制回原位，再重载 Hyprland 和 MacShell。
 
 ## 焦点切换时玻璃背景跟着刷新
 
 [`tune-glass-stacking.py`](../scripts/tune-glass-stacking.py)：玻璃背后窗口的“指纹”原来只看位置和大小，点击切换浮动窗口的前后顺序时，玻璃里还是旧的叠放顺序。现在把焦点顺序（`focusHistoryID`）也算进去，切换焦点时立即刷新；窗口改标题（终端、浏览器标签页、播放器）依然不会唤醒 60 Hz 刷新。
 
+### 文件右键菜单的常用目录
+
+启用 Folio 定制后，在 Dock 右键点「文件」，可直接打开主文件夹、桌面、文档、下载或图片。菜单读取系统的用户目录设置。如果某个快捷目录配置成主文件夹，会优先使用现有的同名目录，避免重复指向主文件夹。使用 Folio 安装脚本或 MacShell 优化安装脚本更新菜单以后，重载 MacShell 即可验证。回滚时恢复安装器备份的 `MacDock.qml` 和 `lang/zh-CN.js`，再重载 MacShell。
+
 ## 窗口最小化
 
-Silky 不再提供窗口最小化入口（[`disable-minimize.py`](../scripts/disable-minimize.py)）：标题栏仅保留关闭和最大化，MacShell 菜单及客户端请求转发也已关闭。Dock 仍保留恢复先前已最小化窗口的能力。
+点 Folio 左上角的黄灯，窗口会沿类似「神奇效果」的弧形轮廓收拢到 Dock 分隔线和废纸篓之间，留下独立的窗口缩略图。点击缩略图，原窗口会从同一位置放大回来。动画时长设为 480 ms。Folio 异步抓取一张尺寸受限的窗口画面，文件保存在 Wayland 会话的运行目录，关闭该窗口后清理。MacShell 通过渲染线程驱动网格变形，并将叠层限制在窗口到缩略图的范围内。原窗口在叠层就绪后才移入隐藏工作区，移走时禁用 Hyprland 的窗口动画，避免交接时叠加两套效果。Dock 缩略图占位和间距在 180 ms 内线性展开，恢复窗口时线性收回。先前已最小化的 Folio 窗口也会有可点击的恢复项。
+
+旧版曲线让上下沿分段启动，下沿过早缩到目标宽度，尾段还会把窗口画面压暗。新版让各行从起步到落点持续移动，下沿先收拢，窗口全程保持原亮度，并在缩略图或真实窗口接手时短暂保留叠层。用同一组起点和落点按 90 Hz 对着色器轨迹采样，上沿单帧最大位移由约 45 降至 13 个逻辑像素。
+
+收起时，MacShell 先在原位置提交原尺寸快照，等待画面送出后才把真实窗口移入隐藏工作区，确认移走后再开始变形。[Folio 的 Hyprland 规则](../config/hypr/silky-folio.lua)关闭收起叠层自身的淡入，避免交接时闪过桌面或瞬间变暗。
+
+在仓库根目录运行 `./scripts/install-folio-macos.sh`，再运行 `qs -c MacShell ipc call macshell reload` 并重开 Folio。[缩放组件](../config/macshell/FolioMinimizeFx.qml)安装到 `~/.config/quickshell/MacShell/`。验证时分别在浮动和全屏状态下点黄灯，再点 Dock 缩略图，窗口应回到原工作区和原状态。回滚时先恢复已最小化的窗口，再用安装器报告的备份恢复 MacShell 配置及 Folio 二进制，然后重载 MacShell。
+
+其他应用的通用最小化入口由 [`disable-minimize.py`](../scripts/disable-minimize.py) 管理。

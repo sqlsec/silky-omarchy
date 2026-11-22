@@ -38,6 +38,8 @@ This repository started on MacShell 0.5.1; this machine now runs **MacShell 0.5.
 | `install-macshell-status.py` (menu-bar monitors) | Yes | Yes | Yes |
 | `install-macshell-overview.py` ([13 window overview](13-window-overview.md)) | Not verified | Yes | Not verified |
 
+**No version gate**: the installer no longer refuses other MacShell versions. 0.5.1 uses its own patch, and every other version uses the newest patch, 0.5.2. The patch check then decides what to do: an installation that already has the Silky changes is recognized as "applied" by its runtime markers, and only the tuning is updated; a fresh installation the patch does not fit stops before any file is changed and reports why. Tuners also recognize when upstream already ships their change. For example, 0.5.3's Dock already pauses glass capture while tucked away, so `tune-macshell-performance.py` leaves that spot alone. Checked on this machine's **MacShell 0.5.3**, which already had the Silky changes: `--check` passes, and a full install into an isolated `HOME` left every QML file identical to the existing installation. A fresh 0.5.3 has not been tested.
+
 The 0.5.2 patch targets upstream tag `0.5.2` (commit `5d17abadd5de192919416990ad2ecf7f31b38b51`). The current upstream 0.5.1 tag differs from the original patch baseline, so use 0.5.2 for clean installations. `--check` applies the patch and runs all tuners in a temporary directory.
 
 ## Install
@@ -116,7 +118,7 @@ Network speed and temperature are sampled every 1.5 s, and the panels show rough
 
 Click the temperature to see the 10 processes using the most CPU right now, plus a hardware overview of the GPU, SSD, Wi-Fi card, fans and so on. Below the overview are whole-machine CPU, memory and system disk (`/`) usage. Process usage is the CPU-time delta between two samples; 100% means one logical core fully used. Click the battery icon to see the power source, power, voltage, charge, capacity, cycle count and health; what appears depends on what the hardware exposes. While MacShell runs it samples every 3 seconds; the "System power" chart in the middle of the panel keeps about the last 5 minutes, and sampling continues with the panel closed. Whole-system power can only be measured on battery, where the battery's discharge rate is everything the laptop draws. On external power the Yoga Slim 7x (Snapdragon X, `qcom-battmgr`) reports neither the adapter input (the USB-C port's `voltage_now` is 0 and `2.00 A` is only the PD contract) nor the system load (the battery's `power_now` is 0 when not charging), so the chart leaves a gap while plugged in and the "System power" row under "Power source" reads "Unavailable on external power". Charge and discharge power are shown as numbers in the "Battery" group ("Charging power / Discharging power / Battery power"). Health is the battery fuel gauge's full-charge capacity `energy_full` divided by the design capacity `energy_full_design`. The gauge recalibrates its full-charge capacity from time to time, so health can jump several points at once; with a charge limit on, recalibration happens less often and the jumps are larger. So you can look back at changes, the menu bar checks every 10 minutes and appends a row to `~/.local/state/silky/battery-health.csv` once a day and whenever the full-charge capacity changes (time, model, full/design capacity, health, cycle count). On the Yoga Slim 7 14Q8X9 you can drag a slider in the battery panel to set a 55%–100% charge limit; "Apply" writes it with system authorization and checks the kernel's read-back. Right-click the battery icon to switch between the power modes the system offers; Omarchy remembers the choice separately for AC and battery power. At the bottom of the right-click panel there is also a "Show battery percentage" switch; turned off, the battery shows only the charge bar without the number. It is MacShell's `showBatteryPercent` setting and is saved to `~/.config/macbar/settings.json`.
 
-Tray icons are unified as monochrome line icons like the rest of the menu bar (following light/dark): each tray item is matched by id to a hand-drawn icon in `SilkyStatusIcon`, currently Chrome, ChatGPT, Clippy, Netcatty, Remmina, Clash Verge and WeChat (id `wechat`, two overlapping speech bubbles). Other apps keep their own icons, and so does any item that needs attention (`NeedsAttention`). To find a tray id: `busctl --user get-property <service> /StatusNotifierItem org.kde.StatusNotifierItem Id`. After installing, run `qs -c MacShell ipc call macshell reload` so MacShell reloads.
+Tray icons are unified as monochrome line icons like the rest of the menu bar (following light/dark): each tray item is matched by id or title to a hand-drawn icon in `SilkyStatusIcon`, currently Antigravity (hollow sweeping A arch), Chrome, ChatGPT, Clippy, Netcatty, Remmina, Clash Verge, NetEase Cloud Music and WeChat (id `wechat`, two overlapping speech bubbles). Other apps keep their own icons, and so does any item that needs attention (`NeedsAttention`). To find a tray id: `busctl --user get-property <service> /StatusNotifierItem org.kde.StatusNotifierItem Id`. After installing, run `qs -c MacShell ipc call macshell reload` so MacShell reloads.
 
 ## Notification Center widgets
 
@@ -146,6 +148,29 @@ Stock colors default to red up / green down in the Chinese UI and green up / red
 | A name, such as `茅台`, `nvidia`, `toyota` | Tencent's search first (Chinese names), then Yahoo's | Whichever it resolved to |
 
 Resolutions are cached while the data process runs; an entry that cannot be resolved shows as typed in the menu and is retried next round. Drag a row (or its ≡ handle) up or down in the right-click menu to reorder; the widget shows entries in that order, and the small size shows the first one.
+
+### Notifications stacked by app, scrolling with the widgets
+
+With many notifications, the notification area and the widgets used to be two separate scroll areas with hard-cut edges, which felt disjointed. Now:
+
+- **Stacked by app** (as on macOS): one app's notifications fold into a stack that shows only the newest, with one or two "paper" edges peeking out below. Click it to expand; the other cards glide out of the way, and an app header with "Show less" and "✕" (clear that app's notifications, each turning to dust) appears above. Clicking a single notification still opens it.
+- **Only the 3 newest apps**: older apps fold into "N more apps", which expands and collapses again. Closing the panel folds everything back.
+- **One scroll**: notifications and widgets share one scroll area instead of scrolling separately, and the panel never grows past the screen. Cards and widgets at the edges fade by how much of them is in view (about 55% opacity at 70% visible) instead of being cut in half. "No Notifications" hides when the widgets scroll over it.
+
+Implementation: the installer replaces the notification list's `Column` in `MacBar.qml` with an `Item` laid out from `notifPop.silkyPlan` (grouped by app, ordered by newest notification); each card's position comes from `silkyY()` and animates over 420 ms. `SilkyWidgetDeck` moves into the notifications' `Flickable` (`nfl`), and the panel height becomes `92 + nfl.height + 14`. The fade uses no shader mask, because liquid glass rendered into an offscreen layer turns washed out; each card sets its own opacity from its share of the viewport instead.
+
+Expanding and collapsing no longer ghost. In the first version, folded cards sat at the newest card's position and faded at the same pace as they moved, and each card's target position came from its neighbours' animating heights, so the targets kept moving, the animations kept restarting, and several translucent cards piled up. Now the layout uses each card's final height only (`silkyFinalH`, including the final app header and paper edges), so every card glides once to a fixed target; a folded card's opacity is the transition progress cubed, so it appears only after sliding out from under the newest card and is gone before it slides back; each app's newest card always draws above its folded cards; and the app header, the paper edges, the "N more apps" button and the widget area all move on the same 420 ms curve. Clear All still reflows continuously from the animating heights.
+
+Check with sample notifications (nothing is sent; they are only added to the list, and `undemo` removes only entries tagged `[Silky demo]`):
+
+```bash
+qs -c MacShell ipc call silkynotif demo      # WeChat ×3, Mail ×2, Slack, Calendar
+qs -c MacShell ipc call notifications open
+qs -c MacShell ipc call silkystack toggle wechat   # expand / collapse one app's stack without clicking
+qs -c MacShell ipc call silkynotif undemo
+```
+
+Verified on the machine: the samples show as a WeChat stack and a Mail stack (with paper edges), a single Slack card and "1 more app", followed by the widgets, with the bottom card fading. Expanding and collapsing were checked frame by frame with `silkystack toggle`: folded cards stay invisible under the newest one and collapsing leaves no ghosts. Clearing an app and expanding "N more apps" still need to be clicked through in the panel. Over a light window the whole glass panel looks lighter; that is the glass being translucent, not a fault.
 
 ### Install
 
@@ -302,7 +327,19 @@ The dark theme's Hyprland blur used to dim the backdrop to 82% (`decoration:blur
 
 ## Liquid Glass Dock plugin (prototype)
 
-**Effect**: the Dock gets Liquid Glass's bevel refraction, dispersion and edge light back, but Hyprland draws it while compositing the same frame, so when you drag a window past the Dock the glass moves with it with no delay. MacShell no longer captures windows and uses almost no CPU during a drag. This is a prototype covering the Dock only, and it needs the Dock in the Normal Blur style (see the previous section). Plugin 0.2 also took over the menu bar glass (dropdown menus, Control Center, Notification Center, Applications panel); that was tried and reverted, and the menu bar stays on Normal Blur. The marker format (up to 16 rectangles per layer, with opacity and kind) and the per-kind parameters remain in the plugin and [`SilkyGlassMarker.qml`](../../config/macshell/SilkyGlassMarker.qml) for a later extension.
+Hyprland can hide the Dock layer in fullscreen while keeping it mapped. Plugin 0.2.2 follows the compositor's visibility check so a glass-only Dock outline cannot linger over the fullscreen window. Update with `./scripts/install-dock-glass-plugin.sh`, enter fullscreen to verify the Dock disappears, and exit to verify its glass returns. The installer backs up the previous plugin for the same Hyprland version.
+
+**Effect**: the Dock, MacShell menu bar popovers (Apple/app dropdown menus, Wi-Fi, Bluetooth, Volume, Battery/Status, Control Center, Notification Center and notification toasts), and other MacShell overlays (Spotlight / Applications `macspot`, Window Switcher `macswitch`, Wallpaper Picker `macwall`, OSD `macosd`) all use the Hyprland plugin to draw Liquid Glass bevel refraction, dispersion and edge light in the same composited frame, with zero lag and without MacShell capturing windows. The thin top menu bar strip itself (`macbarbg`) stays on native blur. Requires MacShell in the Normal Blur style (`barStyle` / `dockStyle` set to `"blur"`).
+
+Key changes in plugin 0.4.0 (macOS 26/27 optical Liquid Glass upgrade & floating Control Center bubbles):
+- Adds a third material preset `kind = 2` (`cc_*` Control Center floating bubbles) and raises [`SilkyGlassMarker.qml`](../../config/macshell/SilkyGlassMarker.qml) `maxRects` from 16 to 24 to support frameless multi-tile Control Center layouts.
+- Upgrades the Liquid Glass fragment shader across all layers (Dock, menus, Notification Center, Spotlight, and Control Center) to a physical **Convex Squircle height profile $h(u)=(1-(1-u)^4)^{1/4}$ with true Snell's Law inward refraction (IOR 1.50)**. The flat interior has strictly zero offset so window edges crossing the glass stay pixel-aligned with the background outside, while the convex bevel bends view rays inward to naturally reflect/refract interior elements (such as window traffic-light buttons) onto the curved rim without pulling outside wallpaper inward, paired with rim-adaptive blur, subtle dispersion, and an ultra-crisp 360° hairline specular rim.
+- [`dock-glass.conf`](../../config/silky-omarchy/dock-glass.conf) supports three live-tunable prefixes: plain keys (Dock, `kind = 0`), `menu_` (menus/notifications/Spotlight, `kind = 1`), and `cc_` (Control Center floating bubbles, `kind = 2`).
+
+Base capabilities from plugin 0.3.0:
+- Covers `macdock`, `macbar`, `macspot`, `macosd`, `macswitch`, and `macwall` (excluding `macbarbg`). When loaded, [`config/hypr/silky-dock-glass.lua`](../../config/hypr/silky-dock-glass.lua) disables Hyprland native blur on these layers so nested translucent platters (such as grouped Control Center tiles and Notification Center widgets) do not double-blur; when the plugin is absent, native blur stays active as a fallback.
+- Performs per-rectangle `requiresFullDamage` checks and `glBlitFramebuffer` copies instead of merging distant popovers into one full-screen bounding box.
+- [`SilkyGlassMarker.qml`](../../config/macshell/SilkyGlassMarker.qml) adds an immediate `poke` trigger so opening popovers report their marker in the same frame instead of waiting for the 120 ms timer, and places marker pixels inside a dedicated child container to eliminate Qt `stackAfter` warnings. Nested platters inside a larger panel keep their own Qt tint.
 
 **Why it can be lag-free**: on macOS, Liquid Glass is drawn by the compositor (WindowServer), which reads the freshly drawn pixels below it while compositing a frame, so there is no delay. Wayland does not let clients read what is under them, so MacShell has to capture windows, poll their positions and hand the result to the compositor, which costs at least 1–2 frames. A lag-free version therefore has to live in the compositor: [`plugins/silky-dock-glass`](../../plugins/silky-dock-glass/main.cpp) is a Hyprland plugin that works like this:
 
@@ -332,19 +369,19 @@ When nothing near the Dock moves (other windows still updating elsewhere), the p
 
 The script builds the plugin against the installed Hyprland headers and installs it to `~/.local/lib/silky-omarchy/silky-dock-glass-<version>.so`. It installs [`config/hypr/silky-dock-glass.lua`](../../config/hypr/silky-dock-glass.lua), `require`s it from `hyprland.lua` (loaded at login), and loads the plugin right away. It also runs [`tune-dock-glass-plugin.py`](../../scripts/tune-dock-glass-plugin.py), so MacDock writes the hidden marker and stops drawing its own tint, and adds `export SILKY_DOCK_GLASS_PLUGIN=1` to `~/.config/macshell/env`. The changed `MacDock.qml` and `env` are backed up to `~/.local/state/macshell/silky-backup-dock-glass-<timestamp>/`. Then restart MacShell from Settings > Tools > Restart. Re-run the script after every Hyprland update. Requires `g++`, `make`, `pkg-config` and the Hyprland headers.
 
-**Tuning**: when `~/.config/silky-omarchy/dock-glass.conf` does not exist, the installer puts a commented [default config](../../config/silky-omarchy/dock-glass.conf) there and never overwrites it afterwards. One `key = value` per line: `blur` (blur radius, logical px), `tint` (light-mode tint, 0–1), `tint_dark` (dark-mode tint, default 0.22, a little deeper), `bezel` (widest rim), `thickness` (refraction strength), `dispersion`, `magnify` (vertical lens of the whole slab), `saturation`, `lift` (brightness) and `rim` (edge light). The plugin re-reads the file within a second of saving, with no Hyprland reload. Delete a line to get its default back. With the defaults, Hyprland GPU in the drag test is about 57% (with a slightly larger test window than in the table); a smaller blur radius costs less.
+**Tuning**: when `~/.config/silky-omarchy/dock-glass.conf` does not exist, the installer puts a commented [default config](../../config/silky-omarchy/dock-glass.conf) there and never overwrites it afterwards. One `key = value` per line: plain keys (`blur`, `tint`, `tint_dark`, `bezel`, `thickness`, `dispersion`, `magnify`, `saturation`, `lift`, `rim`) tune the Dock, `menu_`-prefixed keys tune menus and overlays, and `cc_`-prefixed keys tune Control Center floating bubbles. The plugin re-reads the file within a second of saving, with no Hyprland reload. Delete a line to get its default back.
 
 **Limitations**:
 
-- Dock only. The right-click menu and hover labels still use Normal Blur.
-- The glass parameters do not follow MacShell's glass sliders; tune them in `~/.config/silky-omarchy/dock-glass.conf` instead (see Tuning below).
+- The thin top menu bar strip (`macbarbg`), Dock context menus, and Dock hover labels stay on Normal Blur.
+- The glass parameters do not follow MacShell's glass sliders; tune them in `~/.config/silky-omarchy/dock-glass.conf` instead (see Tuning above).
 - It relies on Hyprland 0.57's internal render interfaces (render-stage event, render elements, `requiresFullDamage`), so a Hyprland upgrade may need code changes.
-- With `SILKY_DOCK_GLASS_PLUGIN=1` set but the plugin not loaded, the Dock has no glass background (icons only).
+- With `SILKY_DOCK_GLASS_PLUGIN=1` set but the plugin not loaded, plugin-owned layers have no glass backdrop (re-run the installer or unset the variable).
 - Verified only on a single, unrotated built-in display at scale 2.
 
-**Verify**: the plugin was first loaded and unloaded repeatedly in a nested Hyprland (Hyprland running in a window, with a test Dock that writes the same marker) to confirm it does not crash, and only then installed on the real session. On the real session, `hyprctl plugin list` shows `silky-dock-glass`, and the Dock shows bevel refraction and edge light. Screenshots taken while `hyprctl` drags a window across the Dock show the window edge inside the glass lining up exactly with its edge outside (same frame), with no leftover Dock icons in the glass. Starting Hyprland with `SILKY_DOCK_GLASS_DEBUG=1` paints magenta where the marker fails to decode; `SILKY_DOCK_GLASS_RAW=1` shows the raw copied backdrop.
+**Verify**: real-hardware check (Hyprland 0.57.2, MacShell 0.5.3, plugin 0.4.0): `hyprctl configerrors` is empty, `hyprctl plugin list` reports `silky-dock-glass` 0.4.0, and `MacShell.log` shows no QML errors or `stackAfter` warnings after reload. Screenshots of the floating Control Center bubbles and Dock confirm convex bevel refraction, subtle dispersion, 360° specular rim glints, solid-white active circles, and an untouched `macbarbg` top strip.
 
-**Roll back**: delete `require("hypr.silky-dock-glass")` from `hyprland.lua` and run `hyprctl plugin unload ~/.local/lib/silky-omarchy/silky-dock-glass-<version>.so`. Restore `MacDock.qml` and `~/.config/macshell/env` from the backup directory (or delete the `SILKY_DOCK_GLASS_PLUGIN=1` line), then restart MacShell; the Dock goes back to Normal Blur.
+**Roll back**: delete `require("hypr.silky-dock-glass")` from `hyprland.lua`, run `hyprctl plugin unload ~/.local/lib/silky-omarchy/silky-dock-glass-<version>.so`, and run `hyprctl reload`. Restore `MacDock.qml`, `MacBar.qml`, and `~/.config/macshell/env` from `~/.local/state/macshell/silky-backup-dock-glass-<timestamp>/` (or delete the `SILKY_DOCK_GLASS_PLUGIN=1` line), then restart MacShell; all overlays go back to Normal Blur.
 
 ## Default glass settings
 
@@ -360,6 +397,24 @@ The installer merges these values without overwriting other personal settings su
 ```
 
 Menus and the Control Center capture only while visible, and only windows that intersect the glass; the Dock likewise handles only nearby windows. Window-geometry polling slows down automatically when windows are still or the glass is off.
+
+## Window dragging at 90 Hz
+
+On a Snapdragon X Elite (Adreno X1-85) with Hyprland 0.57.2 and a 2944×1840 @ 90 Hz panel, live backdrop blur caused a floating foot window dragged across overlapping windows to update every other refresh. With simulated mouse input and Wayland `wp_presentation` timestamps, foot went from about 45 to 89.6 FPS, and the 95th-percentile frame interval fell from 22.25 to 11.13 ms. After reloading the installed config, GTK (Zenity) and XWayland (XTerm) test windows measured 89.9 and 89.4 FPS respectively, both with a 95th-percentile interval of 11.13 ms.
+
+The opt-in in [`silky-native-blur.lua`](../../config/hypr/silky-native-blur.lua) lets floating windows reuse a pre-blurred desktop backdrop. Their translucent areas have a frosted finish based mainly on the wallpaper. Hyprland now blends the blur in a shader and reduces the pass count from three to two. MacShell panels and menus use the live scene for their backdrop. The Dock refraction plugin and window animations continue to run. [Hyprland blur options](https://wiki.hypr.land/0.57.0/configuring/core/config-options/#blur)
+
+Update the module from the repository root. Back up the installed module first when present.
+
+```bash
+hypr_dir="${XDG_CONFIG_HOME:-$HOME/.config}/hypr"
+if [ -f "$hypr_dir/silky-native-blur.lua" ]; then
+  cp -a "$hypr_dir/silky-native-blur.lua" "$hypr_dir/silky-native-blur.lua.bak.$(date +%Y%m%d-%H%M%S)"
+fi
+install -m 644 config/hypr/silky-native-blur.lua "$hypr_dir/silky-native-blur.lua"
+```
+
+Add `silky_cached_window_blur = true` before `require("hypr.silky-native-blur")` in `hyprland.lua` and run `hyprctl reload`. `hyprctl configerrors` should be empty and `hyprctl getoption render:use_shader_blur_blend` should report `true`. Drag a floating window across other windows to check motion and the frosted backdrop. Check the display mode with `hyprctl monitors`. Remove the opt-in line and reload to restore the theme's blur settings. Apps and the session can stay open.
 
 ## Periodic pointer stutter
 
@@ -437,6 +492,75 @@ Every screenshot used to post two notifications: omasnap's "screenshot saved and
 - Omarchy's default screenshot command passes `--notify`. [`config/hypr/bindings-screenshot.lua`](../../config/hypr/bindings-screenshot.lua) makes `PRINT` run plain `omasnap`: the shot is still saved and copied to the clipboard, and a macOS-style floating preview appears at the bottom right (gone after 7 seconds; drag it out or click "Edit" to annotate) instead of going to the notification center
 - MacShell's `screenshotNotify` is set to `false`
 
+## Redaction levels and right-click cancellation
+
+Press `PrtSc` to open the Omasnap capture picker. Right-click to exit. During an area drag, the first right-click cancels the drag and the next exits.
+
+Press `D` to start drawing a redaction. Click the shield or press `Shift+D` to show the options in the existing toolbar row. Choosing an option or clicking the image restores the normal tools. Blur uses a Gaussian approximation with mirrored edges, gently softens saturation, and lifts shadows, following the pre-blur and tint used in MacShell. Mosaic turns them into blocks. Both effects have Light, Medium, and Strong levels, available by button or wheel. Each effect remembers its level when you switch modes, and the editor starts with Medium blur. Press `V` to select an existing redaction and adjust it with the same controls. Changes can be undone. Use Solid to fully obscure sensitive content.
+
+The [right-click and legacy frost patch](../../patches/omasnap-1.26.2-zh-frost.patch), the [redaction levels patch](../../patches/omasnap-1.26.2-zh-redaction-levels.patch), the [inline toolbar patch](../../patches/omasnap-1.26.2-zh-inline-redaction.patch), and the [glass blur patch](../../patches/omasnap-1.26.2-zh-glass-blur.patch) target the Chinese Omasnap 1.26.2 checkout based on upstream commit `6150151` with `i18n/omasnap_zh_CN.ts`. Existing frosted redactions reopen with their original appearance and can be changed to the new styles. Building requires Qt 6, LayerShellQt, Wayland, libdeflate, and Qt Linguist's `lrelease`. Run from the Silky Omarchy repository root.
+
+```bash
+src="$HOME/.local/src/omasnap-zh"
+(
+  set -e
+  frost="$PWD/patches/omasnap-1.26.2-zh-frost.patch"
+  levels="$PWD/patches/omasnap-1.26.2-zh-redaction-levels.patch"
+  inline="$PWD/patches/omasnap-1.26.2-zh-inline-redaction.patch"
+  glass="$PWD/patches/omasnap-1.26.2-zh-glass-blur.patch"
+  if ! git -C "$src" apply --reverse --check "$glass" 2>/dev/null; then
+    if ! git -C "$src" apply --reverse --check "$inline" 2>/dev/null; then
+      if ! git -C "$src" apply --reverse --check "$levels" 2>/dev/null; then
+        git -C "$src" apply --reverse --check "$frost" 2>/dev/null ||
+          git -C "$src" apply "$frost"
+        git -C "$src" apply "$levels"
+      fi
+      git -C "$src" apply "$inline"
+    fi
+    git -C "$src" apply "$glass"
+  fi
+  "$src/bin/test"
+)
+```
+
+After the tests pass, back up and replace the local binary. The update takes effect on the next launch.
+
+```bash
+cp -an "$HOME/.local/bin/omasnap" "$HOME/.local/bin/omasnap.pre-glass-blur"
+install -m 755 "$src/build/omasnap" "$HOME/.local/bin/omasnap"
+```
+
+Offscreen tests cover the render levels, editing an existing redaction, undo, reopening, and closing the inline options. All three levels were compared on a synthetic dark list to check the edges and color transitions. The picker closed on right-click in a live Hyprland session. To roll back this update, restore `~/.local/bin/omasnap.pre-glass-blur` and reverse the glass blur patch with `git apply -R`.
+
+## Standalone screenshot pins
+
+Press `P` or `Ctrl+P` in the annotator or click the tack on a temporary preview to make a standalone pin. On this desktop, `Shift+PrtSc` pins an image from the clipboard. New pins open near the pointer, preserve the whole image at its original proportions, and fit large images to the work area. Drag the image to move it.
+
+Right-click for copy, save to the screenshots directory, edit, reveal, opacity, and close. Use the wheel to zoom, `Alt`+wheel for 1% steps, and `Ctrl`+wheel for opacity. Middle-click restores the original size, fitted to the work area as needed. Double-click or press `Esc` to close. Use `Shift`+drag to drop the PNG into another application.
+
+The context menu and opacity submenu use rounded glass panels, a fine rim, and high-contrast text. The palette follows the system `color-scheme` used by MacShell, even while the menu is open. The backdrop blur comes from Hyprland's popup blur.
+
+The [standalone pin patch](../../patches/omasnap-1.26.2-zh-standalone-pin.patch) and [glass menu patch](../../patches/omasnap-1.26.2-zh-pin-glass-menu.patch) target the local Chinese Omasnap 1.26.2 checkout and uses the build dependencies above. Window sizing and sticking across workspaces use Hyprland. Run from the Silky Omarchy repository root.
+
+```bash
+src="$HOME/.local/src/omasnap-zh"
+patch="$PWD/patches/omasnap-1.26.2-zh-standalone-pin.patch"
+(
+  set -e
+  glass="$PWD/patches/omasnap-1.26.2-zh-pin-glass-menu.patch"
+  if ! git -C "$src" apply --reverse --check "$glass" 2>/dev/null; then
+    git -C "$src" apply --reverse --check "$patch" 2>/dev/null ||
+      git -C "$src" apply "$patch"
+    git -C "$src" apply "$glass"
+  fi
+  "$src/bin/test"
+  cp -an "$HOME/.local/bin/omasnap" "$HOME/.local/bin/omasnap.pre-pin-glass-menu"
+  install -m 755 "$src/build/omasnap" "$HOME/.local/bin/omasnap"
+)
+```
+
+New pins use the new behavior on their next launch. Offscreen tests cover promoting a preview, zoom, restoring the size, opacity, and the right-click menu. The full portrait frame, wheel zoom, middle-click reset, and right-click menu were also verified on Hyprland 0.57.2. The open menu also followed a light/dark switch in an isolated settings session. To roll back the glass menu, restore `~/.local/bin/omasnap.pre-pin-glass-menu` and reverse the glass menu patch with `git apply -R`.
+
 ## Battery icon
 
 The menu-bar battery uses the macOS 26 style: a narrower pill (24 px battery body, 32 px button) with only the number inside, no `%`. The number is usually two digits, so it does not need to be longer. Right-click the battery to turn the number on or off (see "Menu bar system monitors" above).
@@ -491,6 +615,38 @@ How it was checked: record the opening with `wf-recorder` at 60 fps and inspect 
 
 Note: rules apply only to newly created windows; restart MacShell once after changing it.
 
+## Window opening flashes and live About blur
+
+The [window configuration](../../config/hypr/silky-macshell-windows.lua) disables Hyprland's `windowsIn` and `fadeIn`, so new windows appear at their final size and opacity, and disables compositor blur (`no_blur`) for Firefox-based browsers (`firefox-based-browser` tag). The companion [GTK3 CSD stylesheet](../../config/gtk-3.0/silky-csd.css) (imported from `~/.config/gtk-3.0/gtk.css`) drops `window.csd decoration` transparent shadow margins so Firefox and other GTK3 CSD windows align cleanly from the first frame without flashing an offset frame or blurred halo. Window closing, workspace transitions and Dock minimization keep their own animations. The [blur rule](../../config/hypr/silky-native-blur.lua) disables `xray` for the About panel, so it blurs the windows directly behind it. It previously used the cached wallpaper backdrop for floating windows.
+
+Run `./scripts/install-macshell-optimizations.sh` from the repository root, then run `hyprctl reload`. On Hyprland 0.57.2 under Wayland, compare opening overlapping test windows and Firefox frame by frame to check that the background does not show through and Firefox aligns cleanly on frame 0. Open About over test windows of different colours and check that the glass tint follows the window underneath it. To roll back, restore the two Lua files and `gtk3.css` from the installer's `~/.local/state/macshell/silky-backup-*/settings/` backup (or remove `@import url("silky-csd.css");` from `~/.config/gtk-3.0/gtk.css`) and reload Hyprland.
+
+## Edge version looking like a downgrade in "About This Mac"
+
+Switching to the Edge channel replaces the `omarchy` package (for example `4.5.0-3`) with `omarchy-dev`. That package is versioned by `git describe` on master, for example `4.0.0.r8103.ge4635a4`. `4.0.0` is only the latest tag reachable from master, `r8103` is the number of commits since that tag, and `ge4635a4` is the commit hash. The release tags are not on master, so when About showed this version as-is, a build newer than 4.5.0 looked like a downgrade.
+
+Now, whenever `omarchy-dev` is installed, the row shows the channel and short commit instead, for example `Edge · e4635a4`, followed by the package build date `11-20 build` in the same small, faint auxiliary text as "12 cores" and "8448 MT/s". The channel comes from `omarchy-channel-current`: `dev` shows as `Dev`, and anything else shows as `Edge`. The build date is `%BUILDDATE%` from `/var/lib/pacman/local/omarchy-dev-*/desc`, formatted as `MM-DD` in the local time zone. Stable and RC keep the regular version. The Chinese UI shows `11-20 构建`.
+
+**Implementation**: [`scripts/tune-about-version.py`](../../scripts/tune-about-version.py) edits three files: `assets/about-info.sh` also prints `osver` and `osbuilddate`, `AboutApp.qml` puts the date into the auxiliary text, and `lang/zh-CN.js` gets a translation for `"%1 build"`. It is safe to run again, and `install-macshell-optimizations.sh` runs it every time.
+
+**Install**: run `scripts/install-macshell-optimizations.sh` from the repository root. It backs up these three files and runs on any MacShell version (see [Versions](#versions)). To apply only this change, back up the three files yourself, then run the tuner directly:
+
+```bash
+python3 scripts/tune-about-version.py ~/.config/quickshell/MacShell
+qs -c MacShell ipc call macshell reload
+```
+
+**Verify** (checked on this machine with MacShell 0.5.3, `omarchy-dev 4.0.0.r8103.ge4635a4-1`, Edge channel):
+
+```bash
+sh ~/.config/quickshell/MacShell/assets/about-info.sh | grep -E '^os(ver|build)'
+qs -c MacShell ipc call about open
+```
+
+The last `osver=` line from `about-info.sh` should read `Edge · e4635a4`, and the output should also include `osbuilddate=11-20`. The About window's Omarchy row should read `Edge · e4635a4`, followed by a small, faint `11-20 构建` in Chinese. The Stable / RC display has not been tested on this machine. By the script's logic, the original version shows whenever `omarchy-dev` is not installed.
+
+**Roll back**: restore `AboutApp.qml`, `assets/about-info.sh` and `lang/zh-CN.js` from the backup (the installer's `~/.local/state/macshell/silky-backup-*/MacShell/` or your manual copy), then run `qs -c MacShell ipc call macshell reload`.
+
 ## Two menu bars and two Docks after a crash
 
 When MacShell crashed, two mechanisms brought it back at the same time: Quickshell's own crash handler showed a report window and **started a copy by itself** (process name `/usr/bin/quickshell` without arguments, with `__QUICKSHELL_CRASH_*` in its environment), and `macshell-start` started another one. Each drew its own menu bar and Dock.
@@ -512,19 +668,43 @@ The calendar needed its own fix: it scales from its top-right corner, but the ol
 
 ## Control Center
 
-[`tune-control-center-glass.py`](../../scripts/tune-control-center-glass.py): the grouped Control Center shares one glass material with the menu-bar dropdowns (the same slab, gradient and outline, so adjusting one changes both). MacShell 0.5.2 forced the Control Center dark, even in the light appearance; it now follows the appearance and is light glass in light mode.
+[`tune-control-center-glass.py`](../../scripts/tune-control-center-glass.py): defaults to macOS 26/27-style frameless floating Liquid Glass bubbles (`ccStyle: "tiles"`), giving Wi-Fi, Bluetooth, Focus, Display, Sound, and circular toggles full-capsule/circular shapes rendered through `silky-dock-glass` `kind = 2` (`cc_*`) with vivid edge refraction and a 360° specular rim. Active 1×1 buttons switch cleanly to solid white without duplicate borders; you can still switch back to the grouped frosted slab (`ccStyle: "macos"`) in MacShell Settings or `~/.config/macbar/settings.json`. Appearance follows system light/dark mode.
 
 [`tune-display-controls.py`](../../scripts/tune-display-controls.py): the Control Center gets a new "Display" page, entered like "Sound" (click the name on the left to open the page, drag the slider on the right directly). The page has a brightness slider plus "Night Shift" and "Appearance" (dark / light) switches.
 
 ## Dock icons and the Settings window
 
+MacShell's [Dock icon](../../config/icons/macshell-logo.png) uses a silver-lavender M on a rounded violet glass tile, sized to read at the default 52 px. The MacShell window switcher and Settings page share the icon.
+
+From the repository root, run `./scripts/install-macshell-optimizations.sh` to install the icon at `~/.config/quickshell/MacShell/assets/macshell-logo.png`. Run `qs -c MacShell ipc call macshell reload`, then open MacShell Settings and check the MacShell icon near the right end of the Dock. To restore the original, copy `MacShell/assets/macshell-logo.png` from the backup directory printed by the installer back to its original location and reload MacShell.
+
 - [`tune-dock-icons.py`](../../scripts/tune-dock-icons.py): optical scaling of Dock icons is centred on the icon, so icons do not drift to one side when magnified on hover; the pivot for rotation (the wiggle) is unchanged.
 - [`tune-settings-scroll.py`](../../scripts/tune-settings-scroll.py): the Settings window's left navigation list used to move only a few pixels per wheel notch. It now moves 140 px per notch, adding up several notches and easing there frame by frame; pixel-precise touchpad scrolling is still left to the list itself, keeping native inertia.
+
+### Files fails to open from the Dock
+
+When Omarchy removes Nautilus and switches the default directory handler to Folio, an existing Dock pin can still point to Nautilus. A leftover desktop entry can display the Files icon, and the Dock bounces it while waiting for a window.
+
+From the repository root, run `./scripts/install-macshell-optimizations.sh`. If Nautilus is absent and Folio is installed as the default directory handler, the [migration](../../scripts/migrate-macshell-files.py) replaces the Nautilus pin in `~/.config/macdock/pinned.json` with Folio and preserves the order of other icons. It also removes the old Silky Nautilus localization bindings to restore Omarchy's file shortcuts and archives the old Silky desktop entry so it disappears from the applications panel.
+
+To update these settings on their own, run `python3 scripts/migrate-macshell-files.py`. Then run `hyprctl reload` and `qs -c MacShell ipc call macshell reload`. The Files icon should open Folio and activate its existing window on the next click. Press `Super+Shift+F` to verify the shortcut. If you reinstall Nautilus and want your previous settings back, copy the `.bak.folio.*` files printed by the migration back to their original locations, then reload Hyprland and MacShell.
 
 ## Glass refreshes when focus changes
 
 [`tune-glass-stacking.py`](../../scripts/tune-glass-stacking.py): the "fingerprint" of the windows behind the glass used to cover only position and size, so clicking to change which floating window is in front left the glass showing the old stacking order. The focus order (`focusHistoryID`) is now part of it, so the glass refreshes immediately on focus changes; windows changing their titles (terminals, browser tabs, players) still do not wake the 60 Hz refresh.
 
+### Common folders in the Files context menu
+
+With the Folio customization installed, right-click Files in the Dock to open Home, Desktop, Documents, Downloads, or Pictures. The menu uses the system’s user directory settings. If a shortcut resolves to Home, it uses the existing conventional folder when available to avoid a duplicate Home entry. Run the Folio or MacShell optimization installer and reload MacShell to verify the menu. To roll back, restore the installer’s backups of `MacDock.qml` and `lang/zh-CN.js`, then reload MacShell.
+
 ## Window minimizing
 
-Silky no longer offers ways to minimize windows ([`disable-minimize.py`](../../scripts/disable-minimize.py)): title bars keep only close and maximize, and the MacShell menu entry and client-request forwarding are turned off. The Dock can still restore windows that were minimized before.
+Click Folio's yellow button to fold the window into an individual thumbnail between the Dock separator and the Trash using a Genie-style curve. Click the thumbnail to bring back the same window. The animation is configured for 480 ms. Folio captures one bounded frame asynchronously, stores it in the Wayland session runtime directory, and removes it when the window closes. MacShell animates the mesh on the render thread and limits the overlay to the area between the window and its thumbnail. The overlay is ready before the real window moves to the hidden workspace, and Hyprland's window animation is suppressed for that move. The Dock slot and its gap expand linearly over 180 ms and retract when the window returns. Previously minimized Folio windows also get a clickable restore item.
+
+The old curve started the upper and lower edges in separate phases, reached the final width too early at the bottom, and dimmed the window near the end. The new curve keeps each mesh row moving throughout the animation, with the lower edge leading. It preserves the snapshot brightness and briefly holds the overlay during the handoff to the thumbnail or restored window. Sampling the shader trajectory at 90 Hz with the same endpoints reduced the upper edge’s largest single-frame move from about 45 to 13 logical pixels.
+
+On minimize, MacShell submits the full-size snapshot in place, waits for it to be queued for presentation, and then moves the real window to the hidden workspace. Deformation begins once the move is confirmed. The [Folio Hyprland rule](../../config/hypr/silky-folio.lua) disables the minimize overlay’s own fade to prevent the desktop or a dimmed frame from showing during the handoff.
+
+From the repository root, run `./scripts/install-folio-macos.sh`, then run `qs -c MacShell ipc call macshell reload` and reopen Folio. The [scale effect](../../config/macshell/FolioMinimizeFx.qml) is installed under `~/.config/quickshell/MacShell/`. Minimize and restore once in a floating window and once in fullscreen. The window should return to its original workspace and state. To roll back, restore any minimized windows, recover the previous MacShell configuration and Folio binary from the installer backups, and reload MacShell.
+
+[`disable-minimize.py`](../../scripts/disable-minimize.py) manages the shared minimize entry points for other apps.

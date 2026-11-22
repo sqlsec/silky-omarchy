@@ -2,7 +2,7 @@
 --
 -- Omarchy draws titlebars itself on floating workspaces (omarchy-hyprland-titlebars, a hyprbars build, loaded by
 -- default/hypr/workspace-modes.lua). Under a macOS Tahoe theme this restyles them: a unified title bar, centred title,
--- and round red / green lights on the left. hypr/silky-titlebar-guard.lua (required before Omarchy's
+-- and round red / yellow / green lights on the left. hypr/silky-titlebar-guard.lua (required before Omarchy's
 -- defaults) keeps Omarchy's own square buttons out, so there is only one set.
 --
 -- Apps that draw their own window controls (Claude, Chrome, Electron apps, GTK / libadwaita, MacShell) get no bar
@@ -46,14 +46,52 @@ hl.config({
   },
 })
 
--- Left to right: close, zoom, in Apple's colours. %WINDOW% is the window the bar belongs to.
+local gestures = hl.plugin.silky_gestures
+local draw_marks = gestures and gestures.enable_titlebar_marks
+if draw_marks then draw_marks() end
+
+-- Left to right: close, minimize to Dock, zoom. %WINDOW% targets the clicked window.
 local window = [[window = "address:%WINDOW%"]]
 local add = bars.silky_add_button or bars.add_button
-add({ bg_color = "rgb(ff5f57)", fg_color = "rgba(4d0000c0)", size = 12, icon = "×",
+add({ bg_color = "rgb(ff5f57)", fg_color = "rgb(4d0000)", size = 12, icon = draw_marks and "" or "╳",
   action = "hyprctl dispatch 'hl.dsp.window.close({ " .. window .. " })'" })
-add({ bg_color = "rgb(28c840)", fg_color = "rgba(004d00c0)", size = 12, icon = "+",
-  action = "hyprctl dispatch 'hl.dsp.window.fullscreen({ mode = \"maximized\", action = \"toggle\", " .. window .. " })'" })
+function o.silky_yellow_light(address)
+  if not address:match("^0x%x+$") then return end
+  local target = hl.get_window("address:" .. address)
+  if not target or (target.fullscreen or 0) >= 2 then return end
+  local fallback = "omarchy-hyprland-window-minimize " .. address
+  if silky_foot_layout_enabled and (target.class == "foot" or o.silky_desktop_app_layouts[target.class]) then
+    hl.exec_cmd([[sh -c '[ "$(qs -c MacShell ipc call window minimizeFoot ]] .. address ..
+      [[ 2>/dev/null)" = true ] || exec ]] .. fallback .. [[']])
+  else
+    hl.exec_cmd(fallback)
+  end
+end
+add({ bg_color = "rgb(febc2e)", fg_color = "rgb(553700)", size = 12, icon = draw_marks and "" or "―",
+  action = [[hyprctl eval 'o.silky_yellow_light("%WINDOW%")']] })
+function o.silky_green_light(address)
+  local selector = "address:" .. address
+  local target = hl.get_window(selector)
+  if not target then return end
+  local desktop_app = o.silky_desktop_app_layouts[target.class]
+  -- The gestures plugin runs the green action on release, after ruling out a hold.
+  if (target.class == "foot" and silky_foot_layout_enabled)
+      or (desktop_app and silky_desktop_app_layout_enabled) then return end
+  local mode = desktop_app and "fullscreen" or "maximized"
+  hl.dispatch(hl.dsp.window.fullscreen({ mode = mode, action = "toggle", window = selector }))
+end
+add({ bg_color = "rgb(28c840)", fg_color = "rgb(004d00)", size = 12, icon = draw_marks and "" or "＋",
+  action = [[hyprctl eval 'o.silky_green_light("%WINDOW%")']] })
 
-local with_bar = "^(foot|kitty|Alacritty|com\\.mitchellh\\.ghostty|org\\.wezfurlong\\.wezterm|org\\.localsend\\.localsend_app)$"
+-- These Qt apps leave their outer window controls to the compositor.
+local desktop_apps = { "omacalc", "omacut", "omaview", "omawrite", "io.github.elberacasa.omalogi" }
+o.silky_desktop_app_layouts = {}
+local desktop_classes = {}
+for _, app in ipairs(desktop_apps) do
+  o.silky_desktop_app_layouts[app] = true
+  desktop_classes[#desktop_classes + 1] = app:gsub("%.", "\\.")
+end
+
+local with_bar = "^(foot|kitty|Alacritty|com\\.mitchellh\\.ghostty|org\\.wezfurlong\\.wezterm|org\\.localsend\\.localsend_app|Putty|accessclient-ssh|" .. table.concat(desktop_classes, "|") .. ")$"
 hl.window_rule({ name = "silky-macos-no-bar", match = { class = ".*" }, ["hyprbars:no_bar"] = true })
 hl.window_rule({ name = "silky-macos-bar", match = { class = with_bar }, ["hyprbars:no_bar"] = false })

@@ -16,7 +16,9 @@ usage() {
 Usage: scripts/install-macshell-optimizations.sh [--check]
 
 Applies the Silky Omarchy localization, touch and real-time glass patch to an
-installed MacShell 0.5.1 or 0.5.2. Existing files are backed up before any change.
+installed MacShell. Any version is accepted: 0.5.1 uses its own patch, every other
+version uses the newest patch (0.5.2), and the patch/marker check below decides
+whether it fits. Existing files are backed up before any change.
 
   --check  Verify compatibility without changing files.
 EOF
@@ -45,7 +47,12 @@ version=$(tr -d '[:space:]' < "$shell_dir/VERSION")
 case "$version" in
   0.5.1) ;;
   0.5.2) patch_file="$repo_root/patches/macshell-0.5.2-silky.patch" ;;
-  *) printf 'This installer supports MacShell 0.5.1 and 0.5.2; found %s.\n' "$version" >&2; exit 1 ;;
+  # No version gate: newer releases try the newest patch. An already patched shell is recognized by its markers,
+  # and a fresh one that the patch does not fit stops below with nothing changed.
+  *)
+    patch_file="$repo_root/patches/macshell-0.5.2-silky.patch"
+    printf 'MacShell %s has no dedicated patch; trying the 0.5.2 patch and the tuners.\n' "$version"
+    ;;
 esac
 
 patch_state=unknown
@@ -84,7 +91,7 @@ calendar_paths=()
 for file in "${calendar_files[@]}"; do
   calendar_paths+=("MacShell/$file")
 done
-managed_files=("${calendar_paths[@]}" MacShell/DockGlassPanel.qml "${managed_files[@]}")
+managed_files=("${calendar_paths[@]}" MacShell/FolioMinimizeFx.qml MacShell/FolioSnapPreview.qml MacShell/folio-genie.vert.qsb MacShell/DockGlassPanel.qml MacShell/assets/macshell-logo.png "${managed_files[@]}")
 for display_asset in "$repo_root/config/macshell/displays/"{*.js,*.qml}; do
   managed_files+=("MacShell/${display_asset##*/}")
 done
@@ -99,6 +106,7 @@ for relative_path in "${managed_files[@]}"; do
   fi
 done
 mkdir -p "$staged_shell/assets" "$staged_shell/lang" "$staging/MacLock"
+install -m 644 -- "$repo_root/config/icons/macshell-logo.png" "$staged_shell/assets/macshell-logo.png"
 
 if [[ "$patch_state" == clean ]]; then
   patch --silent --forward -p1 -d "$staging" < "$patch_file"
@@ -115,8 +123,12 @@ python3 "$repo_root/scripts/tune-dock-hover-label.py" "$staged_shell/MacDock.qml
 python3 "$repo_root/scripts/tune-dock-smart-hide.py" "$staged_shell/MacDock.qml"
 # The right-click menu uses the same see-through glass as the Dock (tint / blur follow the Dock's glass settings).
 python3 "$repo_root/scripts/tune-dock-menu-glass.py" "$staged_shell"
+# The Dock glass follows the system Light / Dark appearance instead of staying dark.
+python3 "$repo_root/scripts/tune-dock-follow-appearance.py" "$staged_shell"
 # Normal Blur (Hyprland blur) tints close to Liquid Glass; quieter About button.
 python3 "$repo_root/scripts/tune-native-blur.py" "$staged_shell"
+# About: Edge / Dev builds read "Edge · <commit> (<MM-DD> build)" instead of git describe's old 4.0.0 tag.
+python3 "$repo_root/scripts/tune-about-version.py" "$staged_shell"
 
 # Keep the Applications panel interaction tuning current on existing installations too.
 python3 "$repo_root/scripts/tune-apps-panel.py" "$staged_shell/MacBar.qml"
@@ -141,6 +153,9 @@ python3 "$repo_root/scripts/tune-macshell-performance.py" "$staged_shell"
 
 # Remove minimize entry points while retaining restore support for previously parked windows.
 python3 "$repo_root/scripts/disable-minimize.py" "$staged_shell"
+if grep -qx '# Silky Omarchy Folio launcher.' "$HOME/.local/bin/folio" 2>/dev/null; then
+  python3 "$repo_root/scripts/tune-folio-macshell.py" "$staged_shell"
+fi
 
 # Also update existing Silky installations: keep application-provided window controls visible.
 sed -i 's/readonly property bool enabled: true/readonly property bool enabled: false/' "$staged_shell/WindowBar.qml"
@@ -149,6 +164,7 @@ sed -i 's/readonly property bool enabled: true/readonly property bool enabled: f
 for settings in "$bar_settings" "$dock_settings"; do
   [[ ! -f "$settings" ]] || jq empty "$settings"
 done
+python3 "$repo_root/scripts/migrate-macshell-files.py" --check
 if $check_only; then
   printf 'MacShell patch and tuners passed preflight.\n'
   exit 0
@@ -217,8 +233,18 @@ if [[ -f "$hypr_dir/hyprland.lua" ]]; then
   # Keep the live module in step with the patched one (it no longer binds PRINT, see docs/02-macshell.md).
   [[ ! -f "$hypr_dir/macshell.lua" ]] || cp -a "$hypr_dir/macshell.lua" "$backup_dir/settings/macshell.lua"
   cp "$shell_dir/macshell.lua" "$hypr_dir/macshell.lua"
-  # MacShell windows keep their own size on Omarchy floating workspaces, and open without Hyprland's border.
+  # Keep MacShell window sizing and avoid exposing the desktop during window open.
+  [[ ! -f "$hypr_dir/silky-macshell-windows.lua" ]] ||
+    cp -a "$hypr_dir/silky-macshell-windows.lua" "$backup_dir/settings/"
   install -m 644 "$repo_root/config/hypr/silky-macshell-windows.lua" "$hypr_dir/silky-macshell-windows.lua"
+  # Drop GTK3 CSD's transparent shadow margin so Firefox aligns cleanly on its first frame.
+  gtk3_dir="$HOME/.config/gtk-3.0"
+  mkdir -p "$gtk3_dir"
+  [[ ! -f "$gtk3_dir/gtk.css" ]] || cp -a "$gtk3_dir/gtk.css" "$backup_dir/settings/gtk3.css"
+  install -m 644 "$repo_root/config/gtk-3.0/silky-csd.css" "$gtk3_dir/silky-csd.css"
+  if [[ ! -f "$gtk3_dir/gtk.css" ]] || ! grep -Fq '@import url("silky-csd.css");' "$gtk3_dir/gtk.css"; then
+    printf '@import url("silky-csd.css");\n' >> "$gtk3_dir/gtk.css"
+  fi
   # Install the two-button hyprbars configuration.
   [[ ! -f "$hypr_dir/silky-macos.lua" ]] || cp -a "$hypr_dir/silky-macos.lua" "$backup_dir/settings/silky-macos.lua"
   install -m 644 "$repo_root/config/hypr/silky-macos.lua" "$hypr_dir/silky-macos.lua"
@@ -250,6 +276,8 @@ fi
 
 # Hyprland blur behind the menu bar's popovers, switcher, wallpaper picker and OSD (barStyle / dockStyle "blur").
 if [[ -f "$HOME/.config/hypr/hyprland.lua" ]]; then
+  [[ ! -f "$HOME/.config/hypr/silky-native-blur.lua" ]] ||
+    cp -a "$HOME/.config/hypr/silky-native-blur.lua" "$backup_dir/settings/"
   install -m 644 "$repo_root/config/hypr/silky-native-blur.lua" "$HOME/.config/hypr/silky-native-blur.lua"
   grep -q 'require("hypr.silky-native-blur")' "$HOME/.config/hypr/hyprland.lua" \
     || printf '\n-- Silky Omarchy: Hyprland blur behind MacShell popovers, switcher, wallpaper picker and OSD.\nrequire("hypr.silky-native-blur")\n' >> "$HOME/.config/hypr/hyprland.lua"
@@ -261,6 +289,8 @@ if [[ -f $start_script ]] && ! grep -q 'qs -n -c "$NAME"' "$start_script"; then
   cp -a "$start_script" "$backup_dir/settings/macshell-start"
   sed -i 's/    qs -c "$NAME" >>"$LOG" 2>&1 &/    qs -n -c "$NAME" >>"$LOG" 2>\&1 \&   # -n: never a second copy next to a running one/' "$start_script"
 fi
+
+python3 "$repo_root/scripts/migrate-macshell-files.py"
 
 printf 'Applied successfully. Backup: %s\n' "$backup_dir"
 printf 'Restart MacShell from Settings > Tools > Restart to load the QML and renderer changes.\n'

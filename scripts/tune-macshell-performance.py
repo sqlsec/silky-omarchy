@@ -8,8 +8,9 @@ directory = Path(sys.argv[1])
 shell, dock, bar = (directory / name for name in ("shell.qml", "MacDock.qml", "MacBar.qml"))
 
 
-def replace_once(text, old, new):
-    if new in text:
+def replace_once(text, old, new, upstream=None):
+    # `upstream`: text that shows a newer MacShell already ships this change in its own form (for example 0.5.3).
+    if new in text or (upstream and upstream in text):
         return text
     if text.count(old) != 1:
         raise SystemExit(f"MacShell performance: expected one occurrence of {old[:90]!r}")
@@ -72,6 +73,7 @@ dock_text = replace_once(
     dock_text,
     'readonly property bool canRun: !quiet && !ui.menuOpen && (root.glassRT',
     'readonly property bool canRun: !quiet && !ui.tucked && !ui.menuOpen && (root.glassRT',
+    upstream='readonly property bool canRun: !quiet && !ui.tucked && (',
 )
 # Count visible, live glass backdrops on each screen without changing Smart Hide itself.
 dock_text = replace_once(

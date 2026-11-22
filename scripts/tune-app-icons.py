@@ -47,16 +47,30 @@ ALIASES = {
     "macshell-installer": "system-software-install",
 }
 
-# icon name -> (source image, style). "tile": the logo already is a square, so it fills the tile;
+# icon name -> (source image, style).
+# "tile": the logo already is a square, so it fills the tile;
+# "card" / "round-card": a bordered dark/solid card with an outer stroke and hard drop shadow (e.g. Omarchy SVGs),
+#   trimmed clean and centered on its own background colour;
 # "glyph": a bare or round logo, so it sits on a light tile like Apple's own apps.
 SILKY = os.path.join(ICONS, "silky-apps")
 BRANDS = {
+    "kimi-code": ("kimi-code", "tile"),
     "claude-desktop": ("claude-desktop", "tile"),
     "hey": ("hey", "tile"),
     "superwhisper": ("superwhisper", "tile"),
     "workbuddy": ("workbuddy", "tile"),
     "xiezuo": ("xiezuo", "tile"),
     "wowtype": ("wowtype", "glyph"),
+    "fantasi": ("fantasi", "round-card"),
+    "flowtunes": ("flowtunes", "round-card"),
+    "omarchy-agent-claude": ("omarchy-agent-claude", "card"),
+    "omarchy-agent-codex": ("omarchy-agent-codex", "card"),
+    "omarchy-agent-dsh": ("omarchy-agent-dsh", "card"),
+    "omarchy-agent-kimi": ("omarchy-agent-kimi", "card"),
+    "omarchy-terminal": ("omarchy-terminal", "card"),
+    "omarchy-browser": ("omarchy-browser", "glyph"),
+    "omaview": ("omaview", "glyph"),
+    "omarchy-game-vibes": ("omarchy-game-vibes", "glyph"),
     "silky-basecamp": (os.path.join(SILKY, "basecamp-compact.png"), "tile"),
     "silky-netcatty": (os.path.join(SILKY, "netcatty-compact.png"), "tile"),
     "silky-google-messages": (os.path.join(SILKY, "google-messages-compact.png"), "glyph"),
@@ -65,8 +79,10 @@ BRANDS = {
     "omalogi": (os.path.join(SILKY, "omalogi.svg"), "tile"),  # drawn in config/icons, see docs/14
 }
 
-# desktop entry (in ~/.local/share/applications) -> icon name it should use
+# desktop entry (in ~/.local/share/applications, or copied from /usr/share/applications) -> icon name it should use
 ENTRIES = {
+    "antigravity.desktop": "antigravity",
+    "kimi-code.desktop": "kimi-code",
     "Basecamp.desktop": "silky-basecamp",
     "netcatty.desktop": "silky-netcatty",
     "Google Messages.desktop": "silky-google-messages",
@@ -75,6 +91,7 @@ ENTRIES = {
     "lite-work.desktop": "silky-lite-work",
     "wemeetapp.desktop": "wemeetapp",
     "macshell-installer.desktop": "macshell-installer",
+    "kbd-layout-viewer5.desktop": "keyboard",
 }
 
 SIZE, TILE0, TILE1, RADIUS = 512, 35, 476, 100
@@ -124,6 +141,26 @@ def build(src, style, out_png, tmp):
                               check=True, capture_output=True, text=True).stdout.strip()
         magick(art, "-background", edge, "-flatten", "-resize", f"{side}x{side}^", "-gravity", "center",
                "-extent", f"{side}x{side}", f"PNG32:{face}")
+    elif style in ("card", "round-card"):
+        # bordered solid card (e.g. Omarchy SVGs with an outer grey stroke and bottom hard shadow):
+        # trim away the stroke and hard shadow, sample the interior fill, and center cleanly without cropping.
+        dims = subprocess.run(["magick", art, "-format", "%w %h", "info:"],
+                              check=True, capture_output=True, text=True).stdout.strip().split()
+        aw, ah = int(dims[0]), int(dims[1])
+        trim = 0.085 if style == "round-card" else 0.03
+        bottom_extra = 0.02 if style == "round-card" else 0.025
+        sample_pct = 0.12 if style == "round-card" else 0.08
+        bg = subprocess.run(
+            ["magick", art, "-format", f"%[pixel:p{{%[fx:int(w*{sample_pct})],%[fx:int(h*0.12)]}}]", "info:"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        cx, cy = int(aw * trim), int(ah * trim)
+        cw, ch = aw - 2 * cx, ah - cy - int(ah * (trim + bottom_extra))
+        inner = os.path.join(tmp, "inner.png")
+        magick(art, "-crop", f"{cw}x{ch}+{cx}+{cy}", "+repage", f"PNG32:{inner}")
+        fit = int(side * (0.86 if style == "round-card" else 0.90))
+        magick("-size", f"{side}x{side}", f"xc:{bg}",
+               "(", inner, "-resize", f"{fit}x{fit}", ")", "-gravity", "center", "-composite", f"PNG32:{face}")
     else:
         glyph = int(side * 0.66)
         magick("-size", f"{side}x{side}", "gradient:#ffffff-#e9e9ee",
@@ -154,12 +191,17 @@ def write_svg(png, path):
 def set_icon(entry, icon):
     path = os.path.join(LOCAL_APPS, entry)
     if not os.path.exists(path):
-        return
-    text = open(path).read()
+        sys_path = os.path.join("/usr/share/applications", entry)
+        if not os.path.exists(sys_path):
+            return
+        os.makedirs(LOCAL_APPS, exist_ok=True)
+        text = open(sys_path).read()
+    else:
+        text = open(path).read()
     new, n = re.subn(r"(?m)^Icon=.*$", f"Icon={icon}", text, count=1)
     if n == 0:
         new = text.replace("[Desktop Entry]\n", f"[Desktop Entry]\nIcon={icon}\n", 1)
-    if new != text:
+    if not os.path.exists(path) or new != text:
         open(path, "w").write(new)
         print(f"  {entry}: Icon={icon}")
 

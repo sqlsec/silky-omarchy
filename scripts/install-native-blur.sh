@@ -12,6 +12,9 @@ for command_name in jq hyprctl python3; do
 done
 [[ -f "$hypr_dir/hyprland.lua" ]] || { printf 'Missing %s\n' "$hypr_dir/hyprland.lua" >&2; exit 1; }
 
+if [[ -f "$hypr_dir/silky-native-blur.lua" ]]; then
+  cp -a "$hypr_dir/silky-native-blur.lua" "$hypr_dir/silky-native-blur.lua.bak.$stamp"
+fi
 install -m 644 "$repo_root/config/hypr/silky-native-blur.lua" "$hypr_dir/silky-native-blur.lua"
 if ! grep -q 'require("hypr.silky-native-blur")' "$hypr_dir/hyprland.lua"; then
   cp -a "$hypr_dir/hyprland.lua" "$hypr_dir/hyprland.lua.bak.$stamp"

@@ -7,7 +7,7 @@ window.nautilus-window.background:backdrop {
 
 window.nautilus-window .content-pane,
 window.nautilus-window .content-pane:backdrop {
-  background-color: alpha(@view_bg_color, 0.66);
+  background-color: @view_bg_color;
 }
 
 window.nautilus-window.background .sidebar-pane:dir(ltr),

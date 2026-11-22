@@ -1,0 +1,7 @@
+/* Silky Omarchy: Hyprland draws window shadows; drop GTK3 CSD's transparent
+ * shadow margin so Firefox and other GTK3 CSD windows align cleanly from
+ * their first frame without flashing an offset frame or blurred halo. */
+window.csd decoration {
+  margin: 0;
+  box-shadow: none;
+}

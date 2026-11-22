@@ -32,6 +32,21 @@ Canvas {
         }
 
         switch (kind) {
+        case "antigravity":
+            // Antigravity: monochrome hollow outline of the sweeping A arch.
+            ctx.moveTo(10, 3.0);
+            ctx.bezierCurveTo(12.3, 3.0, 14.1, 7.2, 15.5, 11.2);
+            ctx.bezierCurveTo(16.3, 13.4, 17.0, 15.0, 17.5, 15.9);
+            ctx.bezierCurveTo(17.9, 16.7, 17.1, 17.3, 16.2, 17.0);
+            ctx.bezierCurveTo(14.8, 16.5, 13.7, 14.9, 12.6, 13.2);
+            ctx.bezierCurveTo(11.8, 12.0, 11.0, 11.3, 10.0, 11.3);
+            ctx.bezierCurveTo(9.0, 11.3, 8.2, 12.0, 7.4, 13.2);
+            ctx.bezierCurveTo(6.3, 14.9, 5.2, 16.5, 3.8, 17.0);
+            ctx.bezierCurveTo(2.9, 17.3, 2.1, 16.7, 2.5, 15.9);
+            ctx.bezierCurveTo(3.0, 15.0, 3.7, 13.4, 4.5, 11.2);
+            ctx.bezierCurveTo(5.9, 7.2, 7.7, 3.0, 10, 3.0);
+            ctx.closePath();
+            break;
         case "chatgpt":
             ctx.save();
             ctx.translate(10, 10);
