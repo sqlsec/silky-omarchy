@@ -48,6 +48,10 @@ make -C "$plugin_dir"
 mkdir -p "$lib_dir"
 target="$lib_dir/silky-dock-glass-$headers_version.so"
 # A loaded plugin stays mapped: replace the file instead of writing into it.
+if [[ -f $target ]] && ! cmp -s "$plugin_dir/silky-dock-glass.so" "$target"; then
+  cp -a -- "$target" "$target.bak.$stamp"
+  printf 'Backed up %s\n' "$target.bak.$stamp"
+fi
 install -m 755 "$plugin_dir/silky-dock-glass.so" "$target.new"
 mv -f "$target.new" "$target"
 printf 'Installed %s\n' "$target"
@@ -57,14 +61,15 @@ $build_only && exit 0
 backup_dir="$HOME/.local/state/macshell/silky-backup-dock-glass-$stamp"
 mkdir -p "$backup_dir"
 cp -a "$shell_dir/MacDock.qml" "$backup_dir/"
+[[ ! -f "$shell_dir/MacBar.qml" ]] || cp -a "$shell_dir/MacBar.qml" "$backup_dir/"
 [[ ! -f "$shell_dir/SilkyGlassMarker.qml" ]] || cp -a "$shell_dir/SilkyGlassMarker.qml" "$backup_dir/"
 [[ ! -f "$env_file" ]] || cp -a "$env_file" "$backup_dir/env"
 python3 "$repo_root/scripts/tune-dock-glass-plugin.py" "$shell_dir"
 mkdir -p "$(dirname -- "$env_file")"
 touch "$env_file"
 grep -q '^export SILKY_DOCK_GLASS_PLUGIN=1' "$env_file" \
-  || printf '\n# Silky Omarchy: the silky-dock-glass Hyprland plugin paints the Dock glass\nexport SILKY_DOCK_GLASS_PLUGIN=1\n' >> "$env_file"
-printf 'MacDock tuned (backup: %s)\n' "$backup_dir"
+  || printf '\n# Silky Omarchy: the silky-dock-glass Hyprland plugin paints MacShell glass\nexport SILKY_DOCK_GLASS_PLUGIN=1\n' >> "$env_file"
+printf 'MacDock and MacBar tuned (backup: %s)\n' "$backup_dir"
 
 # Live-tunable glass parameters: installed once, never overwritten (your own tuning stays).
 conf="$HOME/.config/silky-omarchy/dock-glass.conf"

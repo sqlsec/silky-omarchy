@@ -14,7 +14,77 @@ def replace_once(source, original, updated):
 
 path = Path(sys.argv[1])
 source = path.read_text()
+
+# Ensure macOS 26/27 floating-tile Liquid Glass style (kind = 2) is applied both on fresh and already-tuned installs.
+def apply_macos27_tiles(text):
+    text = text.replace('property string ccStyle: "macos"', 'property string ccStyle: "tiles"')
+    text = text.replace('ccStyle = "macos";', 'ccStyle = "tiles";')
+    if "        property int silkyKind: 1\n" not in text:
+        text = text.replace(
+            "        property bool grouped: false\n",
+            "        property bool grouped: false\n        property int silkyKind: 1\n",
+            1,
+        )
+    if 'silkyKind: root.ccStyle === "macos" ? 1 : 2' not in text:
+        text = text.replace(
+            '                        grouped: root.ccStyle === "macos"\n',
+            '                        grouped: root.ccStyle === "macos"\n'
+            '                        silkyKind: root.ccStyle === "macos" ? 1 : 2\n',
+            1,
+        )
+    # CCTile: hide glass & QML border when solid white active circle (`tile.whole`) or plugin owns the glass
+    text = text.replace(
+        "        GGlass { visible: !tile.gx.grouped; anchors.fill: parent; gx: tile.gx; cornerR: tile.radius; thickness: 22; shadowAmt: 0; flatInner: 1 }",
+        "        GGlass { id: tileGlass; visible: !tile.gx.grouped && !tile.whole; anchors.fill: parent; gx: tile.gx; cornerR: tile.radius; thickness: 22; shadowAmt: 0; flatInner: 1 }",
+    )
+    text = text.replace(
+        "        CornerBorder { visible: !tile.gx.grouped; z: 2; anchors.fill: parent; cornerR: tile.radius; dark: tile.gx.dark;",
+        "        CornerBorder { visible: !tile.gx.grouped && !tile.whole && !tileGlass.silkyOwned; z: 2; anchors.fill: parent; cornerR: tile.radius; dark: tile.gx.dark;",
+    )
+    # CCPill ("Edit Controls", "Done", "Reset"): avoid double border when plugin draws the 360° specular rim
+    text = text.replace(
+        "        GGlass { visible: !pl.gx.grouped; anchors.fill: parent; gx: pl.gx; cornerR: 14; thickness: 14; strengthMul: 0.6; shadowAmt: 0; flatInner: 1 }",
+        "        GGlass { id: plGlass; visible: !pl.gx.grouped; anchors.fill: parent; gx: pl.gx; cornerR: 14; thickness: 14; strengthMul: 0.6; shadowAmt: 0; flatInner: 1 }",
+    )
+    text = text.replace(
+        "        CornerBorder { visible: !pl.gx.grouped; z: 2; anchors.fill: parent; cornerR: 14; dark: pl.gx.dark;",
+        "        CornerBorder { visible: !pl.gx.grouped && !plGlass.silkyOwned; z: 2; anchors.fill: parent; cornerR: 14; dark: pl.gx.dark;",
+    )
+    # Full capsule radius for Display and Sound slider tiles to match macOS 27, with header inset clear of the capsule curve
+    text = text.replace(
+        "                    Component {\n                        id: cDisplay\n                        CCTile {\n                            t: ccPal; gx: ccg\n                            radius: 26\n",
+        "                    Component {\n                        id: cDisplay\n                        CCTile {\n                            t: ccPal; gx: ccg\n                            radius: Math.min(width, height) / 2\n",
+    )
+    text = text.replace(
+        "                    Component {\n                        id: cSound\n                        CCTile {\n                            t: ccPal; gx: ccg\n                            radius: 26\n",
+        "                    Component {\n                        id: cSound\n                        CCTile {\n                            t: ccPal; gx: ccg\n                            radius: Math.min(width, height) / 2\n",
+    )
+    for title_key in ('I18n.tr("Display")', 'I18n.tr("Sound")'):
+        text = text.replace(
+            "                            Item {\n"
+            "                                x: 8; y: 3\n"
+            "                                width: parent.width - 16; height: 24\n"
+            "                                Text {\n"
+            "                                    x: 6; anchors.verticalCenter: parent.verticalCenter\n"
+            f"                                    text: {title_key}",
+            "                            Item {\n"
+            "                                x: 16; y: 4\n"
+            "                                width: parent.width - 32; height: 24\n"
+            "                                Text {\n"
+            "                                    x: 4; anchors.verticalCenter: parent.verticalCenter\n"
+            f"                                    text: {title_key}",
+        )
+    # Full pill / circle radius on CCButton
+    text = text.replace(
+        "        readonly property real radius: isBig ? 30 : 34",
+        "        readonly property real radius: isBig ? 30 : Math.min(width, height) / 2",
+    )
+    return text
+
 if "                    id: menuGlassMaterial\n" in source:
+    updated = apply_macos27_tiles(source)
+    if updated != source:
+        path.write_text(updated)
     raise SystemExit(0)
 
 # MacShell 0.5.2 fixes the Control Center to dark even in light appearance.
@@ -23,8 +93,6 @@ source = source.replace(
     '    readonly property bool ccDark: true',
     '    readonly property bool ccDark: panelDarkMode',
 )
-source = replace_once(source, 'property string ccStyle: "tiles"', 'property string ccStyle: "macos"')
-source = replace_once(source, 'ccStyle = "tiles";', 'ccStyle = "macos";')
 
 # Clear the heavier per-tile tint from the previous tuning on upgraded installs.
 source = source.replace(
@@ -131,4 +199,5 @@ source = source[:panel_start] + '''                    Loader {
                     }
 
 ''' + source[panel_end:]
+source = apply_macos27_tiles(source)
 path.write_text(source)

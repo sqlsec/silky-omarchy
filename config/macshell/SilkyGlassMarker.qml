@@ -3,7 +3,7 @@
 // Drawn as invisible pixels on the bottom row of the window (alpha 1..4 / 255 = one base-4 digit each). The plugin
 // decodes them on the GPU from the very buffer Hyprland draws, so glass and content are always in the same frame.
 // Layout (digits): magic 2,3,1,1 | count (4) | per rect: x, y, w, h, radius (8 each, half px, window coordinates),
-// alpha (4, 0..255), dark (1), kind (1: 0 = Dock, 1 = panel / menu).
+// alpha (4, 0..255), dark (1), kind (1: 0 = Dock, 1 = panel / menu, 2 = Control Center bubbles).
 //
 // Either set `rects` directly (the Dock), or set `items` to glass items that are polled every frame while one of
 // them is visible (MacBar's popovers): rect = item mapped to the window, alpha = the item's effective opacity.
@@ -14,8 +14,25 @@ Item {
     property var rects: []              // [{x, y, w, h, r, a, dark, kind}]
     property var items: []              // glass items (with cornerR, silkyDark, silkyKind) to poll
     property bool enabled: true
-    readonly property int maxRects: 16
+    property int poke: 0                // increment when a popover opens to poll immediately without waiting for Timer
+    readonly property int maxRects: 24
     width: 0; height: 0                 // the digits are positioned in window coordinates by the parent window
+
+    onPokeChanged: if (enabled && items.length > 0) poll()
+    onEnabledChanged: {
+        if (!enabled) {
+            var win = m.Window.window;
+            for (var i = 0; i < items.length; i++) {
+                var it = items[i];
+                if (it && (!win || it.Window.window === win) && it.silkyOwned) it.silkyOwned = false;
+            }
+            m.lastKey = "";
+            m.rects = [];
+            m.anyVisible = false;
+        } else if (items.length > 0) {
+            poll();
+        }
+    }
 
     function digitsFor(list) {
         var d = [2, 3, 1, 1];
@@ -57,7 +74,10 @@ Item {
             if (a < 0.01 || it.width < 2 || it.height < 2) { it.silkyOwned = false; continue; }
             var tl = it.mapToItem(null, 0, 0), br = it.mapToItem(null, it.width, it.height);
             var sc = (br.x - tl.x) / Math.max(1, it.width);
-            out.push({ item: it, x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y, r: (it.cornerR || 0) * sc, a: a,
+            var x0 = Math.max(0, tl.x), y0 = Math.max(0, tl.y);
+            var x1 = Math.min(win ? win.width : br.x, br.x), y1 = Math.min(win ? win.height : br.y, br.y);
+            if (x1 - x0 < 2 || y1 - y0 < 2) { it.silkyOwned = false; continue; }
+            out.push({ item: it, x: x0, y: y0, w: x1 - x0, h: y1 - y0, r: (it.cornerR || 0) * sc, a: a,
                        dark: !!it.silkyDark, kind: it.silkyKind || 1 });
         }
         out.sort(function (p, q) { return q.w * q.h - p.w * p.h; });
@@ -84,13 +104,17 @@ Item {
     Timer { interval: 120; repeat: true; running: m.enabled && m.items.length > 0 && !m.anyVisible; onTriggered: m.poll() }
 
     readonly property var digits: enabled ? digitsFor(rects) : []
-    Repeater {
-        model: m.digits.length
-        delegate: Rectangle {
-            required property int index
-            parent: m.Window.window ? m.Window.window.contentItem : m
-            x: index; y: (m.Window.window ? m.Window.window.height : 1) - 1; width: 1; height: 1
-            color: Qt.rgba(0, 0, 0, (1 + (m.digits[index] || 0)) / 255)
+    Item {
+        parent: m.Window.window ? m.Window.window.contentItem : m
+        x: 0; y: (m.Window.window ? m.Window.window.height : 1) - 1
+        width: 0; height: 0
+        Repeater {
+            model: m.digits.length
+            delegate: Rectangle {
+                required property int index
+                x: index; y: 0; width: 1; height: 1
+                color: Qt.rgba(0, 0, 0, (1 + (m.digits[index] || 0)) / 255)
+            }
         }
     }
 }

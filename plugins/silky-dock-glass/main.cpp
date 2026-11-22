@@ -48,30 +48,36 @@ inline HANDLE PHANDLE = nullptr;
 namespace {
     std::vector<CHyprSignalListener> g_listeners;
 
-    constexpr int    MAX_RECTS   = 16;
+    constexpr int    MAX_RECTS   = 24;
     constexpr int    HEADER      = 8;  // magic (4) + count (4)
     constexpr int    PER_RECT    = 46; // x y w h r (8 each) + alpha (4) + dark (1) + kind (1)
     constexpr int    MAX_DIGITS  = HEADER + MAX_RECTS * PER_RECT;
     constexpr double REACH       = 96; // logical px the glass reads around itself (refraction + blur)
     constexpr double CPU_MARGIN  = 48; // the CPU copy of the rects is a frame old: margin for moving / growing glass
 
-    // Only the Dock for now: the menu bar was tried (0.2) and kept on plain blur. The marker format and the per-kind
-    // parameters already support more layers: add their namespaces here and mark them in MacShell to extend it.
-    const char* NAMESPACES[] = {"macdock"};
+    // Layers whose glass rectangles are painted by this plugin (macbarbg — the thin top bar strip — stays on plain blur).
+    const char* NAMESPACES[] = {"macdock", "macbar", "macspot", "macosd", "macswitch", "macwall"};
 
     struct SStats {
         uint64_t frames = 0, damaged = 0;
     } g_stats;
 
-    // ── parameters (per kind: 0 = Dock, 1 = menus / panels), live-tunable ──────────────────────────────────────────
+    // ── parameters (per kind: 0 = Dock, 1 = menus / panels, 2 = Control Center bubbles), live-tunable ──────────────
     struct SKind {
         float blur, tint, bezel, thickness, dispersion, magnify, saturation, lift, rim, tintDark;
     };
     struct SParams {
-        // tuned toward macOS 27: clear Dock glass with a strong lensing rim; menus a little more frosted for legibility
-        SKind k[2] = {{6.f, 0.10f, 14.f, 20.f, 0.06f, 0.f, 1.05f, 0.015f, 1.2f, 0.22f}, {14.f, 0.20f, 18.f, 26.f, 0.06f, 0.f, 1.2f, 0.03f, 1.0f, 0.30f}};
+        // Tuned toward macOS 26/27 Liquid Glass (physical Convex Squircle Snell refraction):
+        //   0 = Dock: clean optical glass, crisp narrow bezel that reflects interior icons/dots at the rim
+        //   1 = Menus / Notification Center / Spotlight: slightly more frosted so dense text stays crisp
+        //   2 = Control Center floating tiles: clear jewel-like liquid bubbles with lively Snell rim refraction
+        SKind k[3] = {
+            {6.5f, 0.10f, 14.f, 22.f, 0.08f, 0.00f, 1.12f, 0.012f, 0.72f, 0.22f},
+            {11.f, 0.16f, 12.f, 18.f, 0.06f, 0.00f, 1.12f, 0.015f, 0.72f, 0.26f},
+            {5.5f, 0.09f, 14.f, 24.f, 0.09f, 0.00f, 1.22f, 0.018f, 0.88f, 0.18f},
+        };
     };
-    // ~/.config/silky-omarchy/dock-glass.conf: "key = value"; plain keys are the Dock, "menu_" keys the menus / panels
+    // ~/.config/silky-omarchy/dock-glass.conf: "key = value"; plain = Dock, "menu_" = menus/panels, "cc_" = Control Center bubbles
     const SParams& params() {
         static SParams  p;
         static int64_t  lastMtime = -1;
@@ -107,6 +113,9 @@ namespace {
             if (k.starts_with("menu_")) {
                 kind = 1;
                 k    = k.substr(5);
+            } else if (k.starts_with("cc_")) {
+                kind = 2;
+                k    = k.substr(3);
             }
             float v = 0;
             try {
@@ -180,7 +189,7 @@ void main() {
     vRadius = float(fr) * 0.5 * uMonScale;
     vDark   = float(fd);
     vAlpha  = float(fa) / 255.0;
-    vKind   = clamp(fk, 0, 1);
+    vKind   = clamp(fk, 0, 2);
     vec2 p  = r.xy - 2.0 + aPos * (r.zw + 4.0);
     vFb     = p;
     gl_Position = ok ? vec4(p / uFb * 2.0 - 1.0, 0.0, 1.0) : vec4(-2.0, -2.0, 0.0, 1.0);
@@ -203,17 +212,17 @@ uniform vec4  uBand;                        // area the copy covers, framebuffer
 uniform vec4  uValid;                       // part refreshed this frame (x0, y0, x1, y1): glass outside it waits a frame
 uniform float uS;                           // framebuffer px per logical px
 uniform float uTexScale;                    // backdrop texels per framebuffer px
-// per kind (0 = Dock, 1 = menus / panels)
-uniform float uTint[2];                     // light mode
-uniform float uTintDark[2];                 // dark mode: a little deeper, like macOS dark glass
-uniform float uBlur[2];
-uniform float uBezel[2];
-uniform float uThick[2];
-uniform float uDisperse[2];
-uniform float uMagnify[2];
-uniform float uSat[2];
-uniform float uLift[2];
-uniform float uRim[2];
+// per kind (0 = Dock, 1 = menus / panels, 2 = Control Center bubbles)
+uniform float uTint[3];                     // light mode
+uniform float uTintDark[3];                 // dark mode: a little deeper, like macOS dark glass
+uniform float uBlur[3];
+uniform float uBezel[3];
+uniform float uThick[3];
+uniform float uDisperse[3];
+uniform float uMagnify[3];
+uniform float uSat[3];
+uniform float uLift[3];
+uniform float uRim[3];
 
 const int   TAPS   = 20;
 const float GOLDEN = 2.39996323;
@@ -230,7 +239,7 @@ vec3 blurredDisp(vec2 p, vec2 disp, float disperse, float rad) {
     float gap = R * sqrt(3.14159265 / float(TAPS));
     float lod = clamp(log2(max(gap * uTexScale, 1.0)) + 0.35, 0.0, 6.0);
     float rot = ign(gl_FragCoord.xy) * 6.2831853;
-    bool dispersed = length(disp) * disperse > 0.35;   // colour fringes under ~1/3 px are invisible
+    bool dispersed = length(disp) * disperse > 0.25;   // subtle chromatic fringes along high-contrast edges
     vec3 acc = vec3(0.0); float ws = 0.0;
     for (int i = 0; i < TAPS; ++i) {
         float fi = float(i) + 0.5, r = sqrt(fi / float(TAPS)), a = fi * GOLDEN + rot, w = exp(-2.2 * r * r);
@@ -268,46 +277,60 @@ void main() {
     vec2 m   = max(d2, 0.0);
     vec2 g   = (length(m) > 1e-4) ? normalize(m) * sg : ((d2.x > d2.y) ? vec2(sg.x, 0.0) : vec2(0.0, sg.y));
 
-    // The bevel must end before the centre line. With a 70 px Dock it used to reach ~46 px deep, so the top and bottom
-    // bevels overlapped: on the centre line the nearest edge flips from top to bottom and the rim shift (still ~2/3 of
-    // its peak there) flipped from "pull up" to "pull down", tearing the background along the middle of the Dock.
-    // Capped at 80 % of the half height, the shift is 0 well before the centre and the middle is plain glass.
-    // `bezel` is the real width of the bending rim. It used to be scaled by 1.45 and reach 28-46 px into a 70 px Dock,
-    // so most of the Dock bent whatever slid under it; a narrow rim leaves the middle as flat glass that only blurs.
-    float bz    = clamp(uBezel[K], 1.0, min(hs.x, hs.y) * 0.6);
+    // Physical Convex Squircle bezel + Snell's Law refraction (macOS 26/27 Liquid Glass):
+    // Surface height h(u) = (1 - (1 - u)^4)^(1/4) for u = t / bz in [0, 1].
+    //   - For t >= bz (flat interior): slope = 0, displacement = 0, so lines crossing the glass stay
+    //     pixel-aligned with the background outside.
+    //   - For t < bz (convex bezel): the surface normal tilts outward (+g), so Snell's Law bends the
+    //     view ray INWARD (-g) into the glass interior. Nearby interior features (like a red traffic-light
+    //     button under the Dock) naturally refract/reflect onto the curved glass rim instead of pulling
+    //     outside wallpaper inward.
+    float bz    = clamp(uBezel[K], 1.0, min(hs.x, hs.y) * 0.65);
     float u     = clamp(t / bz, 0.0, 1.0);
-    float om    = 1.0 - u, om4 = om * om * om * om;
-    // Rim lensing that keeps the background continuous and in order. The first versions displaced most at the very
-    // edge (Snell on a convex bezel, ~50 px): pixels on either side of the edge showed content 50 px apart, so the edge
-    // jumped and the strip just outside the glass appeared a second time, squashed inside the rim. Now the shift is 0
-    // at the edge and at the inner end of the bevel and peaks in between (outward = the content near the edge is
-    // stretched across the rim, like a lens). Its slope stays below 1, so the image never folds back on itself.
-    float bump  = sin(3.14159265 * u);                               // 0 at the edge, 1 mid-bevel, 0 inside
-    float D     = min(uThick[K] * 0.32, bz * 0.30);                  // peak shift, logical px; max slope pi*0.30 < 1
-    vec2  disp  = (uThick[K] >= 0.0 ? g : -g) * bump * D;            // logical px, y down, pointing outward
+    float om    = 1.0 - u;
+    float om3   = om * om * om;
+    float om4   = om3 * om;
+    float h     = pow(max(1.0 - om4, 1e-4), 0.25);
+    // Exact analytical derivative dh/du = om^3 / h^3, softly capped at the very lip for stability
+    float slope = om3 / max(h * h * h, 0.10);
+    // 3D outward surface normal (z pointing toward viewer); Snell refraction of view ray I = (0, 0, -1)
+    vec3  N     = normalize(vec3(g * slope, 1.0));
+    float eta   = 1.0 / 1.50;                                         // air (1.0) -> optical glass (1.50)
+    vec3  R     = refract(vec3(0.0, 0.0, -1.0), N, eta);
+    // R.xy points along -g (inward); scale by glass thickness and local height
+    vec2  rayOff = (R.xy / max(abs(R.z), 0.25)) * (abs(uThick[K]) * (0.45 + 0.55 * h));
+    vec2  disp   = (uThick[K] >= 0.0 ? rayOff : -rayOff);             // logical px, inward along -g
 
-    vec2 lens = vec2(0.0, q.y * -uMagnify[K]);
-    vec3 col = blurredDisp(vFb, (disp + lens) * uS, uDisperse[K], uBlur[K] * uS);
+    // Keep the refracting bevel slightly crisper than the interior so rim reflections stay well-defined.
+    float blurR = uBlur[K] * mix(0.55, 1.0, smoothstep(0.0, 0.80, u));
+    vec2  lens  = q * -uMagnify[K];
+    vec3  col   = blurredDisp(vFb, (disp + lens) * uS, uDisperse[K], blurR * uS);
 
     float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
     col = mix(vec3(l), col, uSat[K]);
-    float lw    = smoothstep(0.30, 0.80, l);
-    float adapt = mix(0.78, 1.28, mix(1.0 - lw, lw, vDark));
-    vec3  tintC = mix(vec3(1.0), vec3(0.09, 0.09, 0.10), vDark);
-    col = mix(col, tintC, clamp(mix(uTint[K], uTintDark[K], vDark) * adapt, 0.0, 1.0));
-    col += uLift[K] * mix(1.0, 0.4, vDark);
+    float lw    = smoothstep(0.28, 0.78, l);
+    float adapt = mix(0.78, 1.32, mix(1.0 - lw, lw, vDark));
+    vec3  tintC = mix(vec3(1.0), vec3(0.08, 0.09, 0.10), vDark);
+    col = mix(col, tintC, clamp(mix(uTint[K], uTintDark[K], vDark) * adapt, 0.0, 0.85));
+    col += uLift[K] * mix(1.0, 0.35, vDark);
     float ty = clamp((q.y + hs.y) / (hs.y * 2.0), 0.0, 1.0);
-    col += (1.0 - ty) * uLift[K] * mix(0.7, 0.6, vDark);
+    col += (1.0 - ty) * uLift[K] * mix(0.65, 0.45, vDark);
 
-    float aY    = pow(abs(g.y), 1.5);
-    float wT    = smoothstep(-0.3, 0.3, -g.y);
-    float lineA = 0.025 + aY * mix(0.275, 0.155, wT);
-    float poolA = aY * mix(0.10, 0.055, wT);
-    float kk    = (t - 0.7) / 0.55;
-    float fE    = (lineA * exp(-(kk * kk)) + poolA * exp(-t / mix(3.0, 4.5, wT))) * uRim[K];
-    col = col * (1.0 + fE) + vec3(fE * 0.10);
+    // Refined macOS 26/27 hairline specular rim: ultra-crisp 1-px glass silhouette edge with
+    // subtle top-left / bottom-right directional glints and no heavy white halo.
+    vec2  lightDir = normalize(vec2(-0.50, -0.86));
+    float dKey     = max(0.0, dot(g, lightDir));
+    float dOpp     = max(0.0, dot(g, -lightDir));
+    float topBias  = smoothstep(-0.35, 0.75, -g.y);
+    float specArc  = pow(dKey, 2.4) * 0.42 + pow(dOpp, 2.8) * 0.24 + pow(abs(g.y), 1.6) * 0.12;
+    float baseRing = 0.16 + 0.10 * topBias;
+    float rimLine  = exp(-pow((t - 0.50) / 0.34, 2.0));
+    float rimGlow  = exp(-t / mix(2.6, 3.8, topBias));
+    float rimAmt   = (rimLine * (baseRing + specArc) + rimGlow * (0.025 + specArc * 0.10)) * uRim[K];
+    col = col * (1.0 + rimAmt * 0.40) + vec3(rimAmt * mix(0.55, 0.38, vDark));
+
     float gn = hash12(gl_FragCoord.xy) + hash12(gl_FragCoord.xy * 1.7 + 17.0) - 1.0;
-    col += gn * 0.0045;
+    col += gn * 0.004;
     col = clamp(col, 0.0, 1.0);
     float a = cov * vAlpha;
     fragColor = vec4(col * a, a);
@@ -402,8 +425,9 @@ void main() {
         int                      tw = 0, th = 0, pboW = 0;
         GLsync                   fence = nullptr;
         bool                     pending = false;
-        std::vector<CBox>        rects; // CPU copy (logical, layer-local), one frame old
-        CBox                     area;  // union + reach + margin, logical layer-local (empty: no glass)
+        std::vector<CBox>        rects;     // CPU copy (logical, layer-local), one frame old
+        std::vector<CBox>        rectAreas; // per-rect (rect + reach + margin) clipped to layer, logical
+        CBox                     area;      // union of rectAreas, logical layer-local (empty: no glass)
         uint64_t                 lastSeen = 0;
     };
     std::unordered_map<void*, SLayer> g_layers;
@@ -432,7 +456,9 @@ void main() {
         for (auto& lvl : mon->m_layerSurfaceLayers)
             for (auto& ref : lvl) {
                 auto ls = ref.lock();
-                if (ls && ls->mapped() && isGlassNamespace(ls->m_namespace))
+                // Fullscreen can hide a layer without unmapping it. Match the
+                // compositor so glass never paints above a hidden Dock.
+                if (ls && ls->mapped() && isGlassNamespace(ls->m_namespace) && !ls->isHiddenByFullscreen(mon))
                     out.push_back(ls);
             }
         return out;
@@ -465,11 +491,13 @@ void main() {
             return v;
         };
         L.rects.clear();
+        L.rectAreas.clear();
         L.area = {};
         if (!(digit(0) == 2 && digit(1) == 3 && digit(2) == 1 && digit(3) == 1))
             return;
-        const int count = std::min(number(4, 4), MAX_RECTS);
-        CRegion   u;
+        const int  count = std::min(number(4, 4), MAX_RECTS);
+        const CBox bounds{0, 0, layerBox.width, layerBox.height};
+        CRegion    u;
         for (int i = 0; i < count; ++i) {
             const int b = HEADER + i * PER_RECT;
             const int x = number(b, 8), y = number(b + 8, 8), w = number(b + 16, 8), h = number(b + 24, 8);
@@ -477,10 +505,23 @@ void main() {
                 continue;
             CBox r{x * 0.5, y * 0.5, w * 0.5, h * 0.5};
             L.rects.push_back(r);
-            u.add(r.copy().expand(REACH + CPU_MARGIN));
+            CBox ra = r.copy().expand(REACH + CPU_MARGIN).intersection(bounds);
+            if (ra.width > 0 && ra.height > 0) {
+                L.rectAreas.push_back(ra);
+                u.add(ra);
+            }
         }
         if (!u.empty())
-            L.area = u.getExtents().intersection(CBox{0, 0, layerBox.width, layerBox.height});
+            L.area = u.getExtents().intersection(bounds);
+    }
+
+    bool sameBoxes(const std::vector<CBox>& a, const std::vector<CBox>& b) {
+        if (a.size() != b.size())
+            return false;
+        for (size_t i = 0; i < a.size(); ++i)
+            if (a[i].x != b[i].x || a[i].y != b[i].y || a[i].width != b[i].width || a[i].height != b[i].height)
+                return false;
+        return true;
     }
 
     // collect last frame's readback (non-blocking) and remember if the glass area changed (so it gets repainted)
@@ -498,15 +539,18 @@ void main() {
         glBindBuffer(GL_PIXEL_PACK_BUFFER, L.pbo);
         auto* data = (const uint8_t*)glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, L.pboW * 4, GL_MAP_READ_BIT);
         if (data) {
-            const CBox  oldArea = L.area;
-            auto        tex     = layerTexture(ls);
-            const auto& g       = ls->m_geometry;
-            const double bs     = tex && g.width > 0 ? tex->m_size.x / g.width : 1.0;
+            const auto  oldRectAreas = L.rectAreas;
+            auto        tex          = layerTexture(ls);
+            const auto& g            = ls->m_geometry;
+            const double bs          = tex && g.width > 0 ? tex->m_size.x / g.width : 1.0;
             decode(L, data, L.pboW, bs, g);
             glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
-            // glass appeared / moved / went away: repaint old and new areas next frame
-            if (oldArea.width != L.area.width || oldArea.height != L.area.height || oldArea.x != L.area.x || oldArea.y != L.area.y) {
-                for (const auto& a : {oldArea, L.area})
+            // glass appeared / moved / went away: repaint each old and new rect area individually
+            if (!sameBoxes(oldRectAreas, L.rectAreas)) {
+                for (const auto& a : oldRectAreas)
+                    if (a.width > 0 && a.height > 0)
+                        g_pHyprRenderer->damageBox(CBox{g.x + a.x, g.y + a.y, a.width, a.height});
+                for (const auto& a : L.rectAreas)
                     if (a.width > 0 && a.height > 0)
                         g_pHyprRenderer->damageBox(CBox{g.x + a.x, g.y + a.y, a.width, a.height});
             }
@@ -562,13 +606,18 @@ void main() {
         return CBox{(g.x - mon->m_position.x) * s, (g.y - mon->m_position.y) * s, g.width * s, g.height * s}.round();
     }
 
-    // glass area of a layer in monitor-local framebuffer px (empty if none)
-    CBox areaFb(PHLMONITOR mon, const PHLLS& ls, const SLayer& L) {
-        if (L.area.width <= 0 || L.area.height <= 0)
+    // convert a layer-local logical box to monitor-local framebuffer px
+    CBox boxFb(PHLMONITOR mon, const PHLLS& ls, const CBox& b) {
+        if (b.width <= 0 || b.height <= 0)
             return {};
         const double s  = mon->m_scale;
         const CBox   lb = layerFbBox(mon, ls);
-        return CBox{lb.x + L.area.x * s, lb.y + L.area.y * s, L.area.width * s, L.area.height * s}.round();
+        return CBox{lb.x + b.x * s, lb.y + b.y * s, b.width * s, b.height * s}.round();
+    }
+
+    // glass area of a layer in monitor-local framebuffer px (empty if none)
+    CBox areaFb(PHLMONITOR mon, const PHLLS& ls, const SLayer& L) {
+        return boxFb(mon, ls, L.area);
     }
 
     void drawLayer(PHLMONITOR mon, const PHLLS& ls, SLayer& L, const Vector2D& fb, GLint drawFb) {
@@ -605,22 +654,34 @@ void main() {
             L.tw = tw;
             L.th = th;
         }
-        const int sx0 = std::clamp((int)ar.x, 0, (int)fb.x) & ~1, sx1 = std::clamp((int)(ar.x + ar.width), 0, (int)fb.x);
-        const int sy0 = std::clamp((int)ar.y, 0, (int)fb.y) & ~1, sy1 = std::clamp((int)(ar.y + ar.height), 0, (int)fb.y);
-        if (sx1 <= sx0 || sy1 <= sy0)
-            return;
         GLint readFb = 0;
         glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readFb);
         // Hyprland binds only the DRAW framebuffer: read from it, or the copy comes from a stale buffer
         glBindFramebuffer(GL_READ_FRAMEBUFFER, drawFb);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_gl.fbo);
         glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, L.backdrop, 0);
-        const int dx0 = (sx0 - (int)lb.x) / 2, dy0 = (sy0 - (int)lb.y) / 2;
-        const int dx1 = (sx1 - (int)lb.x) / 2, dy1 = (sy1 - (int)lb.y) / 2;
-        glBlitFramebuffer(sx0, sy0, sx1, sy1, std::clamp(dx0, 0, tw), std::clamp(dy0, 0, th), std::clamp(dx1, 0, tw), std::clamp(dy1, 0, th), GL_COLOR_BUFFER_BIT,
-                          GL_LINEAR);
+        int vx0 = (int)fb.x, vy0 = (int)fb.y, vx1 = 0, vy1 = 0;
+        for (const auto& ra : L.rectAreas) {
+            const CBox rfb = boxFb(mon, ls, ra);
+            const int  bx0 = std::clamp((int)rfb.x, 0, (int)fb.x) & ~1;
+            const int  bx1 = std::clamp((int)(rfb.x + rfb.width), 0, (int)fb.x);
+            const int  by0 = std::clamp((int)rfb.y, 0, (int)fb.y) & ~1;
+            const int  by1 = std::clamp((int)(rfb.y + rfb.height), 0, (int)fb.y);
+            if (bx1 <= bx0 || by1 <= by0)
+                continue;
+            const int dx0 = (bx0 - (int)lb.x) / 2, dy0 = (by0 - (int)lb.y) / 2;
+            const int dx1 = (bx1 - (int)lb.x) / 2, dy1 = (by1 - (int)lb.y) / 2;
+            glBlitFramebuffer(bx0, by0, bx1, by1, std::clamp(dx0, 0, tw), std::clamp(dy0, 0, th), std::clamp(dx1, 0, tw), std::clamp(dy1, 0, th), GL_COLOR_BUFFER_BIT,
+                              GL_LINEAR);
+            vx0 = std::min(vx0, bx0);
+            vy0 = std::min(vy0, by0);
+            vx1 = std::max(vx1, bx1);
+            vy1 = std::max(vy1, by1);
+        }
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, drawFb);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, readFb);
+        if (vx1 <= vx0 || vy1 <= vy0)
+            return;
         glBindTexture(GL_TEXTURE_2D, L.backdrop);
         glGenerateMipmap(GL_TEXTURE_2D);
 
@@ -640,22 +701,22 @@ void main() {
         glUniform4f(glGetUniformLocation(prog, "uBand"), lb.x, lb.y, tw * 2.0, th * 2.0);
         glUniform1f(glGetUniformLocation(prog, "uS"), s);
         glUniform1f(glGetUniformLocation(prog, "uTexScale"), 0.5f);
-        glUniform4f(glGetUniformLocation(prog, "uValid"), sx0, sy0, sx1, sy1);
+        glUniform4f(glGetUniformLocation(prog, "uValid"), vx0, vy0, vx1, vy1);
         const auto& P = params();
-        auto        set2 = [&](const char* name, float a, float b) {
-            const float v[2] = {a, b};
-            glUniform1fv(glGetUniformLocation(prog, name), 2, v);
+        auto        set3 = [&](const char* name, float a, float b, float c) {
+            const float v[3] = {a, b, c};
+            glUniform1fv(glGetUniformLocation(prog, name), 3, v);
         };
-        set2("uTint", P.k[0].tint, P.k[1].tint);
-        set2("uTintDark", P.k[0].tintDark, P.k[1].tintDark);
-        set2("uBlur", P.k[0].blur, P.k[1].blur);
-        set2("uBezel", P.k[0].bezel, P.k[1].bezel);
-        set2("uThick", P.k[0].thickness, P.k[1].thickness);
-        set2("uDisperse", P.k[0].dispersion, P.k[1].dispersion);
-        set2("uMagnify", P.k[0].magnify, P.k[1].magnify);
-        set2("uSat", P.k[0].saturation, P.k[1].saturation);
-        set2("uLift", P.k[0].lift, P.k[1].lift);
-        set2("uRim", P.k[0].rim, P.k[1].rim);
+        set3("uTint", P.k[0].tint, P.k[1].tint, P.k[2].tint);
+        set3("uTintDark", P.k[0].tintDark, P.k[1].tintDark, P.k[2].tintDark);
+        set3("uBlur", P.k[0].blur, P.k[1].blur, P.k[2].blur);
+        set3("uBezel", P.k[0].bezel, P.k[1].bezel, P.k[2].bezel);
+        set3("uThick", P.k[0].thickness, P.k[1].thickness, P.k[2].thickness);
+        set3("uDisperse", P.k[0].dispersion, P.k[1].dispersion, P.k[2].dispersion);
+        set3("uMagnify", P.k[0].magnify, P.k[1].magnify, P.k[2].magnify);
+        set3("uSat", P.k[0].saturation, P.k[1].saturation, P.k[2].saturation);
+        set3("uLift", P.k[0].lift, P.k[1].lift, P.k[2].lift);
+        set3("uRim", P.k[0].rim, P.k[1].rim, P.k[2].rim);
         glBindVertexArray(g_gl.vao);
         // every slot: the marker (decoded on the GPU) is newer than the CPU copy; unused slots collapse to nothing
         glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, MAX_RECTS);
@@ -736,8 +797,9 @@ void main() {
             return CBox{0, 0, mon->m_size.x, mon->m_size.y};
         }
         CRegion opaqueRegion(Render::CRenderContext&) override { return {}; }
-        // The copied backdrop must be from this frame everywhere under the glass: when anything within reach of a
-        // glass area changes, the whole area joins this frame's damage (never the whole monitor).
+        // The copied backdrop must be from this frame everywhere under each glass rect: when anything within reach of
+        // a glass rect changes, only that rect's area joins this frame's damage (never the whole monitor or unrelated
+        // rects on the same layer).
         bool requiresFullDamage(Render::CRenderContext& ctx) override {
             auto mon = m_mon.lock();
             if (!mon)
@@ -746,11 +808,13 @@ void main() {
                 auto it = g_layers.find(ls.get());
                 if (it == g_layers.end())
                     continue;
-                const CBox a = areaFb(mon, ls, it->second);
-                if (a.width <= 0 || ctx.m_data.damage.copy().intersect(a).empty())
-                    continue;
-                ctx.m_data.damage.add(a);
-                g_stats.damaged++;
+                for (const auto& ra : it->second.rectAreas) {
+                    const CBox a = boxFb(mon, ls, ra);
+                    if (a.width <= 0 || ctx.m_data.damage.copy().intersect(a).empty())
+                        continue;
+                    ctx.m_data.damage.add(a);
+                    g_stats.damaged++;
+                }
             }
             return false;
         }
@@ -798,7 +862,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     g_listeners.emplace_back(Event::bus()->m_events.render.stage.listen([](const Event::SRenderStageEvent& e) { onStage(e); }));
     for (auto& m : State::monitorState()->monitors())
         g_pHyprRenderer->damageMonitor(m);
-    return {"silky-dock-glass", "Zero-latency Liquid Glass for the MacShell Dock, refracted by the compositor", "sqlsec", "0.2.1"};
+    return {"silky-dock-glass", "Zero-latency Liquid Glass for MacShell Dock, menus, Control Center and overlays, refracted by the compositor", "sqlsec", "0.4.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
