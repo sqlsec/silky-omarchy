@@ -699,12 +699,14 @@ Omarchy 移除 Nautilus 并将目录默认应用切换为 Folio 后，旧的 Doc
 
 ## 窗口最小化
 
-点 Folio 左上角的黄灯，窗口会沿类似「神奇效果」的弧形轮廓收拢到 Dock 分隔线和废纸篓之间，留下独立的窗口缩略图。点击缩略图，原窗口会从同一位置放大回来。动画时长设为 480 ms。Folio 异步抓取一张尺寸受限的窗口画面，文件保存在 Wayland 会话的运行目录，关闭该窗口后清理。MacShell 通过渲染线程驱动网格变形，并将叠层限制在窗口到缩略图的范围内。原窗口在叠层就绪后才移入隐藏工作区，移走时禁用 Hyprland 的窗口动画，避免交接时叠加两套效果。Dock 缩略图占位和间距在 180 ms 内线性展开，恢复窗口时线性收回。先前已最小化的 Folio 窗口也会有可点击的恢复项。
+点 Folio、Foot 及其他带 Silky 标题栏窗口（[silky-macos.lua](../config/hypr/silky-macos.lua)）的黄灯，以及 Obsidian 标题栏黄灯、微信最小化按钮（[touch-scroll.c](../plugins/wechat-wayland/touch-scroll.c)）或按 `Super+M`（[silky-shortcuts.lua](../config/hypr/silky-shortcuts.lua)），窗口都会沿类似「神奇效果」的弧形轮廓收拢到 Dock 分隔线和废纸篓之间，留下独立的窗口缩略图与右下角应用小徽标。点击缩略图（或对应的 Dock 应用图标），原窗口会从同一位置放大回来。动画时长设为 480 ms。
+
+Folio 自身异步抓取一张尺寸受限的窗口画面并保存在 Wayland 会话运行目录，关闭后清理；其余窗口由 MacShell 的 [缩放组件](../config/macshell/FolioMinimizeFx.qml) 在最小化瞬间通过单次 `ScreencopyView` + `grabToImage` 抓取一张尺寸受限的内存快照（无磁盘 I/O，抓完即断开捕获源，在关闭 Dock 实时窗口预览 `windowCapture: false` 时也同样显示缩略图且零常驻开销），窗口恢复或关闭后自动释放。MacShell 通过渲染线程驱动网格变形，并将叠层限制在窗口到缩略图的范围内。原窗口在叠层就绪后才移入隐藏工作区，移走时禁用 Hyprland 的窗口动画，避免交接时叠加两套效果。Dock 缩略图占位和间距在 180 ms 内线性展开，恢复窗口时线性收回。MacShell 不可用时，所有入口均自动回退到 `omarchy-hyprland-window-minimize`。
 
 旧版曲线让上下沿分段启动，下沿过早缩到目标宽度，尾段还会把窗口画面压暗。新版让各行从起步到落点持续移动，下沿先收拢，窗口全程保持原亮度，并在缩略图或真实窗口接手时短暂保留叠层。用同一组起点和落点按 90 Hz 对着色器轨迹采样，上沿单帧最大位移由约 45 降至 13 个逻辑像素。
 
-收起时，MacShell 先在原位置提交原尺寸快照，等待画面送出后才把真实窗口移入隐藏工作区，确认移走后再开始变形。[Folio 的 Hyprland 规则](../config/hypr/silky-folio.lua)关闭收起叠层自身的淡入，避免交接时闪过桌面或瞬间变暗。
+收起时，MacShell 先在原位置提交原尺寸快照，等待画面送出后才把真实窗口移入隐藏工作区，确认移走后再开始变形（等待送显期间主动调用 `window.update()`，避免静态叠层只提交一帧导致卡住并触发 320 ms 超时跳过动画）。[Folio 的 Hyprland 规则](../config/hypr/silky-folio.lua)关闭收起叠层自身的淡入，避免交接时闪过桌面或瞬间变暗。
 
-在仓库根目录运行 `./scripts/install-folio-macos.sh`，再运行 `qs -c MacShell ipc call macshell reload` 并重开 Folio。[缩放组件](../config/macshell/FolioMinimizeFx.qml)安装到 `~/.config/quickshell/MacShell/`。验证时分别在浮动和全屏状态下点黄灯，再点 Dock 缩略图，窗口应回到原工作区和原状态。回滚时先恢复已最小化的窗口，再用安装器报告的备份恢复 MacShell 配置及 Folio 二进制，然后重载 MacShell。
+在仓库根目录运行 `python3 scripts/tune-folio-macshell.py ~/.config/quickshell/MacShell --backup`（或 `./scripts/install-folio-macos.sh`），更新微信适配器可运行 `./scripts/install-wechat-touch-scroll.sh`，随后执行 `hyprctl reload` 和 `qs -c MacShell ipc call macshell reload`（微信需重开生效）。若希望系统更新后自动保持这套配置，可将 [post-update-silky-minimize](../hooks/post-update-silky-minimize) 安装到 `~/.config/omarchy/hooks/post-update.d/silky-minimize.hook`：它会在每次 Omarchy 更新后检查并恢复 MacShell 与 Hyprland 最小化入口，并在系统升级了 `/usr/bin/folio` 或依赖库时发出桌面提醒。验证时分别对 Folio、Foot 和其他浮动窗口点黄灯或按 `Super+M`，确认收起动画流畅、Dock 出现窗口缩略图与右下角图标，再点击缩略图确认反向弹出回到原工作区和原状态。回滚时先恢复已最小化的窗口，删掉该 post-update hook，再用安装器报告的备份恢复 MacShell、Hyprland 配置及微信适配器，然后重载 Hyprland 与 MacShell。
 
 其他应用的通用最小化入口由 [`disable-minimize.py`](../scripts/disable-minimize.py) 管理。

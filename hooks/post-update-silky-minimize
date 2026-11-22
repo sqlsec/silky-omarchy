@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Omarchy post-update hook: keep Silky's Genie minimize effect intact after system updates.
+set -euo pipefail
+
+repo_root="${SILKY_OMARCHY_REPO:-/home/omarchy/Documents/Github/silky-omarchy}"
+shell_dir="${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/MacShell"
+hypr_dir="${XDG_CONFIG_HOME:-$HOME/.config}/hypr"
+
+[[ -d $repo_root ]] || exit 0
+
+need_macshell_reload=false
+need_hypr_reload=false
+
+if [[ -f $shell_dir/MacDock.qml && -f $shell_dir/shell.qml ]]; then
+  if ! cmp -s "$repo_root/config/macshell/FolioMinimizeFx.qml" "$shell_dir/FolioMinimizeFx.qml" 2>/dev/null \
+     || ! grep -Fq 'function minimizeActive()' "$shell_dir/shell.qml" 2>/dev/null \
+     || ! grep -Fq 'function finishMinimizeWithSnapshot(' "$shell_dir/MacDock.qml" 2>/dev/null; then
+    if python3 "$repo_root/scripts/tune-folio-macshell.py" "$shell_dir" --backup; then
+      need_macshell_reload=true
+    fi
+  fi
+fi
+
+if [[ -f $hypr_dir/silky-macos.lua ]] && ! grep -Fq 'minimizeFoot' "$hypr_dir/silky-macos.lua" 2>/dev/null; then
+  cp -p -- "$hypr_dir/silky-macos.lua" "$hypr_dir/silky-macos.lua.bak.post-update"
+  install -m 644 "$repo_root/config/hypr/silky-macos.lua" "$hypr_dir/silky-macos.lua"
+  need_hypr_reload=true
+fi
+
+if [[ -f $hypr_dir/silky-shortcuts.lua ]] && ! grep -Fq 'minimizeActive' "$hypr_dir/silky-shortcuts.lua" 2>/dev/null; then
+  cp -p -- "$hypr_dir/silky-shortcuts.lua" "$hypr_dir/silky-shortcuts.lua.bak.post-update"
+  install -m 644 "$repo_root/config/hypr/silky-shortcuts.lua" "$hypr_dir/silky-shortcuts.lua"
+  need_hypr_reload=true
+fi
+
+if $need_hypr_reload && command -v hyprctl >/dev/null 2>&1; then
+  hyprctl reload >/dev/null 2>&1 || true
+fi
+
+if $need_macshell_reload && command -v qs >/dev/null 2>&1; then
+  qs -c MacShell ipc call macshell reload >/dev/null 2>&1 || true
+fi
+
+# Notify if a system update replaced /usr/bin/folio or broke runtime libs of the custom Folio build.
+folio_build="${XDG_DATA_HOME:-$HOME/.local/share}/silky-omarchy/folio"
+if [[ -x $folio_build/folio && -r $folio_build/stock.sha256 ]]; then
+  folio_stale=false
+  if ! sha256sum -c --status "$folio_build/stock.sha256" 2>/dev/null; then
+    folio_stale=true
+  elif deps=$(LC_ALL=C ldd -r -- "$folio_build/folio" 2>&1) && [[ $deps == *"not found"* || $deps == *"undefined symbol"* ]]; then
+    folio_stale=true
+  fi
+  if $folio_stale && command -v omarchy-notification-send >/dev/null 2>&1; then
+    omarchy-notification-send -u normal "Silky Folio 需要重建" \
+      "系统更新已升级 Folio 或依赖库，请运行 $repo_root/scripts/install-folio-macos.sh 以保持文件窗口定制与最小化效果。" || true
+  fi
+fi

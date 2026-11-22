@@ -304,6 +304,106 @@ def tune_handoffs(text, path):
                     parked: function() { return root.isMinimized(h.wayland); },""",
         ),
         (
+            """    function minimizeAddress(address, snapshot) {
+        var h = hyprByAddress(address), o = h ? h.lastIpcObject : null;
+        if (!h || !h.wayland || !o || !o.workspace || String(o.workspace.name || "") === "special:minimized") return;
+        var screenName = monitorNameFor(o), rect = windowRect(o);
+        var key = normalizedAddress(address), folio = h.wayland.appId === "folio";
+        var record = folio ? { tl: h.wayland, win: rect, image: snapshot || "", pending: true } : null;
+        if (folioSnapshots[key]?.pending) return;
+        if (record) setFolioSnapshot(key, record);
+        var job = { screen: screenName, tl: h.wayland, win: rect, reverse: false,
+                    image: record?.image || "",
+                    targetFn: function() { return root.folioDockTarget(screenName, key); },
+                    parked: function() { return root.isMinimized(h.wayland); },
+                    before: function() { root.rememberAndMinimize(h, !!job.image); },
+                    after: function() {
+                        if (job.image)
+                            Hyprland.dispatch('hl.dsp.window.set_prop({ prop = "no_anim", value = "unset", window = "address:0x' + key + '" })');
+                        if (record && root.folioSnapshots[key] === record) {
+                            root.setFolioSnapshot(key, Object.assign({}, record, { pending: false }));
+                        }
+                        minimizedDebounce.restart();
+                    } };
+        if (job.image) folioEffect.play(job);
+        else if (minimizeFx && !folio) {
+            job.targetFn = function() { return root.targetRect(screenName); };
+            minimizeFx.play(job);
+        } else { job.before(); job.after(); }
+    }""",
+            """    property var capturingMinimizes: ({})
+    function finishMinimizeWithSnapshot(h, key, screenName, rect, image, grab) {
+        var folio = h.wayland.appId === "folio";
+        var record = (folio || image) ? { tl: h.wayland, win: rect, image: image || "", grab: grab || null, pending: true } : null;
+        if (folioSnapshots[key]?.pending) return;
+        if (record) setFolioSnapshot(key, record);
+        var job = { screen: screenName, tl: h.wayland, win: rect, reverse: false,
+                    image: record?.image || "",
+                    targetFn: function() { return root.folioDockTarget(screenName, key); },
+                    parked: function() { return root.isMinimized(h.wayland); },
+                    before: function() { root.rememberAndMinimize(h, !!job.image); },
+                    after: function() {
+                        if (job.image)
+                            Hyprland.dispatch('hl.dsp.window.set_prop({ prop = "no_anim", value = "unset", window = "address:0x' + key + '" })');
+                        if (record && root.folioSnapshots[key] === record) {
+                            root.setFolioSnapshot(key, Object.assign({}, record, { pending: false }));
+                        }
+                        minimizedDebounce.restart();
+                    } };
+        if (job.image) folioEffect.play(job);
+        else if (minimizeFx && !folio) {
+            job.targetFn = function() { return root.targetRect(screenName); };
+            minimizeFx.play(job);
+        } else { job.before(); job.after(); }
+    }
+    function minimizeAddress(address, snapshot) {
+        var h = hyprByAddress(address), o = h ? h.lastIpcObject : null;
+        if (!h || !h.wayland || !o || !o.workspace || String(o.workspace.name || "") === "special:minimized") return;
+        var screenName = monitorNameFor(o), rect = windowRect(o);
+        var key = normalizedAddress(address);
+        if (folioSnapshots[key]?.pending || capturingMinimizes[key]) return;
+        if (snapshot) {
+            finishMinimizeWithSnapshot(h, key, screenName, rect, snapshot, null);
+            return;
+        }
+        capturingMinimizes[key] = true;
+        folioEffect.capture(h.wayland, screenName, rect, function(result) {
+            delete root.capturingMinimizes[key];
+            var cur = root.hyprByAddress(address), co = cur ? cur.lastIpcObject : null;
+            if (!cur || !cur.wayland || !co || !co.workspace || String(co.workspace.name || "") === "special:minimized") return;
+            var curScreen = root.monitorNameFor(co), curRect = root.windowRect(co);
+            root.finishMinimizeWithSnapshot(cur, key, curScreen, curRect, result ? String(result.url) : "", result || null);
+        });
+    }""",
+        ),
+        (
+            """                var address = addressOf(tl), folio = tl.appId === "folio";
+                var record = folio ? snapshots[address] : null;
+                if (!folio && !showThumbs) continue;
+                if (!isMinimized(tl) && !record?.pending) continue;
+                if (!folio && (restoringWindows[address] || (!windowCapture && seen[keyOf(appOf(tl))]))) continue;
+                var e3 = lookup(appOf(tl));
+                var wid = winIdFor(tl);
+                liveWins.push(tl);
+                if (!folio && winAge(tl) < 200) { if (!youngWin.running) youngWin.start(); continue; }     // no preview (= no capture) for brand-new windows
+                var own3 = isShellApp(tl.appId);
+                winItems.push({ kind: "win", key: "win:" + wid, tl: tl, address: address,
+                                folio: folio, image: record?.image || "", held: !!(record?.pending || restoringWindows[address]),""",
+            """                var address = addressOf(tl), folio = tl.appId === "folio";
+                var record = snapshots[address] || null;
+                var snap = folio || !!record;
+                if (!snap && !showThumbs) continue;
+                if (!isMinimized(tl) && !record?.pending) continue;
+                if (!snap && (restoringWindows[address] || (!windowCapture && seen[keyOf(appOf(tl))]))) continue;
+                var e3 = lookup(appOf(tl));
+                var wid = winIdFor(tl);
+                liveWins.push(tl);
+                if (!snap && winAge(tl) < 200) { if (!youngWin.running) youngWin.start(); continue; }     // no preview (= no capture) for brand-new windows
+                var own3 = isShellApp(tl.appId);
+                winItems.push({ kind: "win", key: "win:" + wid, tl: tl, address: address,
+                                folio: snap, image: record?.image || "", held: !!(record?.pending || restoringWindows[address]),""",
+        ),
+        (
             """                                property real appear: modelData.fresh && !modelData.folio ? 0 : 1
                                 Behavior on appear { NumberAnimation { duration: cell.leavingCell ? root.leaveMs : 320; easing.type: cell.leavingCell ? Easing.InOutCubic : Easing.OutCubic } }
                                 Component.onCompleted: { heldTl = thumbWin; Qt.callLater(function () { cell.appear = cell.leavingCell ? 0 : 1; cell.bounceStep(); }); }
@@ -421,15 +521,16 @@ def main():
         updated = replace_once(content, old_ipc + needle, new_ipc + needle, shell)
     else:
         updated = replace_once(content, needle, new_ipc + needle, shell)
-    old_minimize = """        function minimizeFoot(address: string): bool {
+    old_minimize_variants = (
+        """        function minimizeFoot(address: string): bool {
             const client = macDock.hyprByAddress(address);
             if (!macDock.dockEnabled || client?.wayland?.appId !== "foot"
                     || !(client.lastIpcObject?.workspace?.id >= 1)) return false;
             macDock.minimizeAddress(address);
             return true;
         }
-"""
-    minimize = """        function minimizeFoot(address: string): bool {
+""",
+        """        function minimizeFoot(address: string): bool {
             const client = macDock.hyprByAddress(address);
             const state = client?.lastIpcObject;
             if (!macDock.dockEnabled || !titlebarControls.fullscreenApps.includes(client?.wayland?.appId)
@@ -437,12 +538,29 @@ def main():
             macDock.minimizeAddress(address);
             return true;
         }
+""",
+    )
+    minimize = """        function minimizeFoot(address: string): bool {
+            const client = macDock.hyprByAddress(address);
+            const state = client?.lastIpcObject;
+            if (!macDock.dockEnabled || !client || !client.wayland
+                    || !(state?.workspace?.id >= 1) || state.fullscreen >= 2) return false;
+            macDock.minimizeAddress(address);
+            return true;
+        }
+        function minimizeActive(): bool {
+            const active = Hyprland.activeToplevel;
+            return active ? minimizeFoot(active.address) : false;
+        }
 """
     anchor = "        function minimizeFolio(address: string): bool {"
-    if old_minimize in updated:
-        updated = replace_once(updated, old_minimize, minimize, shell)
+    for old_minimize in old_minimize_variants:
+        if old_minimize in updated:
+            updated = replace_once(updated, old_minimize, minimize, shell)
+            break
     else:
-        updated = replace_once(updated, anchor, minimize + anchor, shell)
+        if minimize not in updated:
+            updated = replace_once(updated, anchor, minimize + anchor, shell)
     if "    FolioSnapPreview {}" not in updated:
         updated = replace_once(updated, "    MacDock {", "    FolioSnapPreview {}\n    MacDock {", shell)
     layout = "    FootWindowLayout { id: titlebarControls; light: !macBar.darkMode; language: macBar.language }"

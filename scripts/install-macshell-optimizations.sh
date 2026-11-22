@@ -91,7 +91,7 @@ calendar_paths=()
 for file in "${calendar_files[@]}"; do
   calendar_paths+=("MacShell/$file")
 done
-managed_files=("${calendar_paths[@]}" MacShell/FolioMinimizeFx.qml MacShell/FolioSnapPreview.qml MacShell/folio-genie.vert.qsb MacShell/DockGlassPanel.qml MacShell/assets/macshell-logo.png "${managed_files[@]}")
+managed_files=("${calendar_paths[@]}" MacShell/FolioMinimizeFx.qml MacShell/FolioSnapPreview.qml MacShell/FootWindowLayout.qml MacShell/folio-genie.vert.qsb MacShell/DockGlassPanel.qml MacShell/assets/macshell-logo.png "${managed_files[@]}")
 for display_asset in "$repo_root/config/macshell/displays/"{*.js,*.qml}; do
   managed_files+=("MacShell/${display_asset##*/}")
 done
@@ -151,11 +151,9 @@ python3 "$repo_root/scripts/tune-settings-scroll.py" "$staged_shell/MacDock.qml"
 
 python3 "$repo_root/scripts/tune-macshell-performance.py" "$staged_shell"
 
-# Remove minimize entry points while retaining restore support for previously parked windows.
+# Remove legacy minimize entry points, then attach Silky's unified snapshot Genie minimize effect.
 python3 "$repo_root/scripts/disable-minimize.py" "$staged_shell"
-if grep -qx '# Silky Omarchy Folio launcher.' "$HOME/.local/bin/folio" 2>/dev/null; then
-  python3 "$repo_root/scripts/tune-folio-macshell.py" "$staged_shell"
-fi
+python3 "$repo_root/scripts/tune-folio-macshell.py" "$staged_shell"
 
 # Also update existing Silky installations: keep application-provided window controls visible.
 sed -i 's/readonly property bool enabled: true/readonly property bool enabled: false/' "$staged_shell/WindowBar.qml"

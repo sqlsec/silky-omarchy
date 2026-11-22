@@ -8,6 +8,7 @@ Scope {
     id: fx
 
     property var job: null
+    property var capJob: null
     property var destination: null
     property var bounds: null
     property bool mapOverlay: false
@@ -15,6 +16,38 @@ Scope {
     property bool parkRequested: false
     property bool started: false
     readonly property int duration: 480
+
+    function capture(tl, screenName, winRect, callback) {
+        if (capJob) {
+            const stale = capJob
+            capTimeout.stop()
+            capJob = null
+            if (stale.cb) stale.cb(null)
+        }
+        if (!tl || !screenName || !winRect || winRect.width < 1 || winRect.height < 1) {
+            if (callback) callback(null)
+            return
+        }
+        let w = Math.max(1, Math.round(winRect.width))
+        let h = Math.max(1, Math.round(winRect.height))
+        const maxW = 1152, maxH = 768
+        if (w > maxW || h > maxH) {
+            const s = Math.min(maxW / w, maxH / h)
+            w = Math.max(1, Math.round(w * s))
+            h = Math.max(1, Math.round(h * s))
+        }
+        capJob = { tl: tl, screen: screenName, width: w, height: h, cb: callback, grabbing: false }
+        capTimeout.restart()
+    }
+
+    function finishCapture(current, result) {
+        if (capJob !== current)
+            return
+        capTimeout.stop()
+        capJob = null
+        if (current.cb)
+            current.cb(result)
+    }
 
     function play(next) {
         if (job) finish()
@@ -104,9 +137,68 @@ Scope {
     }
 
     Timer {
+        id: capTimeout
+        interval: 450
+        onTriggered: {
+            if (fx.capJob)
+                fx.finishCapture(fx.capJob, null)
+        }
+    }
+
+    Timer {
         id: handBack
         interval: 32
         onTriggered: fx.finish()
+    }
+
+    Variants {
+        model: Quickshell.screens
+
+        PanelWindow {
+            id: capWin
+            required property var modelData
+            screen: modelData
+            readonly property bool mine: fx.capJob !== null && fx.capJob.screen === modelData.name
+            visible: mine
+            anchors { top: true; left: true }
+            implicitWidth: mine ? fx.capJob.width : 1
+            implicitHeight: mine ? fx.capJob.height : 1
+            exclusionMode: ExclusionMode.Ignore
+            color: "transparent"
+            mask: Region {}
+            WlrLayershell.namespace: "silky-folio-scale-out"
+            WlrLayershell.layer: WlrLayer.Overlay
+            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
+            // Keep the capture view inside a nearly invisible parent so Qt
+            // renders it on screen while grabToImage captures it at full alpha.
+            Item {
+                anchors.fill: parent
+                opacity: 0.002
+
+                ScreencopyView {
+                    id: sc
+                    anchors.fill: parent
+                    captureSource: capWin.mine ? fx.capJob.tl : null
+                    live: false
+                    onHasContentChanged: {
+                        const current = fx.capJob
+                        if (!hasContent || !capWin.mine || !current || current.grabbing)
+                            return
+                        current.grabbing = true
+                        Qt.callLater(function () {
+                            if (fx.capJob !== current)
+                                return
+                            const ok = sc.grabToImage(function (result) {
+                                fx.finishCapture(current, result && result.url && String(result.url) !== "" ? result : null)
+                            }, Qt.size(current.width, current.height))
+                            if (!ok)
+                                fx.finishCapture(current, null)
+                        })
+                    }
+                }
+            }
+        }
     }
 
     Variants {
@@ -181,9 +273,13 @@ Scope {
                         }
                         if (!fx.parkRequested) {
                             // The first swap can belong to a frame queued before
-                            // the opacity change.
-                            if (overlay.coverSwaps < 2)
+                            // the opacity change. Request a repaint so the render
+                            // thread actually swaps the covered frame.
+                            if (overlay.coverSwaps < 2) {
+                                if (surface.Window.window)
+                                    surface.Window.window.update()
                                 return
+                            }
                             fx.parkRequested = true
                             fx.job.before()
                             return

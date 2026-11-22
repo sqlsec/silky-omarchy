@@ -60,12 +60,8 @@ function o.silky_yellow_light(address)
   local target = hl.get_window("address:" .. address)
   if not target or (target.fullscreen or 0) >= 2 then return end
   local fallback = "omarchy-hyprland-window-minimize " .. address
-  if silky_foot_layout_enabled and (target.class == "foot" or o.silky_desktop_app_layouts[target.class]) then
-    hl.exec_cmd([[sh -c '[ "$(qs -c MacShell ipc call window minimizeFoot ]] .. address ..
-      [[ 2>/dev/null)" = true ] || exec ]] .. fallback .. [[']])
-  else
-    hl.exec_cmd(fallback)
-  end
+  hl.exec_cmd([[sh -c '[ "$(qs -c MacShell ipc call window minimizeFoot ]] .. address ..
+    [[ 2>/dev/null)" = true ] || exec ]] .. fallback .. [[']])
 end
 add({ bg_color = "rgb(febc2e)", fg_color = "rgb(553700)", size = 12, icon = draw_marks and "" or "―",
   action = [[hyprctl eval 'o.silky_yellow_light("%WINDOW%")']] })

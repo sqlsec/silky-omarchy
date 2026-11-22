@@ -32,6 +32,8 @@ macshell("ALT + SHIFT + TAB", "反向切换应用 (MacShell)", "switcher prev")
 macshell("CTRL + ALT + W", "墙纸 (MacShell)", "wallpapers toggle")
 pcall(hl.unbind, "SUPER + L")
 hl.bind("SUPER + L", hl.dsp.exec_cmd("sh ~/.config/quickshell/MacLock/lock-via-ipc.sh"), { description = "锁屏 (MacLock)" })
+pcall(hl.unbind, "SUPER + M")
+hl.bind("SUPER + M", hl.dsp.exec_cmd([[sh -c '[ "$(qs -c MacShell ipc call window minimizeActive 2>/dev/null)" = true ] || exec omarchy-hyprland-window-minimize']]), { description = "Minimize window to the dock" })
 
 -- Omarchy actions on their new keys. English descriptions on purpose: the keybindings menu translates them.
 o.bind("SUPER + CTRL + M", "Omarchy menu", { menu = "root" })
