@@ -36,6 +36,9 @@ o.window({
 o.exec_on_start(os.getenv("HOME") .. "/.local/bin/silky-xwayland-dpi")
 
 -- WPS Writer supplies its own geometry for the selection mini toolbar.
+-- Keep no_initial_focus so the selection mini toolbar does not steal focus from the
+-- document window (under click-to-focus, stealing focus turns the next drag-selection into
+-- dragging/pasting the previous selection instead of starting a fresh selection).
 o.window({
   xwayland = true,
   initial_class = "^wps$",
@@ -46,4 +49,5 @@ o.window({
   no_anim = true,
   no_blur = true,
   no_shadow = true,
+  no_initial_focus = true,
 })

@@ -74,6 +74,7 @@ Hyprland 默认给弹出层做淡入淡出（`fadePopups` 继承 `fade`），旧
 
 - WPS 走 XWayland。Fcitx5 的 X11 候选栏从 Xresources 读取 `Xft.dpi`。有 `xprop`（Arch 的 `xorg-xprop`）时，安装脚本和 Hyprland 启动时会用内置屏幕的缩放补上这个值，无内置屏幕时使用第一个输出。例如 2× 对应 192 DPI。已经配置的 DPI 会优先使用。其他读取 Xresources 的 X11 应用也可能使用这个值。[Fcitx 的 DPI 说明](https://fcitx-im.org/wiki/Theme_Customization#Classic_User_interface)
 - Omarchy 的浮动工作区会给新窗口套用默认尺寸和层叠位置。Hyprland 规则通过 `o.window(..., { float = true })` 将 `Fcitx5 Input Window` 和 WPS 文字的划词迷你工具栏（类名和标题均为 `wps`）登记为自行浮动。这两种弹窗现在按应用给出的尺寸和位置显示。候选栏禁用 Hyprland 模糊和窗口动画，避免首帧出现大片背景。迷你工具栏同时关闭了 Hyprland 阴影。
+- **修复 WPS 划选文字后再次框选把前一段文字带过去的问题**：在浮动工作区的点击聚焦（`input:follow_mouse = 0`）下，划选文字松手后弹出的迷你工具栏如果抢走焦点，用户直接去文档别处重新滑选其他文字时，WPS 的选区/鼠标状态会错乱，把上一段划选的文字带过去而不是重新框选。[`config/hypr/silky-ime.lua`](../config/hypr/silky-ime.lua) 给该规则加上 `no_initial_focus = true`，弹出迷你工具栏时焦点继续留在主文档窗口（仍可直接点击工具栏上的按钮）。运行 `./scripts/install-wowtype-glass.sh`（或手动同步 `~/.config/hypr/silky-ime.lua` 后执行 `hyprctl reload`）立即生效，无需重启 WPS；实机已验证在 WPS 文字中连续划选多段文字可正常重新框选。回滚只需去掉 `no_initial_focus = true`（或恢复 `~/.config/hypr/silky-ime.lua.bak.*`）并执行 `hyprctl reload`。
 - 在 WPS 正文里点出光标，用 `Super+I` 切到 WowType。在同一页不同高度输入拼音，候选词应靠近光标；拖选文字时，迷你工具栏应以紧凑尺寸弹出。可用 `xprop -root RESOURCE_MANAGER` 检查 DPI。
 
 如果 WPS 报缺字体，可从自己的 Windows `Windows/Fonts` 将 Linux 能识别的字体复制到 `~/.local/share/fonts/Windows/`，运行 `fc-cache -f`，保存文档后完全退出并重新打开 WPS。用 `fc-match -f '%{family} %{file}\n' '宋体'` 检查实际匹配的字体，核对返回的家族名称和文件。

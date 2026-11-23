@@ -102,6 +102,7 @@ The Dock's glass tint used to be pinned to dark: only the right-click menu and h
 ## Menus and popups
 
 - Omarchy's own menus become translucent blurred cards: no screen dimming, accent-filled selection, Inter font, live light/dark switching ([11](11-menu-glass.md))
+- WPS selection mini toolbars no longer steal initial focus when they appear, so consecutive drag-selections start cleanly instead of carrying the previous selection ([09](09-wowtype-glass.md#wps-candidate-bar-mini-toolbar-and-document-fonts))
 
 ## Input method
 
