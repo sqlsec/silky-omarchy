@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Silky Omarchy: disable Qualcomm dwc3-qcom USB controller wakeups while
+# suspending with the lid closed. On Snapdragon X laptops (e.g. Lenovo Yoga
+# Slim 7x), the firmware periodically exits deep CX collapse (~every 5 minutes
+# on battery); an attached USB device such as a YubiKey on a wakeup-enabled
+# dwc3-qcom port causes dp_hs_phy_irq to wake the whole system repeatedly.
+#
+# Lid open wakeups (gpio_keys), power button wakeups (pmic_pwrkey), USB-C PD
+# charging (pmic-glink / ucsi / qcom-battmgr), and open-lid USB wakeups are
+# unaffected.
+
+set -u
+shopt -s nullglob
+
+driver_dir=${SILKY_DWC3_DRIVER_DIR:-/sys/bus/platform/drivers/dwc3-qcom}
+state_file=${SILKY_DWC3_STATE_FILE:-/run/silky-dwc3-lid-wake.state}
+phase=${1:-}
+action=${SYSTEMD_SLEEP_ACTION:-${2:-}}
+
+is_suspend_action() {
+  case "$1" in
+    suspend|suspend-after-failed-hibernate|hybrid-sleep)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+get_lid_closed() {
+  if [[ -n ${SILKY_LID_CLOSED_OVERRIDE:-} ]]; then
+    printf '%s\n' "$SILKY_LID_CLOSED_OVERRIDE"
+    return 0
+  fi
+  busctl --timeout=5 get-property org.freedesktop.login1 /org/freedesktop/login1 \
+    org.freedesktop.login1.Manager LidClosed 2>/dev/null || true
+}
+
+if [[ $phase == "pre" ]] && is_suspend_action "$action"; then
+  lid_closed=$(get_lid_closed)
+  if [[ $lid_closed != "b true" ]]; then
+    exit 0
+  fi
+
+  rm -f -- "$state_file"
+  disabled_any=0
+
+  for wakeup in "$driver_dir"/*/power/wakeup; do
+    [[ -r $wakeup && -w $wakeup ]] || continue
+    if [[ $(cat "$wakeup" 2>/dev/null) == "enabled" ]]; then
+      if printf 'disabled\n' >"$wakeup" 2>/dev/null; then
+        printf '%s\n' "$wakeup" >>"$state_file"
+        disabled_any=1
+      fi
+    fi
+  done
+
+  if (( disabled_any == 0 )); then
+    rm -f -- "$state_file"
+  fi
+elif [[ $phase == "post" && -f $state_file ]]; then
+  while IFS= read -r wakeup; do
+    [[ -n $wakeup && -w $wakeup ]] || continue
+    printf 'enabled\n' >"$wakeup" 2>/dev/null || true
+  done <"$state_file"
+  rm -f -- "$state_file"
+fi
