@@ -81,6 +81,7 @@ Dock app context menus share the Dock’s Liquid Glass, including its refraction
 - Fixed the misaligned dark band at the edges of popup panels (weaker refraction, narrower bevel) ([02](02-macshell.md#misaligned-glass-panel-edges))
 - Removed the periodic pointer stutter; 90 Hz built-in screen ([02](02-macshell.md#periodic-pointer-stutter))
 - Floating windows can reuse a blurred desktop backdrop to keep up with the 90 Hz panel while being dragged over other windows ([02](02-macshell.md#window-dragging-at-90-hz))
+- Only the focused Folio keeps the glass sidebar; unfocused Folio windows show a solid sidebar, so dragging other windows over many Folio windows no longer re-blurs each of them ([04](04-macos-theme.md#finder-style-folio))
 - No more two menu bars / two Docks after a crash; the menu bar, Dock and wheel direction survive a reboot ([02](02-macshell.md))
 - Window animations, the menu bar, the Dock and the pointer stay smooth while background programs max out the CPU: Hyprland, MacShell and the input method are scheduled first, and on AC the GPU no longer starts from its lowest clock ([16](16-desktop-priority.md))
 

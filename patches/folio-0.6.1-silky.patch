@@ -1237,7 +1237,7 @@ index 1b6bf00..f88fec3 100644
          case "close": return "M6 6l12 12M18 6L6 18"
          default: return page()
 diff --git c/src/Main.qml w/src/Main.qml
-index 9be2f93..754a36c 100644
+index 9be2f93..ab59ac8 100644
 --- c/src/Main.qml
 +++ w/src/Main.qml
 @@ -2,6 +2,7 @@ import QtQuick
@@ -1266,7 +1266,7 @@ index 9be2f93..754a36c 100644
      visible: true
      // The backend's title (Home, Trash) is translated in C++, which
      // retranslating QML doesn't redo, so the language is read here too.
-@@ -22,9 +27,16 @@ ApplicationWindow {
+@@ -22,9 +27,20 @@ ApplicationWindow {
          translator.language
          if (chooser && chooser.title.length > 0)
              return chooser.title
@@ -1279,13 +1279,17 @@ index 9be2f93..754a36c 100644
 +    readonly property string enterFullScreenMark: "M1 4H7 M4 1V7"
 +    readonly property string exitFullScreenMark: "M3.75 3.75H0.55L3.75 0.55Z M4.25 4.25H7.45L4.25 7.45Z"
 +    readonly property int toolbarHeight: chooser ? 60 : 44
++    // Only the focused window keeps the glass sidebar. Hyprland drops the live
++    // blur behind unfocused Folio windows (silky-folio.lua), so their sidebar
++    // turns solid and dragging other windows over them costs no blur passes.
 +    readonly property color sidebarTint: Qt.alpha(
-+        Qt.tint(theme.background, Qt.alpha(theme.foreground, theme.light ? 0.05 : 0.08)), theme.light ? 0.83 : 0.77)
++        Qt.tint(theme.background, Qt.alpha(theme.foreground, theme.light ? 0.05 : 0.08)),
++        !active ? 1 : theme.light ? 0.83 : 0.77)
 +    color: chooser ? theme.background : "transparent"
  
      Material.theme: theme.light ? Material.Light : Material.Dark
      Material.accent: theme.accent
-@@ -44,12 +56,15 @@ ApplicationWindow {
+@@ -44,12 +60,15 @@ ApplicationWindow {
      // stay hidden until that size is in, or until it's clear none is coming,
      // so they first appear where they'll stay. Until then they take no
      // clicks or keys either, so nothing acts on files no one can see yet.
@@ -1305,7 +1309,7 @@ index 9be2f93..754a36c 100644
      Timer { id: settleTimer; interval: 150; onTriggered: win.settled = true }
  
      property bool helpVisible: false
-@@ -148,18 +163,130 @@ ApplicationWindow {
+@@ -148,18 +167,130 @@ ApplicationWindow {
          anchors.fill: parent
          enabled: win.settled
          opacity: win.settled ? 1 : 0
@@ -1442,7 +1446,7 @@ index 9be2f93..754a36c 100644
          }
  
          RowLayout {
-@@ -169,22 +296,24 @@ ApplicationWindow {
+@@ -169,22 +300,24 @@ ApplicationWindow {
  
              Sidebar {
                  id: sidebar

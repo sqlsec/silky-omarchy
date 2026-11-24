@@ -23,6 +23,16 @@ if silky_macos_titlebars then
   })
 end
 
+-- Live blur stays only behind the focused Folio window. Unfocused Folio windows
+-- paint an opaque sidebar, so windows dragged over them don't re-run blur
+-- passes for every Folio window underneath. The rule is dynamic: Hyprland
+-- re-evaluates it on every focus change.
+hl.window_rule({
+  name = "silky-folio-unfocused-no-blur",
+  match = { class = "^folio$", focus = false },
+  no_blur = true,
+})
+
 -- The render-thread animation controls the minimize overlay's visibility.
 hl.layer_rule({
   name = "silky-folio-minimize-overlay",

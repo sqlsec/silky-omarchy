@@ -439,7 +439,10 @@ def main():
     shell = args.shell / "shell.qml"
     changes = {}
     content = dock.read_text()
-    updated = replace_once(content, "    function activate(item, forceNew) {", """    function activateToplevel(tl) {
+    updated = content
+    # tune-dock-focus-cursor.py rewrites the body later; any existing helper counts as installed.
+    if "    function activateToplevel(tl) {" not in updated:
+        updated = replace_once(updated, "    function activate(item, forceNew) {", """    function activateToplevel(tl) {
         if (isMinimized(tl)) restoreWindow({ tl: tl });
         else tl.activate();
     }
