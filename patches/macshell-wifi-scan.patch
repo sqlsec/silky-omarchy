@@ -1,0 +1,256 @@
+--- a/MacBar.qml
++++ b/MacBar.qml
+@@ -2570,7 +2570,7 @@
+     function refreshWifi() { if (!wifiProc.running) wifiProc.running = true; }
+     Process {
+         id: wifiProc
+-        command: ["sh", "-c", "nmcli radio wifi 2>/dev/null; nmcli -t -f IN-USE,SSID,SIGNAL dev wifi 2>/dev/null | grep '^\\*' | head -n1; echo; nmcli -t -f TYPE,STATE dev 2>/dev/null | grep -q '^ethernet:connected$' && echo eth || echo -; ifc=$(nmcli -t -f DEVICE,TYPE dev 2>/dev/null | awk -F: '$2==\"wifi\"{print $1; exit}'); ip -4 -o addr show dev \"$ifc\" 2>/dev/null | awk '{print \"IP:\"$4}' | head -n1"]
++        command: ["sh", "-c", "export LC_ALL=C; nmcli radio wifi 2>/dev/null; nmcli -t -f IN-USE,SSID,SIGNAL dev wifi list --rescan no 2>/dev/null | grep '^\\*' | head -n1; echo; nmcli -t -f TYPE,STATE dev 2>/dev/null | grep -q '^ethernet:connected$' && echo eth || echo -; ifc=$(nmcli -t -f DEVICE,TYPE dev 2>/dev/null | awk -F: '$2==\"wifi\"{print $1; exit}'); ip -4 -o addr show dev \"$ifc\" 2>/dev/null | awk '{print \"IP:\"$4}' | head -n1"]
+         stdout: StdioCollector {
+             onStreamFinished: {
+                 var l = text.split("\n");
+@@ -2599,6 +2599,10 @@
+     property bool wifiScanning: false
+     property string wifiBusy: ""               // ssid currently being joined
+     property string wifiError: ""
++    property bool wifiScanFailed: false
++    property string wifiScanMode: ""
++    property string wifiPendingScan: ""
++    readonly property string wifiScanError: I18n.tr("Wi-Fi scan did not complete. Try again.")
+     function sigLevel(s) { return s > 66 ? 3 : (s > 33 ? 2 : 1); }
+     // split an `nmcli -t` line on unescaped colons (and unescape \: and \\)
+     function splitNm(line) {
+@@ -2614,69 +2618,89 @@
+     }
+     function nmErr(t) {
+         var s = (t || "").trim().split("\n")[0].replace(/^Error:\s*/, "");
+-        if (/secrets were required|no secrets|password/i.test(s)) return "Incorrect password.";
++        if (/secrets were required|no secrets/i.test(s)) return I18n.tr("Could not obtain Wi-Fi credentials.");
+         if (/no network with ssid|not found/i.test(s)) return "Network not found.";
+         return s !== "" ? s : "Couldn't join the network.";
+     }
+-    function scanWifi() {
+-        if (wifiListProc.running) return;
+-        wifiScanning = true;
++    function scanWifi(mode, skipCache) {
++        if (!wifiOn || wifiBusy !== "") return;
++        var req = mode === false ? "cached" : (mode === true ? "refresh" : (mode || "auto"));
++        if (req === "cached" && wifiScanFailed) return;
++        if (wifiListProc.running) {
++            if (req === "refresh" && wifiScanMode !== "refresh") wifiPendingScan = "refresh";
++            return;
++        }
++        if (req === "auto" && !skipCache && wifiNets.length === 0) {
++            wifiPendingScan = "auto";
++            req = "cached";
++        }
++        wifiScanMode = req;
++        wifiScanning = req !== "cached";
++        wifiListProc.command = ["/usr/bin/python3", "-I",
++            decodeURIComponent(Qt.resolvedUrl("assets/silky-wifi-scan.py").toString().substring(7)),
++            req];
+         wifiListProc.running = true;
+     }
+     Process {
+         id: wifiListProc
+-        command: ["sh", "-c",
+-            "nmcli dev wifi rescan >/dev/null 2>&1; "
+-            + "nmcli -t -f NAME,TYPE connection show 2>/dev/null | sed -n 's/:802-11-wireless$//p' | sed 's/^/S:/'; "
+-            + "nmcli -t -f IN-USE,SSID,SIGNAL,SECURITY dev wifi list --rescan no 2>/dev/null | sed 's/^/N:/'"]
+-        stdout: StdioCollector {
+-            onStreamFinished: {
+-                var lines = text.split("\n"), saved = {}, best = {}, i, f;
+-                for (i = 0; i < lines.length; i++) {
+-                    if (lines[i].indexOf("S:") === 0) saved[root.splitNm(lines[i].substring(2))[0]] = true;
++        stdout: StdioCollector { id: wifiResults }
++        onExited: (code, status) => {
++            var wasScanning = root.wifiScanning;
++            var nextScan = root.wifiPendingScan;
++            root.wifiScanning = false;
++            root.wifiScanMode = "";
++            root.wifiPendingScan = "";
++            if (!root.wifiOn) return;
++            if (code !== 0 || status !== 0) {
++                if (wasScanning) root.wifiScanFailed = true;
++                if (nextScan !== "" && root.wifiBusy === "") root.scanWifi(nextScan, true);
++                return;
++            }
++            root.wifiScanFailed = false;
++            var lines = wifiResults.text.split("\n"), saved = Object.create(null), best = Object.create(null), i, f;
++            for (i = 0; i < lines.length; i++) {
++                if (lines[i].indexOf("S:") === 0) saved[root.splitNm(lines[i].substring(2))[0]] = true;
++            }
++            for (i = 0; i < lines.length; i++) {
++                if (lines[i].indexOf("N:") !== 0) continue;
++                f = root.splitNm(lines[i].substring(2));
++                if (f.length < 4 || f[1] === "") continue;
++                var ssid = f[1], sig = parseInt(f[2]) || 0, sec = f[3];
++                var n = { ssid: ssid, signal: sig, secure: (sec !== "" && sec !== "--"),
++                          inUse: f[0] === "*", saved: saved[ssid] === true };
++                var o = best[ssid];
++                if (!o) best[ssid] = n;
++                else {
++                    if (n.signal > o.signal) o.signal = n.signal;
++                    if (n.inUse) o.inUse = true;
+                 }
+-                for (i = 0; i < lines.length; i++) {
+-                    if (lines[i].indexOf("N:") !== 0) continue;
+-                    f = root.splitNm(lines[i].substring(2));
+-                    if (f.length < 4 || f[1] === "") continue;
+-                    var ssid = f[1], sig = parseInt(f[2]) || 0, sec = f[3];
+-                    var n = { ssid: ssid, signal: sig, secure: (sec !== "" && sec !== "--"),
+-                              inUse: f[0] === "*", saved: saved[ssid] === true };
+-                    var o = best[ssid];
+-                    if (!o) best[ssid] = n;
+-                    else {
+-                        if (n.signal > o.signal) o.signal = n.signal;
+-                        if (n.inUse) o.inUse = true;
+-                    }
+-                }
+-                var arr = [];
+-                for (var k in best) arr.push(best[k]);
+-                arr.sort(function (a, b) {
+-                    if (a.inUse !== b.inUse) return a.inUse ? -1 : 1;
+-                    return b.signal - a.signal;
+-                });
+-                if (JSON.stringify(arr) !== JSON.stringify(root.wifiNets)) root.wifiNets = arr;
+-                root.wifiScanning = false;
+             }
++            var arr = [];
++            for (var k in best) arr.push(best[k]);
++            arr.sort(function (a, b) {
++                if (a.inUse !== b.inUse) return a.inUse ? -1 : 1;
++                return b.signal - a.signal;
++            });
++            if (JSON.stringify(arr) !== JSON.stringify(root.wifiNets)) root.wifiNets = arr;
++            if (nextScan !== "" && root.wifiBusy === "") root.scanWifi(nextScan, true);
+         }
+-        onExited: root.wifiScanning = false
+     }
+     function connectWifi(ssid, pw) {
+         if (wifiConnProc.running) return;
+         wifiError = "";
+         wifiBusy = ssid;
+-        var cmd = ["nmcli", "--wait", "25", "dev", "wifi", "connect", ssid];
++        var cmd = ["env", "LC_ALL=C", "nmcli", "--wait", "35", "dev", "wifi", "connect", ssid];
+         if (pw && pw !== "") { cmd.push("password"); cmd.push(pw); }
+         wifiConnProc.command = cmd;
+         wifiConnProc.running = true;
+     }
+     Process {
+         id: wifiConnProc
+-        stderr: StdioCollector { onStreamFinished: if (text.trim() !== "") root.wifiError = root.nmErr(text) }
++        stderr: StdioCollector { id: wifiJoinResult }
+         onExited: (code, status) => {
+             root.wifiBusy = "";
+-            if (code !== 0 && root.wifiError === "") root.wifiError = "Couldn't join the network.";
+-            if (code === 0) root.wifiError = "";
++            wifiConnProc.command = [];
++            root.wifiError = code === 0 && status === 0 ? "" : root.nmErr(wifiJoinResult.text);
+             wifiAfter.restart();
+         }
+     }
+@@ -5356,7 +5380,7 @@
+                 Timer {
+                     interval: 4000; repeat: true
+                     running: (ui.pop === "wifi" || (ui.pop === "cc" && ui.ccPage === "wifi")) && ui.wifiPrompt === ""     // paused while typing so the list doesn't rebuild under the cursor
+-                    onTriggered: root.scanWifi()
++                    onTriggered: root.scanWifi(false)
+                 }
+                 Timer {
+                     interval: 4000; repeat: true
+@@ -8167,19 +8191,46 @@
+                             font.family: root.fontForWeight(Font.Normal, pp.fam); font.weight: (pp === ccPal ? Font.DemiBold : Font.Normal); font.pixelSize: 13
+                         }
+                         Text {
+-                            visible: root.wifiOn && root.wifiNets.length === 0
+-                            width: parent.width; height: 56
++                            visible: root.wifiOn && (root.wifiNets.length === 0 || (!root.wifiScanning && root.wifiScanFailed))
++                            width: parent.width; height: 40
+                             horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+-                            text: root.wifiScanning ? I18n.tr("Searching\u2026") : I18n.tr("No networks found")
++                            text: root.wifiScanning ? I18n.tr("Searching\u2026")
++                                                    : root.wifiScanFailed ? root.wifiScanError : I18n.tr("No networks found")
+                             color: pp.fg2
+                             font.family: root.fontForWeight(Font.Normal, pp.fam); font.weight: (pp === ccPal ? Font.DemiBold : Font.Normal); font.pixelSize: 13
+                         }
+                         Text {
++                            visible: root.wifiOn && !root.wifiScanning && root.wifiBusy === ""
++                                     && (root.wifiScanFailed || root.wifiNets.length === 0)
++                            width: parent.width; height: 24
++                            horizontalAlignment: Text.AlignHCenter
++                            text: I18n.tr("Scan Again")
++                            color: root.accent
++                            font.family: root.fontForWeight(Font.Normal, pp.fam)
++                            font.pixelSize: 13
++                            MouseArea {
++                                anchors.fill: parent
++                                onClicked: root.scanWifi("refresh")
++                            }
++                        }
++                        Item {
+                             visible: root.wifiOn && root.wifiNets.length > 0
+-                            leftPadding: 6
+-                            text: I18n.tr("Networks")
+-                            color: pp.fg2
+-                            font.family: root.fontForWeight(Font.DemiBold, pp.fam); font.pixelSize: 11; font.weight: Font.DemiBold
++                            width: parent.width; height: 16
++                            Text {
++                                anchors.left: parent.left; anchors.leftMargin: 6
++                                anchors.verticalCenter: parent.verticalCenter
++                                text: I18n.tr("Networks")
++                                color: pp.fg2
++                                font.family: root.fontForWeight(Font.DemiBold, pp.fam); font.pixelSize: 11; font.weight: Font.DemiBold
++                            }
++                            Text {
++                                visible: root.wifiScanning
++                                anchors.right: parent.right; anchors.rightMargin: 6
++                                anchors.verticalCenter: parent.verticalCenter
++                                text: I18n.tr("Searching\u2026")
++                                color: pp.fg2
++                                font.family: root.fontForWeight(Font.Normal, pp.fam); font.pixelSize: 11
++                            }
+                         }
+ 
+                         // the list
+--- a/MacDock.qml
++++ b/MacDock.qml
+@@ -2564,9 +2564,24 @@
+                         }
+                     }
+                 }
+-                Row {
+-                    spacing: 8
+-                    SButton { t: pal; text: I18n.tr("Scan Again"); onClicked: if (root.bar) root.bar.scanWifi() }
++                SLabel {
++                    t: pal
++                    visible: root.bar && root.bar.wifiOn
++                             && (root.bar.wifiScanning || root.bar.wifiScanFailed || root.bar.wifiNets.length === 0)
++                    text: !root.bar ? "" : root.bar.wifiScanning ? I18n.tr("Searching…")
++                          : root.bar.wifiScanFailed ? root.bar.wifiScanError : I18n.tr("No networks found")
++                }
++                SLabel {
++                    t: pal
++                    visible: root.bar && root.bar.wifiOn && (root.bar.wifiBusy !== "" || root.bar.wifiError !== "")
++                    text: !root.bar ? "" : root.bar.wifiBusy !== "" ? I18n.tr("Connecting…") : root.bar.wifiError
++                }
++                SButton {
++                    t: pal
++                    visible: root.bar && root.bar.wifiOn
++                    enabled: root.bar && !root.bar.wifiScanning && root.bar.wifiBusy === ""
++                    text: I18n.tr("Scan Again")
++                    onClicked: root.bar.scanWifi("refresh")
+                 }
+             }
+         }
+--- a/lang/zh-CN.js
++++ b/lang/zh-CN.js
+@@ -409,6 +409,8 @@
+     "Known Networks & Other Networks": "已知网络与其他网络",
+     "Networks": "网络",
+     "No networks found": "未找到网络",
++    "Wi-Fi scan did not complete. Try again.": "无线局域网扫描未完成，请重试。",
++    "Could not obtain Wi-Fi credentials.": "无法获取此网络的连接凭据。",
+     "Connected": "已连接",
+     "Not Connected": "未连接",
+     "Not connected": "未连接",

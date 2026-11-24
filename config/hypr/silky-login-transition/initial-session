@@ -1,0 +1,14 @@
+#!/bin/sh
+# Launched by greetd [initial_session] on boot: starts the single desktop
+# Hyprland session and arms the one-shot MacLock boot lock for a seamless,
+# zero-black-screen transition after entering the password.
+export XDG_SESSION_TYPE=wayland
+export XDG_CURRENT_DESKTOP=Hyprland
+export XDG_SESSION_DESKTOP=Hyprland
+export SILKY_BOOT_LOCK=1
+
+rt="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+mkdir -p "$rt" "$HOME/.cache" 2>/dev/null || true
+: > "$rt/silky-boot-lock.pending"
+
+exec /usr/bin/start-hyprland >>"$HOME/.cache/macshell-session.log" 2>&1

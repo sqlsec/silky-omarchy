@@ -1,0 +1,29 @@
+#!/bin/bash
+# One-shot boot lock for single-Hyprland login (greetd [initial_session]).
+# Runs at Hyprland startup; does nothing for normal greeter logins or reloads.
+set -u
+
+[[ ${SILKY_BOOT_LOCK:-0} = 1 ]] || exit 0
+
+runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+marker="$runtime_dir/silky-boot-lock.pending"
+[[ -f $marker ]] || exit 0
+
+# Avoid competing with an already running MacLock instance.
+if pgrep -u "$(id -u)" -f '(^|/)(qs|quickshell)( .*)? -c MacLock( |$)' >/dev/null 2>&1; then
+    exit 0
+fi
+
+# Launch MacLock directly (lockRequested defaults to true) so it binds
+# ext-session-lock-v1 as early as possible without IPC polling overhead.
+attempt=0
+while [[ $attempt -lt 5 ]]; do
+    attempt=$((attempt + 1))
+    if qs -c MacLock >/dev/null 2>&1; then
+        rm -f "$marker"
+        exit 0
+    fi
+    sleep 0.2
+done
+
+exit 1

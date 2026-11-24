@@ -20,7 +20,7 @@ mkdir -p "$work/assets"
 [[ -d "$shell_dir/assets/ai-logos" ]] && cp -r "$shell_dir/assets/ai-logos" "$work/assets/"
 cp "$repo"/config/macshell/widgets/*.qml "$repo"/config/macshell/widgets/*.js "$repo/config/macshell/widgets/preview/shell.qml" "$work/"
 
-# a data snapshot from the real data process (weather from its cache, DeepSeek as a sample when no key is set)
+# a data snapshot from the real data process, with weather from its cache
 python3 -I - "$repo/config/macshell/widgets/widgets.py" > "$work/info.js" <<'PY'
 import importlib.util, json, sys
 spec = importlib.util.spec_from_file_location("widgets", sys.argv[1])
@@ -30,8 +30,7 @@ try:
     weather = json.loads((w.CACHE / "widgets-weather.json").read_text())
 except (OSError, ValueError):
     weather = None
-ai = w.AiUsage().summary()
-ai["deepseek"] = w.deepseek() if w.read_keys().get("deepseek") else {"configured": True, "balance": 18.3, "currency": "CNY", "spent": 0.42}
+ai = dict(w.AiUsage().summary(), antigravity=w.antigravity_quota())
 symbols = w.read_config().get("stocks") or w.DEFAULT_STOCKS
 info = {"ai": ai, "weather": weather, "stocks": w.stocks(symbols[:6]), "errors": {}}
 print(".pragma library\nvar info = " + json.dumps(info, ensure_ascii=False) + ";")

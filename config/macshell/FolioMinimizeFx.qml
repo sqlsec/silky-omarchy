@@ -15,7 +15,7 @@ Scope {
     property bool covered: false
     property bool parkRequested: false
     property bool started: false
-    readonly property int duration: 480
+    readonly property int duration: 300
 
     function capture(tl, screenName, winRect, callback) {
         if (capJob) {

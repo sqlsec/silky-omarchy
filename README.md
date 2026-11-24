@@ -38,15 +38,17 @@
 | Hyprland | 0.57.2 | 插件必须针对正在运行的版本编译，更新后重跑 `install-silky-gestures.sh` |
 | MacShell | 0.5.2 | 02 支持全新及已应用 Silky 的 **0.5.2**（见 [02 · 版本](docs/02-macshell.md#版本)） |
 | Quickshell / Qt | 0.3.2 / 6.12 | |
-| libinput | 1.32.0 | 03 的捏合补丁针对 1.32.0 |
+| libinput | 1.32.0 | aarch64 四、五指捏合可用 `./scripts/build-silky-libinput.sh` 构建补丁包，见 [03](docs/03-silky-gestures.md#触控板四指--五指捏合识别) |
 
 按需运行：
 
 ```bash
 ./scripts/install-macshell-optimizations.sh
+./scripts/install-macshell-wifi.sh --check && ./scripts/install-macshell-wifi.sh   # Wi-Fi 扫描修复与更新钩子（本机验证版本 MacShell 0.5.3）
 ./scripts/install-silky-gestures.sh
 python3 scripts/install-macshell-overview.py
 python3 scripts/install-macshell-widgets.py  # 可选：通知中心小组件（需要顶栏系统监控）
+python3 scripts/macshell_notification_center.py --install  # 可选：微信通知跳转、展开时停用横幅并在更新后保留
 ./scripts/install-macos-theme.sh && omarchy theme set macos-tahoe-dark
 # 可选：Folio 的 Finder 图标和红黄绿窗口按钮
 ./scripts/install-folio-macos.sh
@@ -57,6 +59,7 @@ python3 scripts/install-macshell-widgets.py  # 可选：通知中心小组件（
 ./scripts/install-zsh.sh
 ./scripts/install-maclock.sh
 ./scripts/install-boot-screen.sh
+python3 scripts/install-login-transition.py  # 可选：MacShell 登录后的壁纸过渡，系统登录侧见 07
 ./scripts/install-nautilus-actions.sh
 # 可选：将 Nautilus 文件管理器切换为简体中文
 ./scripts/install-nautilus-zh-cn.py
@@ -68,6 +71,7 @@ python3 scripts/install-macshell-widgets.py  # 可选：通知中心小组件（
 ./scripts/install-omalogi.sh
 ./scripts/install-obsidian-theme.sh
 ./scripts/install-desktop-priority.sh   # 需要 sudo
+./scripts/install-sleep-usb-wakeup.sh   # 需要 sudo，高通 Snapdragon X 合盖防 USB 误唤醒
 ```
 
 每个脚本都会先备份要修改的文件。装完或升级后可以跑一遍自检，逐项确认菜单栏、Dock、插件、锁屏、语音浮条等都处于预期状态，有问题会给出修复命令：
@@ -128,3 +132,4 @@ docs/             逐项说明（英文版在 docs/en/）
 - [14 · Omalogi：G604 按键、板载配置与系统快捷键](docs/14-omalogi.md)
 - [15 · Obsidian：macOS 27 风格主题、文件图标与丝滑打字](docs/15-obsidian.md)
 - [16 · 桌面优先调度：Hyprland 与 MacShell 先拿到 CPU / GPU](docs/16-desktop-priority.md)
+- [17 · 合盖睡眠防 USB 控制器误唤醒（Qualcomm `dwc3-qcom`）](docs/17-sleep-usb-wakeup.md)

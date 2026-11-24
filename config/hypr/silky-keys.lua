@@ -2,7 +2,9 @@
 -- (keys-panel/ in this repo, installed to ~/.config/quickshell/SilkyKeys). Needs hypr/silky-keys-registry.lua,
 -- required at the top of hyprland.lua, for the list of binds.
 hl.on("hyprland.start", function()
-  hl.exec_cmd("qs -c SilkyKeys")
+  -- Stagger non-critical Quickshell startup so MacLock and MacShell get first-second CPU/IO.
+  -- Super+K already spawns SilkyKeys on demand if pressed earlier.
+  hl.exec_cmd("sleep 3 && exec qs -c SilkyKeys")
 end)
 
 -- Starts the panel first if it is not running (first press after an update, or after a crash).

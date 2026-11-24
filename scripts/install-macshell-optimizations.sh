@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 shell_dir=${MACSHELL_DIR:-"$HOME/.config/quickshell/MacShell"}
 quickshell_dir=$(dirname -- "$shell_dir")
+installer_qml="${XDG_DATA_HOME:-$HOME/.local/share}/macshell/MacInstaller/shell.qml"
 patch_file="$repo_root/patches/macshell-0.5.1-silky.patch"
 minimize_upgrade="$repo_root/patches/macshell-0.5.1-minimize-upgrade.patch"
 bar_settings="$HOME/.config/macbar/settings.json"
@@ -91,7 +92,7 @@ calendar_paths=()
 for file in "${calendar_files[@]}"; do
   calendar_paths+=("MacShell/$file")
 done
-managed_files=("${calendar_paths[@]}" MacShell/FolioMinimizeFx.qml MacShell/FolioSnapPreview.qml MacShell/FootWindowLayout.qml MacShell/folio-genie.vert.qsb MacShell/DockGlassPanel.qml MacShell/assets/macshell-logo.png "${managed_files[@]}")
+managed_files=("${calendar_paths[@]}" MacShell/FolioMinimizeFx.qml MacShell/FolioSnapPreview.qml MacShell/FootWindowLayout.qml MacShell/folio-genie.vert.qsb MacShell/DockGlassPanel.qml MacShell/SilkyAccountAvatar.qml MacShell/SilkyBarContrast.qml MacShell/assets/silky-bar-tone.py MacShell/assets/macshell-logo.png "${managed_files[@]}")
 for display_asset in "$repo_root/config/macshell/displays/"{*.js,*.qml}; do
   managed_files+=("MacShell/${display_asset##*/}")
 done
@@ -127,11 +128,18 @@ python3 "$repo_root/scripts/tune-dock-menu-glass.py" "$staged_shell"
 python3 "$repo_root/scripts/tune-dock-follow-appearance.py" "$staged_shell"
 # Normal Blur (Hyprland blur) tints close to Liquid Glass; quieter About button.
 python3 "$repo_root/scripts/tune-native-blur.py" "$staged_shell"
+if [[ -f "$installer_qml" ]]; then
+  managed_files+=(MacInstaller/shell.qml)
+  mkdir -p "$staging/MacInstaller"
+  cp -pL -- "$installer_qml" "$staging/MacInstaller/shell.qml"
+fi
+python3 "$repo_root/scripts/tune-macshell-window-edges.py" "$staged_shell"
 # About: Edge / Dev builds read "Edge · <commit> (<MM-DD> build)" instead of git describe's old 4.0.0 tag.
 python3 "$repo_root/scripts/tune-about-version.py" "$staged_shell"
 
 # Keep the Applications panel interaction tuning current on existing installations too.
 python3 "$repo_root/scripts/tune-apps-panel.py" "$staged_shell/MacBar.qml"
+python3 "$repo_root/scripts/tune-apps-dock-passthrough.py" "$staged_shell/MacDock.qml"
 python3 "$repo_root/scripts/tune-control-center-glass.py" "$staged_shell/MacBar.qml"
 for file in "${calendar_files[@]}"; do
   install -m 644 "$repo_root/config/macshell/calendar/$file" "$staged_shell/$file"
@@ -150,10 +158,18 @@ python3 "$repo_root/scripts/configure-macshell-reload.py" "$staged_shell/shell.q
 python3 "$repo_root/scripts/tune-settings-scroll.py" "$staged_shell/MacDock.qml"
 
 python3 "$repo_root/scripts/tune-macshell-performance.py" "$staged_shell"
+python3 "$repo_root/scripts/tune-macshell-system-menu.py" "$staged_shell/MacBar.qml"
+python3 "$repo_root/scripts/tune-workspace-indicators.py" "$staged_shell/MacBar.qml"
+python3 "$repo_root/scripts/tune-macshell-bar-contrast.py" "$staged_shell" --stage
+python3 "$repo_root/scripts/tune-dock-trash.py" "$staged_shell/MacDock.qml"
+python3 "$repo_root/scripts/tune-macshell-avatar.py" "$staged_shell/MacDock.qml" "$staging/MacLock/shell.qml"
 
 # Remove legacy minimize entry points, then attach Silky's unified snapshot Genie minimize effect.
 python3 "$repo_root/scripts/disable-minimize.py" "$staged_shell"
 python3 "$repo_root/scripts/tune-folio-macshell.py" "$staged_shell"
+python3 "$repo_root/scripts/tune-wps-dock.py" "$staged_shell/MacDock.qml"
+python3 "$repo_root/scripts/tune-macshell-settings.py" "$staged_shell/MacDock.qml"
+python3 "$repo_root/scripts/tune-wallpaper-picker.py" "$staged_shell/MacDock.qml"
 
 # Also update existing Silky installations: keep application-provided window controls visible.
 sed -i 's/readonly property bool enabled: true/readonly property bool enabled: false/' "$staged_shell/WindowBar.qml"
@@ -176,6 +192,7 @@ for relative_path in "${managed_files[@]}"; do
   case "$relative_path" in
     MacShell/*) destination="$shell_dir/${relative_path#MacShell/}" ;;
     MacLock/*) destination="$quickshell_dir/$relative_path" ;;
+    MacInstaller/shell.qml) destination="$installer_qml" ;;
   esac
   source_path="$staging/$relative_path"
   [[ -f "$source_path" ]] || continue
@@ -286,6 +303,9 @@ start_script="$HOME/.local/bin/macshell-start"
 if [[ -f $start_script ]] && ! grep -q 'qs -n -c "$NAME"' "$start_script"; then
   cp -a "$start_script" "$backup_dir/settings/macshell-start"
   sed -i 's/    qs -c "$NAME" >>"$LOG" 2>&1 &/    qs -n -c "$NAME" >>"$LOG" 2>\&1 \&   # -n: never a second copy next to a running one/' "$start_script"
+fi
+if [[ -f $start_script ]]; then
+  python3 "$repo_root/scripts/install-macshell-watchdog.py" "$backup_dir/settings"
 fi
 
 python3 "$repo_root/scripts/migrate-macshell-files.py"

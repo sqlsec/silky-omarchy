@@ -38,15 +38,17 @@ Requirements: Omarchy 4.x (Hyprland 0.57, Lua config) and MacShell.
 | Hyprland | 0.57.2 | The plugin must be built for the running version; re-run `install-silky-gestures.sh` after updates |
 | MacShell | 0.5.2 | Module 02 supports fresh and already patched **0.5.2** installations (see [02 · Versions](docs/en/02-macshell.md#versions)) |
 | Quickshell / Qt | 0.3.2 / 6.12 | |
-| libinput | 1.32.0 | The 03 pinch patch targets 1.32.0 |
+| libinput | 1.32.0 | Build the optional aarch64 pinch package with `./scripts/build-silky-libinput.sh`. See [03](docs/en/03-silky-gestures.md#four---five-finger-pinch-recognition-on-the-touchpad) |
 
 Run what you need:
 
 ```bash
 ./scripts/install-macshell-optimizations.sh
+./scripts/install-macshell-wifi.sh --check && ./scripts/install-macshell-wifi.sh   # Wi-Fi scan fix and post-update hook (tested with MacShell 0.5.3)
 ./scripts/install-silky-gestures.sh
 python3 scripts/install-macshell-overview.py
 python3 scripts/install-macshell-widgets.py  # optional: Notification Center widgets (needs the menu bar system monitors)
+python3 scripts/macshell_notification_center.py --install  # optional: WeChat activation and banner fixes that persist across updates
 ./scripts/install-macos-theme.sh && omarchy theme set macos-tahoe-dark
 # Optional: Finder icon and traffic-light window buttons for Folio
 ./scripts/install-folio-macos.sh
@@ -57,6 +59,7 @@ python3 scripts/install-macshell-widgets.py  # optional: Notification Center wid
 ./scripts/install-zsh.sh
 ./scripts/install-maclock.sh
 ./scripts/install-boot-screen.sh
+python3 scripts/install-login-transition.py  # Optional: MacShell login wallpaper transition, see 07 for the greeter step
 ./scripts/install-nautilus-actions.sh
 # Optional: switch the Nautilus file manager to Simplified Chinese
 ./scripts/install-nautilus-zh-cn.py
@@ -68,6 +71,7 @@ python3 scripts/install-macshell-widgets.py  # optional: Notification Center wid
 ./scripts/install-omalogi.sh
 ./scripts/install-obsidian-theme.sh
 ./scripts/install-desktop-priority.sh   # needs sudo
+./scripts/install-sleep-usb-wakeup.sh   # needs sudo; prevent Qualcomm dwc3-qcom USB wakeups during closed-lid sleep
 ```
 
 Every script backs up the files it changes first. After installing or upgrading, run the self-check: it confirms item by item that the menu bar, Dock, plugins, lock screen, voice overlay and so on are in the expected state, and prints the fix for anything that is not:
@@ -128,3 +132,4 @@ docs/             One document per module (English in docs/en/)
 - [14 · Omalogi: G604 buttons, onboard profiles, and system shortcuts](docs/en/14-omalogi.md)
 - [15 · Obsidian: macOS 27 theme, file icons and smooth typing](docs/en/15-obsidian.md)
 - [16 · Desktop priority: Hyprland and MacShell get the CPU / GPU first](docs/en/16-desktop-priority.md)
+- [17 · Prevent USB controller wakeups during closed-lid sleep (Qualcomm `dwc3-qcom`)](docs/en/17-sleep-usb-wakeup.md)

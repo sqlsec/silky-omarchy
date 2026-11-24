@@ -50,6 +50,7 @@ sudo systemctl restart silky-desktop-priority.service
 
 ## 实现与兼容性
 
+- 优先使用原生 C++ 实现（[`plugins/silky-desktop-priority/main.cpp`](../plugins/silky-desktop-priority/main.cpp)），由 [`scripts/install-desktop-priority.sh`](../scripts/install-desktop-priority.sh) 编译安装到 `/usr/local/bin/silky-desktop-priority`；系统缺少 `g++` 时自动回退到 Python 版 [`bin/silky-desktop-priority`](../bin/silky-desktop-priority)。C++ 版先读 `/proc/<pid>/comm` 快速过滤非目标进程，单次 `--status` 耗时由约 50 ms 降至约 6.4 ms，常驻内存与 CPU 占用显著低于 Python 解释器。
 - 服务以 root 运行，只保留 `CAP_SYS_NICE` 能力（给别的进程设负 nice 和 `uclamp.min` 都需要它），并启用 `ProtectSystem=strict`、`ProtectHome`、`PrivateNetwork`，内存上限 64 MB，自身 nice 5。
 - 用 `sched_setattr(2)` 一次性写入 `SCHED_OTHER`、nice 和 `SCHED_FLAG_UTIL_CLAMP_MIN`，逐线程设置，因为 Linux 的 nice 是按线程生效的。系统调用号已包含 aarch64 和 x86_64；其他架构退回到只设 nice。
 - 只匹配 UID ≥ 1000 的进程，按 `/proc/<pid>/comm` 精确匹配，所以 MacShell 启动的 `python3`、`inotifywait` 等子进程不会被提权。PID 和线程按启动时间缓存，每轮只读新出现的进程。

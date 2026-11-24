@@ -1,0 +1,59 @@
+#!/usr/bin/python
+"""Set up WPS Office's input method and window appearance."""
+import os
+from pathlib import Path
+import sys
+
+command = sys.argv[1:]
+if not command:
+    sys.exit("Usage: wps-dark-border COMMAND [ARG...]")
+
+# WPS ships its own Qt and Fcitx plugin and runs through XWayland.
+os.environ.update(QT_QPA_PLATFORM="xcb", QT_IM_MODULE="fcitx", XMODIFIERS="@im=fcitx")
+
+bwrap = "/usr/bin/bwrap"
+skin = Path("/usr/lib/office6/skins/2018white_dark/wpsoffice.kuip")
+style = b'<style class="KPromeMainWindow">'
+border = b'<color name="border-linux" value="#121212"/>'
+noborder_lib = Path.home() / ".local/lib/silky-omarchy/libsilkywpsnoborder.so"
+
+bind_args: list[str] = []
+memfds = []
+
+
+def add_memfd_bind(name: str, data: bytes, target: Path) -> None:
+    fd = os.memfd_create(name)
+    f = os.fdopen(fd, "w+b")
+    f.write(data)
+    f.seek(0)
+    os.set_inheritable(fd, True)
+    memfds.append(f)
+    bind_args.extend(["--ro-bind-data", str(fd), str(target)])
+
+
+if os.access(bwrap, os.X_OK):
+    if skin.is_file():
+        original = skin.read_bytes()
+        if original.count(style) == 1:
+            main_window_style = original.split(style, 1)[1].split(b"</style>", 1)[0]
+            if b'name="border-linux"' not in main_window_style:
+                add_memfd_bind("wps-dark-theme", original.replace(style, style + border, 1), skin)
+
+    launcher = Path(command[0])
+    patched_launcher = False
+    if noborder_lib.is_file() and launcher.is_file():
+        try:
+            script = launcher.read_bytes()
+        except OSError:
+            script = b""
+        needle = b"export LD_PRELOAD=/usr/lib/libfreetype.so"
+        if needle in script:
+            replacement = f'export LD_PRELOAD="/usr/lib/libfreetype.so:{noborder_lib}"'.encode()
+            add_memfd_bind("wps-launcher", script.replace(needle, replacement, 1), launcher)
+            patched_launcher = True
+
+    if bind_args:
+        exec_cmd = ["/bin/bash", *command] if patched_launcher else command
+        os.execv(bwrap, [bwrap, "--bind", "/", "/", "--dev-bind", "/dev", "/dev", *bind_args, "--", *exec_cmd])
+
+os.execv(command[0], command)

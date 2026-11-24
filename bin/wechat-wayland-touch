@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+
+# Use Beijing time for WeChat and its child processes only.
+export TZ=Asia/Shanghai
+
+# Use WeChat's bundled Fcitx module in both Wayland and XWayland.
+export QT_IM_MODULE=fcitx
+export XMODIFIERS=@im=fcitx
+
+touch_scroll="${XDG_DATA_HOME:-$HOME/.local/share}/wechat-wayland/touch-scroll.so"
+if [ "${WECHAT_WAYLAND:-1}" != 0 ] && [ -n "${WAYLAND_DISPLAY:-}" ] && [ -r "$touch_scroll" ]; then
+    export QT_QPA_PLATFORM=wayland
+    export LD_AUDIT="$touch_scroll${LD_AUDIT:+:$LD_AUDIT}"
+    exec /usr/bin/wechat "$@"
+fi
+
+export QT_QPA_PLATFORM=xcb
+exec /usr/bin/wechat "$@"

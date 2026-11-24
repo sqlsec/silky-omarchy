@@ -95,15 +95,18 @@ magick -size "$((PW * 4))x$((PH * 4))" xc:none \
 magick -background none -fill 'rgba(255,255,255,0.62)' -font "$font_cjk" -pointsize "$(px 14)" label:'输入密码' "$out/hint.png"
 B=$(px 7); magick -size "$((B * 4))x$((B * 4))" xc:none -fill white -draw "circle $((B*2)),$((B*2)) $((B*2)),0" -resize "${B}x${B}" "$out/bullet.png"
 
-# After the password: the logo and a thin rounded progress bar.
+# Boot splash: the logo and a macOS-style thin rounded progress bar (4x supersampled for crisp pill ends).
 if [[ -f /usr/share/plymouth/themes/omarchy/logo.png ]]; then
   magick /usr/share/plymouth/themes/omarchy/logo.png -fill white -colorize 100 -resize "$(px 150)x" "$out/logo.png"
 else
   magick -size 2x2 xc:none "$out/logo.png"
 fi
-TW=$(px 160); TH=$(px 4); [[ $TH -ge 2 ]] || TH=2
-magick -size "${TW}x${TH}" xc:none -fill 'rgba(255,255,255,0.22)' -draw "roundrectangle 0,0 $((TW-1)),$((TH-1)) $((TH/2)),$((TH/2))" "$out/track.png"
-magick -size "${TW}x${TH}" xc:none -fill white -draw "roundrectangle 0,0 $((TW-1)),$((TH-1)) $((TH/2)),$((TH/2))" "$out/fill.png"
+TW=$(px 210); TH=$(px 5); [[ $TH -ge 4 ]] || TH=4
+TW4=$((TW * 4)); TH4=$((TH * 4)); TR4=$((TH4 / 2))
+magick -size "${TW4}x${TH4}" xc:none -fill 'rgba(255,255,255,0.26)' \
+  -draw "roundrectangle 0,0 $((TW4-1)),$((TH4-1)) $TR4,$TR4" -resize "${TW}x${TH}" "$out/track.png"
+magick -size "${TW4}x${TH4}" xc:none -fill 'rgba(255,255,255,0.96)' \
+  -draw "roundrectangle 0,0 $((TW4-1)),$((TH4-1)) $TR4,$TR4" -resize "${TW}x${TH}" "$out/fill.png"
 
 sed "s/@BUILD_HEIGHT@/$H/" "$repo_root/plymouth/$theme.script" > "$out/$theme.script"
 printf '%s\n' \
@@ -117,8 +120,9 @@ printf '%s\n' \
   "ScriptFile=$dest/$theme.script" \
   'ConsoleLogBackgroundColor=0x0a0a0d' > "$out/$theme.plymouth"
 
-# Preview: the unlock screen composed at full size, same geometry as the script.
+# Previews: unlock screen and boot progress screen (at 90 %) composed at full size.
 NH=$(magick identify -format %h "$out/name.png"); HH=$(magick identify -format %h "$out/hint.png")
+LH=$(magick identify -format %h "$out/logo.png")
 entry_y=$((H - $(px 78) - PH)); name_y=$((entry_y - $(px 10) - NH)); avatar_y=$((name_y - $(px 10) - A))
 magick "$out/background.png" \
   "$out/avatar.png" -gravity north -geometry "+0+$avatar_y" -composite \
@@ -126,7 +130,15 @@ magick "$out/background.png" \
   "$out/entry.png" -gravity north -geometry "+0+$entry_y" -composite \
   "$out/hint.png" -gravity northwest -geometry "+$(( W / 2 - PW / 2 + $(px 16) ))+$(( entry_y + PH / 2 - HH / 2 ))" -composite \
   "$repo_root/plymouth/preview.png"
-printf 'Preview: %s\n' "$repo_root/plymouth/preview.png"
+bar_y=$(( H - $(px 108) - TH ))
+bar_x=$(( W / 2 - TW / 2 ))
+fill90=$(( TW * 90 / 100 ))
+magick "$out/fill.png" -resize "${fill90}x${TH}!" "$work/fill90.png"
+magick "$out/background.png" \
+  "$out/track.png" -gravity northwest -geometry "+${bar_x}+${bar_y}" -composite \
+  "$work/fill90.png" -gravity northwest -geometry "+${bar_x}+${bar_y}" -composite \
+  "$repo_root/plymouth/preview-boot.png"
+printf 'Preview: %s\nBoot preview: %s\n' "$repo_root/plymouth/preview.png" "$repo_root/plymouth/preview-boot.png"
 
 [[ ${1:-} == --preview ]] && exit 0
 

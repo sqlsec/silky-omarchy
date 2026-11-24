@@ -25,10 +25,15 @@ Item {
         if (d.isLaptopBattery) return F.tr("This laptop");
         return d.model || UPowerDeviceType.toString(d.type);
     }
+    // 4-tier battery scale: charging / abundant (> 65%) green, normal (36-65%) cyan,
+    // low (20-35%) amber, critical (< 20%) red.
     function ink(d) {
-        if (charging(d)) return w.host.dark ? "#4cd97b" : "#1b8a3e";
-        if (pct(d) < 20) return w.host.dark ? "#ff6b61" : "#c4302b";
-        return w.host.accent;
+        if (charging(d)) return w.host.dark ? "#30d158" : "#1c8241";
+        var p = pct(d);
+        if (p < 20) return w.host.dark ? "#ff453a" : "#c92a22";
+        if (p <= 35) return w.host.dark ? "#ff9f0a" : "#b85d00";
+        if (p <= 65) return w.host.dark ? "#64d2ff" : "#0071a4";
+        return w.host.dark ? "#30d158" : "#1c8241";
     }
 
     SilkyWLabel {

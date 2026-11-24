@@ -21,6 +21,14 @@ if [[ -f $shell_dir/MacDock.qml && -f $shell_dir/shell.qml ]]; then
   fi
 fi
 
+if [[ -f $shell_dir/MacBar.qml && -f $shell_dir/shell.qml ]]; then
+  if ! python3 "$repo_root/scripts/install-workspace-layout-ui.py" "$shell_dir" --check >/dev/null 2>&1; then
+    if python3 "$repo_root/scripts/install-workspace-layout-ui.py" "$shell_dir" --no-reload >/dev/null 2>&1; then
+      need_macshell_reload=true
+    fi
+  fi
+fi
+
 if [[ -f $hypr_dir/silky-macos.lua ]] && ! grep -Fq 'minimizeFoot' "$hypr_dir/silky-macos.lua" 2>/dev/null; then
   cp -p -- "$hypr_dir/silky-macos.lua" "$hypr_dir/silky-macos.lua.bak.post-update"
   install -m 644 "$repo_root/config/hypr/silky-macos.lua" "$hypr_dir/silky-macos.lua"

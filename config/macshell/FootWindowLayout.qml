@@ -17,7 +17,7 @@ Scope {
     readonly property bool fullscreen: (target?.lastIpcObject?.fullscreen ?? 0) >= 2
     readonly property var active: Hyprland.activeToplevel
     readonly property var activeInfo: active?.lastIpcObject
-    readonly property var fullscreenApps: ["foot", "omacalc", "omacut", "omaview", "omawrite", "io.github.elberacasa.omalogi"]
+    readonly property var fullscreenApps: ["foot", "omacalc", "omacut", "omaview", "omawrite", "io.github.elberacasa.omalogi", "md.obsidian.Obsidian"]
     required property bool light
     required property string language
     readonly property bool chinese: (language === "auto" ? Qt.locale().name : language).startsWith("zh")

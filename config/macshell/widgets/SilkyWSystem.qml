@@ -14,10 +14,15 @@ Item {
         { label: F.tr("Memory"), value: d.memory, detail: F.bytes(d.memUsed) + " / " + F.bytes(d.memTotal) },
         { label: F.tr("Disk"), value: d.disk, detail: F.bytes(d.diskUsed) + " / " + F.bytes(d.diskTotal) }
     ] : []
+    // 4-tier load scale aligned with the top-bar status panel:
+    // low (< 35%) green, normal (35-64%) cyan, high (65-84%) amber, critical (>= 85%) red.
     function ink(v) {
-        if (v >= 90) return w.host.dark ? "#ff6b61" : "#c4302b";
-        if (v >= 75) return w.host.dark ? "#ffb35c" : "#b45a0f";
-        return w.host.accent;
+        if (typeof v !== "number" || !isFinite(v))
+            return w.host.dark ? "#e6e8ef" : "#3b4252";
+        if (v >= 85) return w.host.dark ? "#ff453a" : "#c92a22";
+        if (v >= 65) return w.host.dark ? "#ff9f0a" : "#b85d00";
+        if (v >= 35) return w.host.dark ? "#64d2ff" : "#0071a4";
+        return w.host.dark ? "#30d158" : "#1c8241";
     }
     function pct(v) { return typeof v === "number" && isFinite(v) ? Math.round(v) + "%" : "—"; }
 
@@ -88,7 +93,7 @@ Item {
         SilkyWSpark {
             y: 32; width: parent.width; height: 92
             values: w.history.length > 1 ? w.history : []
-            ink: w.host.accent
+            ink: w.ink(w.d ? w.d.cpu : null)
             guide: w.host.fg3
         }
         Row {

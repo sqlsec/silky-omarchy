@@ -11,7 +11,7 @@
 - 发行版：Omarchy 4.x，本机 4.5.0（Arch Linux + Hyprland 0.57.2，**Lua 配置**：`~/.config/hypr/*.lua`，`hl.config` / `hl.bind` / `hl.window_rule` / `hl.layer_rule`）
 - 测试机器：Lenovo Yoga Slim 7 14Q8X9，Snapdragon X Elite，Adreno X1-85，aarch64，2944×1840@90Hz，缩放 2
 - 桌面外壳：MacShell 0.5.2（Quickshell 0.3.2 / Qt 6.12 / QML），锁屏 MacLock；02 支持全新及已应用 Silky 的 0.5.2（见 [02 · 版本](02-macshell.md#版本)）
-- libinput 1.32.0（03 的补丁版本 1.32.0-1.2），内核 7.3
+- libinput 1.32.0（03 的补丁版本 1.32.0-1.4），内核 7.3
 - 输入法：fcitx5 + WowType（拼音 + 离线语音）
 - 规则：永远不改 `/usr/share/omarchy/`，只改 `~/.config`、`~/.local`；改 Hyprland 配置后执行 `hyprctl configerrors`
 
@@ -23,7 +23,9 @@
 
 ```bash
 ./scripts/install-macshell-optimizations.sh   # 02：MacShell 补丁（建议使用 MacShell 0.5.2）
+./scripts/install-macshell-wifi.sh --check && ./scripts/install-macshell-wifi.sh   # Wi-Fi 扫描修复与更新钩子（本机验证版本 MacShell 0.5.3）
 ./scripts/install-silky-gestures.sh           # 03：工作区手势插件
+./scripts/build-silky-libinput.sh             # 03：可选，在 aarch64 构建 libinput 捏合补丁包
 python3 scripts/install-macshell-overview.py  # 13：四指上滑 / 下滑窗口总览（需要 02、03）
 ./scripts/install-macos-theme.sh              # 04：macOS Tahoe 主题
 ./scripts/install-folio-macos.sh              # 04：可选的 Folio Finder 外观（需要 Folio 0.6.1）
@@ -34,6 +36,7 @@ omarchy theme set macos-tahoe-dark
 ./scripts/install-zsh.sh                      # 06：终端
 ./scripts/install-maclock.sh                  # 07：所有锁屏改用 MacLock
 ./scripts/install-boot-screen.sh              # 07：macOS 风格开机解锁界面
+python3 scripts/install-login-transition.py   # 07：使用 MacShell 登录界面时启用桌面侧壁纸过渡
 ./scripts/install-nautilus-actions.sh         # 08：Nautilus 右键菜单
 ./scripts/install-nautilus-zh-cn.py            # 08：可选的 Nautilus 简体中文界面
 ./scripts/install-nautilus-wallpaper.py        # 08：可选的 Nautilus 右键设置桌面背景
@@ -63,6 +66,7 @@ omarchy theme set macos-tahoe-dark
 
 - MacShell 0.5.3 的[按应用切换顶栏菜单](02-macshell.md#按应用切换顶栏菜单)可单独安装。运行 `python3 scripts/install-macshell-app-menus.py` 后重载 MacShell。
 - [通知中心小组件](02-macshell.md#通知中心小组件)（天气、股市、屏幕使用时间、电池、日历、系统、AI 用量，小 / 中 / 大）可单独安装：先装顶栏系统监控，再运行 `python3 scripts/install-macshell-widgets.py` 并重载 MacShell。文件在 `config/macshell/widgets/`，数据进程 `widgets.py` 安装为 `assets/silky-widgets.py`，布局存 `~/.config/silky/widgets.json`，屏幕时间存 `~/.local/state/silky/screen-time/`。股票条目由 `widgets.py` 的 `resolve()` 解析：A 股 / 港股 / 美股走腾讯行情，其他市场走 Yahoo Finance。
+- [微信通知跳转与横幅](02-macshell.md#微信通知跳转与横幅)用 `python3 scripts/macshell_notification_center.py --install` 安装，并由 systemd 用户服务在更新后自动恢复。
 - **效果**：简体中文；紧凑版“关于本机”（正确识别 Snapdragon / Adreno）；触控屏拖窗口；实时玻璃走 Vulkan；消除鼠标周期性卡顿；锁屏显示壁纸；电池图标去 `%`；不显示桌面图标；截图只用一个工具
 - **文件**：`patches/macshell-0.5.1-silky.patch`、`patches/macshell-0.5.2-silky.patch`（对 `~/.config/quickshell/{MacShell,MacLock}` 的统一 diff）、`scripts/install-macshell-optimizations.sh`
 - **关键词**：
@@ -116,6 +120,7 @@ omarchy theme set macos-tahoe-dark
 
 ## 07 锁屏与开机界面
 
+- MacShell 登录界面与桌面交接时先沿用同一张壁纸。系统登录侧安装和回滚见 [07 · 登录壁纸过渡](07-lock-and-boot.md#登录壁纸过渡)。
 - **效果**：所有锁屏都用 MacLock；开机磁盘解锁界面与 MacLock 布局一致（清晰壁纸、底部圆形头像、用户名、毛玻璃密码框，单位 u = 屏高/1200）
 - **文件**：`bin/silky-lock`、`bin/silky-sleep-lock`、`config/systemd/silky-sleep-lock.service`、`config/omarchy/plugins/silky.idle/`、`config/hypr/bindings-lock.lua`、`config/omarchy/omarchy-menu-lock.jsonc`、`plymouth/silky-maclock.script`、`scripts/install-maclock.sh`、`scripts/install-boot-screen.sh`
 - **关键词**：
@@ -190,6 +195,14 @@ omarchy theme set macos-tahoe-dark
 - **关键词**：`sched_setattr`（aarch64 274 / x86_64 314）、`SCHED_FLAG_UTIL_CLAMP_MIN`、`CAP_SYS_NICE`、`/sys/class/devfreq/*gpu*/min_freq`、`power_supply/*/online`
 - **坑**：nice 按线程生效，要遍历 `/proc/<pid>/task`；跳过非 `SCHED_OTHER` 和 nice 不为 0 的线程（Mesa `disk$` 缓存线程是 `SCHED_BATCH`）；读 `/proc/…/stat` 要从最后一个 `)` 之后切字段，`[pango] fontcon` 这类线程名带空格，用 awk 数列会错位；Hyprland 在 greetd 的 `session-N.scope` 里，和直接从会话拉起的 Chromium 同一个 cgroup，所以不能用 scope 的 `CPUWeight`；aquamarine 已拿到高优先级 EGL 上下文；不要用实时调度
 - **验证**：`/usr/local/bin/silky-desktop-priority --config /etc/silky/desktop-priority.conf --status`、`ps -L -o tid,ni,cls,comm -p "$(pgrep -x Hyprland)"`；无 root 预览用 `--dry-run`
+
+## 17 合盖睡眠防 USB 控制器误唤醒
+
+- **效果**：合盖挂起期间临时关闭高通 `dwc3-qcom` 控制器的 `power/wakeup`，唤醒后按原状态恢复；避免插着 YubiKey 等全速 USB 设备时被固件 5 分钟 CX collapse 退出触发 `dp_hs_phy_irq` 循环唤醒，同时保留开盖唤醒、电源键唤醒、合盖 Type-C PD 充电与开盖 USB 唤醒
+- **文件**：`config/systemd/system-sleep/silky-dwc3-lid-wake`（→ `/usr/lib/systemd/system-sleep/`）、`scripts/install-sleep-usb-wakeup.sh`（`--status` / `--uninstall`）、`docs/17-sleep-usb-wakeup.md`
+- **关键词**：`dwc3-qcom`、`device_may_wakeup`、`dp_hs_phy_irq`、`org.freedesktop.login1.Manager.LidClosed`、`/run/silky-dwc3-lid-wake.state`
+- **坑**：`systemd-sleep` 会并行执行 `/usr/lib/systemd/system-sleep/` 下所有可执行文件，备份文件必须放在 `/var/backups/silky-omarchy/` 而不是同目录；只记录本次从 `enabled` 改为 `disabled` 的路径，避免唤醒后误打开用户原本关闭的端口
+- **验证**：`./scripts/install-sleep-usb-wakeup.sh --status`；安装后插着 YubiKey 电池合盖 15 分钟，检查 `journalctl -b -u systemd-suspend.service` 仅 1 次进入/返回且 `/sys/power/pm_wakeup_irq` 不为 `dp_hs_phy_irq`
 
 ## 杂项
 

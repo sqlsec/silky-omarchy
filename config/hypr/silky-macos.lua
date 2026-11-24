@@ -24,9 +24,9 @@ hl.config({
   plugin = {
     hyprbars = {
       bar_height = 30,
-      bar_color = light and "rgba(ecececcc)" or "rgba(2b2b2dcc)",
-      bar_color_inactive = light and "rgba(f6f6f6d6)" or "rgba(232325d6)",
-      bar_blur = true,
+      bar_color = light and "rgb(ececec)" or "rgb(2b2b2d)",
+      bar_color_inactive = light and "rgb(f6f6f6)" or "rgb(232325)",
+      bar_blur = false,
       col = { text = light and "rgba(000000d9)" or "rgba(ffffffd9)" },
       bar_title_enabled = true,
       bar_text_font = "Open Runde, Inter, sans-serif",
@@ -88,6 +88,27 @@ for _, app in ipairs(desktop_apps) do
   desktop_classes[#desktop_classes + 1] = app:gsub("%.", "\\.")
 end
 
-local with_bar = "^(foot|kitty|Alacritty|com\\.mitchellh\\.ghostty|org\\.wezfurlong\\.wezterm|org\\.localsend\\.localsend_app|Putty|accessclient-ssh|" .. table.concat(desktop_classes, "|") .. ")$"
+local with_bar_apps = {
+  "foot", "kitty", "Alacritty", "com.mitchellh.ghostty", "org.wezfurlong.wezterm",
+  "org.localsend.localsend_app", "Putty", "accessclient-ssh",
+}
+local with_bar_set = {}
+local with_bar_patterns = {}
+for _, app in ipairs(with_bar_apps) do
+  with_bar_set[app] = true
+  with_bar_patterns[#with_bar_patterns + 1] = app:gsub("%.", "\\.")
+end
+for _, app in ipairs(desktop_apps) do
+  with_bar_set[app] = true
+  with_bar_patterns[#with_bar_patterns + 1] = app:gsub("%.", "\\.")
+end
+
+function o.silky_titlebar_height(window)
+  if not window or not with_bar_set[window.class] then return 0 end
+  if window.workspace and window.workspace.id < 1 then return 0 end
+  return hl.get_config("plugin.hyprbars.bar_height") or 0
+end
+
+local with_bar = "^(" .. table.concat(with_bar_patterns, "|") .. ")$"
 hl.window_rule({ name = "silky-macos-no-bar", match = { class = ".*" }, ["hyprbars:no_bar"] = true })
 hl.window_rule({ name = "silky-macos-bar", match = { class = with_bar }, ["hyprbars:no_bar"] = false })

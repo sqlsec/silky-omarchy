@@ -87,8 +87,17 @@ local gestures = hl.plugin and hl.plugin.silky_gestures
 local function titlebar_app(class)
   return class == "foot" or (o.silky_desktop_app_layouts or {})[class] == true
 end
+local function client_layout_app(class)
+  return class == "md.obsidian.Obsidian"
+end
+local function layout_app(class)
+  return titlebar_app(class) or client_layout_app(class)
+end
 
 local function titlebar_height(window)
+  if client_layout_app(window.class) then
+    return 0
+  end
   if window.workspace and window.workspace.id >= 1 then
     return hl.get_config("plugin.hyprbars.bar_height") or 0
   end
@@ -97,6 +106,9 @@ end
 
 local function titlebar_slot(window, rect)
   if not rect then return end
+  if client_layout_app(window.class) then
+    return rect
+  end
   if gestures and gestures.window_layout_limits then
     local min_w, min_h, max_w, max_h = gestures.window_layout_limits(window.address)
     if min_w then
@@ -115,7 +127,7 @@ local function place_window(address, placement, monitor, app)
   local window = hl.get_window(selector)
   if not window or (window.fullscreen or 0) >= 2
       or (app == "folio" and window.class ~= app)
-      or (app == "titlebar" and not titlebar_app(window.class)) then
+      or (app == "titlebar" and not layout_app(window.class)) then
     return
   end
   monitor = monitor or window.monitor
@@ -169,7 +181,7 @@ end
 function o.silky_foot_fullscreen(address)
   local selector = "address:" .. address
   local window = hl.get_window(selector)
-  if window and titlebar_app(window.class) then
+  if window and layout_app(window.class) then
     hl.dispatch(hl.dsp.window.fullscreen({ mode = "fullscreen", action = "toggle", window = selector }))
   end
 end
@@ -179,13 +191,25 @@ local drag
 local drag_timer
 
 local function publish_preview(payload)
+  local g = hl.plugin and hl.plugin.silky_gestures
+  if g and g.snap_preview and g.snap_preview_hide then
+    if payload == "hide" then
+      g.snap_preview_hide()
+      return
+    end
+    local output, x, y, w, h = payload:match("^([^,]+),([^,]+),([^,]+),([^,]+),([^,]+)$")
+    if output then
+      g.snap_preview(output, tonumber(x), tonumber(y), tonumber(w), tonumber(h))
+      return
+    end
+  end
   hl.dispatch(hl.dsp.event("silky-folio-snap," .. payload))
 end
 
 function o.silky_foot_menu(address, output, x, y)
   local window = hl.get_window("address:" .. address)
   local monitor = hl.get_monitor(output)
-  if not window or not monitor or not titlebar_app(window.class) then return end
+  if not window or not monitor or not layout_app(window.class) then return end
   local fields = { address, output, x, y }
   if (window.fullscreen or 0) < 2 then
     for name in pairs(placements) do
@@ -261,7 +285,11 @@ drop_timer = hl.timer(function()
   drop_timer:set_enabled(false)
   local window = hl.get_active_window()
   if drag and drag.zone and window and window.address == drag.address then
-    o.silky_folio_place(drag.address, drag.zone, drag.monitor)
+    if client_layout_app(window.class) then
+      place_window(drag.address, drag.zone, drag.monitor, "titlebar")
+    else
+      o.silky_folio_place(drag.address, drag.zone, drag.monitor)
+    end
   end
   stop_drag()
 end, { timeout = 1, type = "repeat" })
@@ -282,7 +310,8 @@ end, { release = true, non_consuming = true, ignore_mods = true })
 
 function o.silky_folio_begin_drag(pid)
   local window = hl.get_active_window()
-  if down and window and window.class == "folio" and window.pid == pid and (window.fullscreen or 0) == 0 then
+  if down and window and (window.class == "folio" or client_layout_app(window.class))
+      and window.pid == pid and (window.fullscreen or 0) == 0 then
     drop_timer:set_enabled(false)
     stop_drag()
     drag = { address = window.address }

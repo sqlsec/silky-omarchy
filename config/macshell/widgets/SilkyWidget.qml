@@ -26,8 +26,7 @@ Item {
     width: size === "small" ? unit : unit * 2 + gap
     height: size === "large" ? unit * 2 + gap : unit
 
-    // The glass comes from MacBar (the notification panel's liquid-glass context, the same material as the Control
-    // Center tiles). Without it — or while that glass is off — a darker translucent tile stands in.
+    // In the notification centre MacBar supplies the complete card material.
     property Component glass: null
     Loader {
         anchors.fill: parent
@@ -36,10 +35,11 @@ Item {
         onLoaded: item.r = 22
     }
     Rectangle {
+        visible: card.glass === null
         anchors.fill: parent
         radius: 22
-        color: card.dark ? Qt.rgba(0.05, 0.04, 0.07, card.glass ? 0.26 : 0.34) : Qt.rgba(1, 1, 1, card.glass ? 0.10 : 0.34)
-        border.width: card.glass ? 0 : 1
+        color: card.dark ? Qt.rgba(0.05, 0.04, 0.07, 0.34) : Qt.rgba(1, 1, 1, 0.34)
+        border.width: 1
         border.color: card.dark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(1, 1, 1, 0.6)
     }
 

@@ -77,6 +77,7 @@ Scope {
     // the app had focus. Handing the keyboard back (and focusing a picked window) only once the thumbnails sit on the real
     // windows took the misses on the way back from ~18 % to ~4 %. See land().
     property bool kbdFree: false
+    property double kbdReleasedAt: 0
     property bool landing: false              // landed, the keyboard / focus handed back, waiting to fade (see land())
     property string pendingLua: ""            // the picked window's focus + raise, sent at landing
     property real outro: 1                    // the layer's opacity once the windows have landed
@@ -85,6 +86,15 @@ Scope {
     property double primeAt: 0
     property string picked: ""                // address of a clicked window: raised above the others while closing
     property bool fadeOut: false              // the clicked window is on another workspace: dissolve instead of flying back
+    property string dragAddr: ""              // address of a window being dragged to another workspace
+    property int dragSourceWs: -1
+    property real dragX: 0                    // pointer position in stage coordinates during a window drag
+    property real dragY: 0
+    property real dragGrabX: 0.5              // normalized grab point inside the dragged thumbnail
+    property real dragGrabY: 0.5
+    property int dragTargetWs: -1             // workspace card currently under the dragged window (-1 = none)
+    property var pendingMoves: ({})           // addr -> { ws, at }: optimistic move while Hyprland updates
+    readonly property bool draggingWindow: dragAddr !== ""
     property var slots: ({})                  // address -> layout entry (see build())
     property var workspacePictures: ({})      // workspace id -> its windows in desktop stacking order
     property var workspaceWindows: ({})       // address -> the window's grid entry on its own workspace
@@ -282,7 +292,7 @@ Scope {
         refreshWallpaper();
     }
     function selectWorkspace(id) {
-        if (mode !== "workspace" || !settledOpen || id === wsId) return;
+        if (mode !== "workspace" || !settledOpen || draggingWindow || id === wsId) return;
         // Hyprland's workspace dispatcher works while the overview holds the keyboard.
         Hyprland.dispatch(workspaceFocus(id));
     }
@@ -350,21 +360,31 @@ Scope {
         var res = (mo && mo.reserved) ? mo.reserved : [0, 0, 0, 0];
         var W = scr.width, H = scr.height, ox = scr.x, oy = scr.y;
         var ts = Hyprland.toplevels.values, mains = [], out = {}, pictures = {}, pages = {};
+        var nowMs = Date.now(), nextPending = {};
         for (var i = 0; i < ts.length; i++) {
             var o = ts[i].lastIpcObject;
             if (!o || !o.address || !o.at || !o.size || !o.workspace || o.workspace.id <= 0) continue;
             if (o.hidden || o.mapped === false || o.size[0] < 2 || o.size[1] < 2) continue;
-            var onWs = o.workspace.id === wsId;
+            var addr = String(o.address).replace(/^0x/, "");
+            var winWs = o.workspace.id;
+            var pm = pendingMoves[addr];
+            if (pm) {
+                if (winWs !== pm.ws && nowMs - pm.at < 800) {
+                    winWs = pm.ws;
+                    nextPending[addr] = pm;
+                }
+            }
+            var onWs = winWs === wsId;
             var isMain = mode === "workspace" ? onWs : String(o["class"]) === appClass;
             var workspace = ts[i].workspace;
-            var inStrip = mode === "workspace" && workspace && workspace.monitor && workspace.monitor.name === screenName;
+            var inStrip = mode === "workspace" && ((workspace && workspace.monitor && workspace.monitor.name === screenName) || winWs !== o.workspace.id);
             if (!onWs && !isMain && !inStrip) continue;
             var e = {
-                addr: String(o.address).replace(/^0x/, ""),
+                addr: addr,
                 x: o.at[0] - ox, y: o.at[1] - oy, w: o.size[0], h: o.size[1],
                 onWs: onWs, main: isMain,
                 title: String(o.title || ""), cls: String(o["class"] || ""),
-                ws: o.workspace.id,
+                ws: winWs,
                 z: (o.fullscreen ? 2000 : 0) + (o.floating ? 1000 : 0) + (500 - Math.min(500, o.focusHistoryID || 0))
             };
             e.cx = e.x + e.w / 2; e.cy = e.y + e.h / 2;
@@ -376,6 +396,7 @@ Scope {
                 pages[e.addr] = e;
             }
         }
+        pendingMoves = nextPending;
         var top = res[1] + (mode === "workspace" ? workspaceStripHeight + 16 : 44);
         var bottom = res[3] + (mode === "workspace" ? 20 : 64);
         var area = { x: res[0] + 48, y: top, w: W - res[0] - res[2] - 96, h: H - top - bottom };
@@ -420,6 +441,7 @@ Scope {
             primeCheck.start();
             refreshLater.restart();
         }
+        cancelWindowDrag();
         resetWorkspaceSlide();
         sign = mode === "workspace" ? 1 : -1;
         runner.stop();
@@ -428,6 +450,7 @@ Scope {
         base = p;
         samples = [];
         gesture = true;
+        gestureTimeout.restart();
     }
     // The fingers' progress, sampled by the time the touchpad / touch screen reported it (the plugin's `<wall ms>`; arrival
     // time for the IPC test path). socket2 delivers the updates in bursts (half of them within 1 ms of each other, then
@@ -436,6 +459,7 @@ Scope {
     // real speed, frame by frame.
     function moveGesture(travel, at) {
         if (!gesture) return;
+        gestureTimeout.restart();
         var np = clamp01(base + sign * travel / distance);
         var now = Date.now(), t = (at > 0 && Math.abs(now - at) < 500) ? at : now, s = samples;
         if (s.length === 0) s.push([t - 8, base]);            // where the fingers started, one event earlier
@@ -472,6 +496,14 @@ Scope {
         running: root.gesture
         onTriggered: root.p = root.trackAt(Date.now() - root.lagMs)
     }
+    Timer {
+        id: gestureTimeout
+        interval: 3000
+        onTriggered: {
+            root.log("gesture timed out");
+            root.endGesture(true);
+        }
+    }
     function latest() { var s = samples; return s.length ? s[s.length - 1][1] : p; }
     // the fingers' speed (progress per second) over their last 90 ms, by their own timestamps
     function releaseSpeed() {
@@ -484,6 +516,7 @@ Scope {
     }
     function endGesture(cancelled) {
         if (!gesture) return;
+        gestureTimeout.stop();
         gesture = false;
         var v = releaseSpeed();
         var to = cancelled ? (base >= 0.5 ? 1 : 0) : (latest() + v * project >= 0.5 ? 1 : 0);
@@ -548,11 +581,13 @@ Scope {
     function finish() {
         log("finish");
         outroAnim.stop(); landWait.stop(); focusLater.interval = 30;
-        landing = false; kbdFree = false; pendingLua = "";
+        landing = false; kbdFree = false; kbdReleasedAt = 0; pendingLua = "";
         mode = ""; picked = ""; fadeOut = false; primed = false; fadeFrom = 0; solid = false; outro = 1; slots = ({});
+        pendingMoves = ({});
         workspacePictures = ({});
         workspaceWindows = ({});
         workspaceIds = [];
+        cancelWindowDrag();
         resetWorkspaceSlide();
     }
     NumberAnimation {
@@ -562,10 +597,75 @@ Scope {
         duration: root.outroMs
         onFinished: if (!root.gesture && root.goal <= 0 && root.p <= 0.0005) root.finish()
     }
+    function releaseKeyboard() {
+        if (!kbdFree) {
+            kbdFree = true;
+            kbdReleasedAt = Date.now();
+        }
+    }
+    // Dismiss the overview when the user clicks the Dock or Menu Bar: release exclusive keyboard immediately
+    // and let the clicked action own focus / workspace changes instead of snapping back to entryWsId.
+    function dismiss(fade) {
+        if (mode === "") return;
+        cancelWindowDrag();
+        gestureTimeout.stop();
+        gesture = false;
+        releaseKeyboard();
+        picked = "";
+        pendingLua = "";
+        entryWsId = wsId;
+        focusLater.stop();
+        if (fade) fadeOut = true;
+        resetWorkspaceSlide();
+        animateTo(0, pickSpeed);
+    }
     function close() {
-        if (mode === "" || gesture) return;
+        if (mode === "") return;
+        if (gesture) { dismiss(true); return; }
+        cancelWindowDrag();
         resetWorkspaceSlide();
         animateTo(0, 0);
+    }
+    function beginWindowDrag(addr, sourceWs, sx, sy, gx, gy) {
+        if (!settledOpen || mode !== "workspace" || gesture || workspaceMoving) return;
+        dragAddr = addr;
+        dragSourceWs = sourceWs;
+        dragX = sx;
+        dragY = sy;
+        dragGrabX = gx;
+        dragGrabY = gy;
+        dragTargetWs = -1;
+    }
+    function updateWindowDrag(sx, sy, targetWs) {
+        if (!draggingWindow) return;
+        dragX = sx;
+        dragY = sy;
+        dragTargetWs = targetWs;
+    }
+    function cancelWindowDrag() {
+        dragAddr = "";
+        dragSourceWs = -1;
+        dragTargetWs = -1;
+    }
+    function moveWindowToWorkspace(addr, targetWs) {
+        var clean = String(addr).replace(/^0x/, "");
+        if (!clean || targetWs <= 0) return;
+        log("move window " + clean + " -> ws " + targetWs);
+        Hyprland.dispatch('hl.dsp.window.move({ workspace = "' + targetWs + '", follow = false, window = "address:0x' + clean + '" })');
+        var next = {};
+        for (var k in pendingMoves) next[k] = pendingMoves[k];
+        next[clean] = { ws: targetWs, at: Date.now() };
+        pendingMoves = next;
+        build();
+        relayout.restart();
+    }
+    function finishWindowDrag() {
+        if (!draggingWindow) return;
+        var addr = dragAddr;
+        var sourceWs = dragSourceWs;
+        var targetWs = dragTargetWs;
+        cancelWindowDrag();
+        if (targetWs > 0 && targetWs !== sourceWs) moveWindowToWorkspace(addr, targetWs);
     }
     function toggle(m) {
         if (mode !== "" && (goal > 0.5 || gesture)) { close(); return; }
@@ -709,8 +809,10 @@ Scope {
         function cancel(): void { root.endGesture(true); }
         function toggle(mode: string): void { root.toggle(mode); }
         function close(): void { root.close(); }
+        function dismiss(fade: bool): void { root.dismiss(fade); }
         // what a click on a window does, by address (hex, with or without 0x): pick 0x5d3a...
         function pick(addr: string): void { root.pick(root.slots[String(addr).replace(/^0x/, "")]); }
+        function moveWindow(addr: string, wsId: int): void { root.moveWindowToWorkspace(addr, wsId); }
         function debug(on: bool): void { root.dbg = on; }
         function workspaceSwipe(id: int, percent: int): void { root.followWorkspace(root.screenName, root.wsId, id, percent / 100); }
         function workspaceSwipeEnd(): void { root.releaseWorkspace(root.screenName); }
@@ -719,7 +821,7 @@ Scope {
         function sim(dir: string, ms: int): void { simT.dir = dir; simT.total = Math.max(50, ms); simT.t0 = Date.now(); root.startGesture(dir); simT.start(); }
         // every capture's picture size next to its window's size (debugging the landing)
         function sizes(): string { var o = []; for (var k in root.captures) { var c = root.captures[k]; o.push(k + " src=" + c.sourceSize.width + "x" + c.sourceSize.height + " item=" + Math.round(c.width) + "x" + Math.round(c.height) + " content=" + c.hasContent); } return o.join("\n"); }
-        function state(): string { return JSON.stringify({ mode: root.mode, p: root.p, primed: root.primed, fadeFrom: root.fadeFrom, workspace: root.wsId, workspacePosition: root.workspacePosition, workspaceMoving: root.workspaceMoving, windows: Object.keys(root.slots).length, wallpaper: root.activeWallpapers[root.screenName] || "" }); }
+        function state(): string { return JSON.stringify({ mode: root.mode, p: root.p, primed: root.primed, fadeFrom: root.fadeFrom, workspace: root.wsId, workspacePosition: root.workspacePosition, workspaceMoving: root.workspaceMoving, dragging: root.dragAddr, dragTargetWs: root.dragTargetWs, windows: Object.keys(root.slots).length, wallpaper: root.activeWallpapers[root.screenName] || "" }); }
     }
 
     Variants {
@@ -745,7 +847,9 @@ Scope {
             Item { id: noInput; width: 0; height: 0 }
             exclusionMode: ExclusionMode.Ignore
             WlrLayershell.namespace: "silkyoverview"
-            WlrLayershell.layer: WlrLayer.Overlay
+            // Stacked on Top before MacBar and MacDock in shell.qml: covers every normal window (including parts
+            // extending behind the Dock or Menu Bar) while letting the Dock and Menu Bar render and receive clicks on top.
+            WlrLayershell.layer: WlrLayer.Top
             WlrLayershell.keyboardFocus: mine && !root.kbdFree ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
             // this screen's active workspace: its windows keep a capture attached while closed (see `warmCap`)
@@ -789,22 +893,38 @@ Scope {
                        : root.solid ? root.outro
                        : Math.max(0, Math.min(1, (root.vp - root.fadeFrom) / root.fadeIn))
                 Keys.onPressed: event => {
-                    if (event.key === Qt.Key_Escape) { root.close(); event.accepted = true; }
-                    else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && hoverAddr !== "") { root.pick(root.slots[hoverAddr]); event.accepted = true; }
+                    if (event.key === Qt.Key_Escape) {
+                        if (root.draggingWindow) root.cancelWindowDrag();
+                        else root.close();
+                        event.accepted = true;
+                    } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && hoverAddr !== "" && !root.draggingWindow) {
+                        root.pick(root.slots[hoverAddr]);
+                        event.accepted = true;
+                    }
                 }
                 property string hoverAddr: ""
+                function hitWorkspaceCard(sx, sy) {
+                    if (!strip.visible) return -1;
+                    if (sx < strip.x || sx > strip.x + strip.width || sy < strip.y || sy > strip.y + strip.height) return -1;
+                    for (var i = 0; i < cards.children.length; i++) {
+                        var child = cards.children[i];
+                        if (!child || child.workspaceId === undefined || child.width <= 0) continue;
+                        var pt = child.mapToItem(stage, 0, 0);
+                        if (sx >= pt.x - 4 && sx <= pt.x + child.width + 4 && sy >= pt.y - 4 && sy <= pt.y + child.height + 4)
+                            return child.workspaceId;
+                    }
+                    return -1;
+                }
 
-                // Match the desktop's centered fill and leave the menu bar and Dock uncovered.
+                // Cover the full screen so windows extending behind the Dock or Menu Bar cannot bleed through;
+                // MacBar and MacDock sit above silkyoverview on WlrLayer.Top and blur this wallpaper cleanly.
                 Item {
                     id: desk
-                    x: win.res[0]; y: win.res[1]
-                    width: parent.width - win.res[0] - win.res[2]
-                    height: parent.height - win.res[1] - win.res[3]
+                    anchors.fill: parent
                     clip: true
                     Rectangle { anchors.fill: parent; color: "#1c1c1e" }
                     Image {
-                        x: -desk.x; y: -desk.y
-                        width: stage.width; height: stage.height
+                        anchors.fill: parent
                         source: win.wallpaper
                         fillMode: Image.PreserveAspectCrop
                         sourceSize: Qt.size(Math.ceil(width * win.modelData.devicePixelRatio),
@@ -844,19 +964,27 @@ Scope {
                         readonly property real t: root.vp
                         readonly property real k: !e ? 0 : (e.main ? t : 0)
                         readonly property bool interactive: !!e && e.main && !root.workspaceMoving && !root.gesture
-                        readonly property bool hovered: hov.hovered && root.settledOpen && interactive
+                        readonly property bool dragging: root.dragAddr === addr && !!e
+                        readonly property bool nearStrip: dragging && root.dragY < strip.y + strip.height + 44
+                        property real dragScale: !dragging ? 1.0 : (nearStrip ? Math.min(0.46, 150 / Math.max(1, e ? e.tw : 150)) : 0.88)
+                        Behavior on dragScale { enabled: cell.dragging; NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
+                        readonly property bool hovered: hov.hovered && root.settledOpen && interactive && !root.draggingWindow
                         // where it is drawn: a straight line from the real window to its grid place
                         readonly property real bx: !e ? 0 : (e.onWs ? e.x : e.tx + e.tw * 0.06)
                         readonly property real by: !e ? 0 : (e.onWs ? e.y : e.ty + e.th * 0.06)
                         readonly property real bw: !e ? 1 : (e.onWs ? e.w : e.tw * 0.88)
+                        readonly property real baseW: !e ? 0 : (paged ? e.tw : root.lerp(bw, e.tw, k))
                         visible: live && opacity > 0.001
-                        z: !e ? 0 : (addr === root.picked ? 5000 : (e.onWs ? e.z : -3000 + e.z))        // the desktop's own stacking
-                        opacity: !e ? 0 : (paged ? 1 : (e.main ? (e.onWs ? 1 : t) : 1 - t))
-                        x: !e ? 0 : (paged ? e.tx + pageDelta * stage.width : root.lerp(bx, e.tx, k))
-                        y: !e ? 0 : (paged ? e.ty : root.lerp(by, e.ty, k))
-                        width: !e ? 0 : (paged ? e.tw : root.lerp(bw, e.tw, k))
+                        z: !e ? 0 : (dragging ? 7000 : (addr === root.picked ? 5000 : (e.onWs ? e.z : -3000 + e.z)))        // the desktop's own stacking
+                        opacity: !e ? 0 : (dragging ? (root.dragTargetWs > 0 && root.dragTargetWs !== root.dragSourceWs ? 0.92 : 0.97) : (paged ? 1 : (e.main ? (e.onWs ? 1 : t) : 1 - t)))
+                        width: dragging ? baseW * dragScale : baseW
                         height: !e ? 0 : width * e.h / e.w
-                        onEChanged: if (!e) stage.hoverAddr = stage.hoverAddr === addr ? "" : stage.hoverAddr
+                        x: !e ? 0 : (dragging ? root.dragX - width * root.dragGrabX : (paged ? e.tx + pageDelta * stage.width : root.lerp(bx, e.tx, k)))
+                        y: !e ? 0 : (dragging ? root.dragY - height * root.dragGrabY : (paged ? e.ty : root.lerp(by, e.ty, k)))
+                        onEChanged: if (!e) {
+                            stage.hoverAddr = stage.hoverAddr === addr ? "" : stage.hoverAddr;
+                            if (root.dragAddr === addr) root.cancelWindowDrag();
+                        }
 
                         // Hyprland's own shadow (range 36, 60 % black), from the first frame on
                         RectangularShadow {
@@ -949,15 +1077,56 @@ Scope {
                         }
                         HoverHandler {
                             id: hov
-                            enabled: cell.interactive
+                            enabled: cell.interactive && !root.draggingWindow
                             onHoveredChanged: {
                                 if (hovered) stage.hoverAddr = cell.addr;
                                 else if (stage.hoverAddr === cell.addr) stage.hoverAddr = "";
                             }
                         }
-                        TapHandler {
-                            enabled: cell.interactive
-                            onTapped: root.pick(cell.e)
+                        MouseArea {
+                            id: cellDrag
+                            anchors.fill: parent
+                            enabled: cell.interactive && (!root.draggingWindow || cell.dragging)
+                            acceptedButtons: Qt.LeftButton
+                            preventStealing: moved
+                            property real pressX: 0
+                            property real pressY: 0
+                            property real grabFx: 0.5
+                            property real grabFy: 0.5
+                            property bool moved: false
+                            onPressed: mouse => {
+                                var pt = cellDrag.mapToItem(stage, mouse.x, mouse.y);
+                                pressX = pt.x; pressY = pt.y;
+                                grabFx = cell.width > 0 ? Math.max(0.1, Math.min(0.9, mouse.x / cell.width)) : 0.5;
+                                grabFy = cell.height > 0 ? Math.max(0.1, Math.min(0.9, mouse.y / cell.height)) : 0.5;
+                                moved = false;
+                            }
+                            onPositionChanged: mouse => {
+                                if (!(pressedButtons & Qt.LeftButton) || !cell.e) return;
+                                if (root.mode !== "workspace" || !root.settledOpen) return;
+                                var pt = cellDrag.mapToItem(stage, mouse.x, mouse.y);
+                                if (!moved) {
+                                    if (Math.hypot(pt.x - pressX, pt.y - pressY) < 8) return;
+                                    moved = true;
+                                    stage.hoverAddr = "";
+                                    root.beginWindowDrag(cell.addr, cell.e.ws, pt.x, pt.y, grabFx, grabFy);
+                                }
+                                root.updateWindowDrag(pt.x, pt.y, stage.hitWorkspaceCard(pt.x, pt.y));
+                            }
+                            onReleased: mouse => {
+                                if (moved) {
+                                    moved = false;
+                                    root.finishWindowDrag();
+                                } else if (containsMouse) {
+                                    root.pick(cell.e);
+                                }
+                            }
+                            onCanceled: {
+                                if (moved) {
+                                    moved = false;
+                                    root.cancelWindowDrag();
+                                }
+                            }
                         }
                     }
                 }
@@ -971,6 +1140,7 @@ Scope {
                     visible: win.mine && root.mode === "workspace" && root.vp > 0
                     opacity: root.vp
                     clip: true
+                    interactive: !root.draggingWindow
                     contentWidth: Math.max(width, cards.implicitWidth)
                     flickableDirection: Flickable.HorizontalFlick
                     boundsBehavior: Flickable.StopAtBounds
@@ -979,6 +1149,17 @@ Scope {
                         var left = cards.x + card.x;
                         contentX = Math.max(0, Math.min(contentWidth - width,
                             Math.max(left + card.width - width, Math.min(contentX, left))));
+                    }
+
+                    MouseArea {
+                        width: strip.contentWidth
+                        height: strip.height
+                        z: -1
+                        enabled: root.settledOpen && !root.draggingWindow
+                        onClicked: mouse => {
+                            var pt = mapToItem(stage, mouse.x, mouse.y);
+                            if (stage.hitWorkspaceCard(pt.x, pt.y) < 0) root.close();
+                        }
                     }
 
                     Row {
@@ -993,9 +1174,12 @@ Scope {
                                 required property var modelData
                                 readonly property int workspaceId: modelData.id
                                 readonly property bool selected: workspaceId === root.wsId
+                                readonly property bool dropTarget: root.draggingWindow && root.dragTargetWs === workspaceId && workspaceId !== root.dragSourceWs
                                 readonly property real ratio: preview.width / stage.width
                                 width: preview.width + 8
                                 height: strip.height
+                                scale: dropTarget ? 1.06 : 1.0
+                                Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
                                 onSelectedChanged: if (selected && strip.visible) Qt.callLater(() => strip.reveal(card))
                                 Component.onCompleted: if (selected) Qt.callLater(() => strip.reveal(card))
                                 Connections {
@@ -1005,9 +1189,9 @@ Scope {
 
                                 Rectangle {
                                     anchors.fill: preview
-                                    anchors.margins: -3
-                                    radius: 12
-                                    color: card.selected ? "#8de2d4" : "#35404a"
+                                    anchors.margins: card.dropTarget ? -4 : -3
+                                    radius: card.dropTarget ? 13 : 12
+                                    color: card.dropTarget ? "#0a84ff" : (card.selected ? "#8de2d4" : "#35404a")
                                 }
                                 Item {
                                     id: preview
@@ -1058,7 +1242,7 @@ Scope {
                                     width: Math.min(label.implicitWidth + 16, parent.width)
                                     height: 20
                                     radius: 6
-                                    color: card.selected ? "#8de2d4" : "#29323a"
+                                    color: card.dropTarget ? "#0a84ff" : (card.selected ? "#8de2d4" : "#29323a")
                                     Text {
                                         id: label
                                         anchors.centerIn: parent
@@ -1066,7 +1250,7 @@ Scope {
                                         horizontalAlignment: Text.AlignHCenter
                                         elide: Text.ElideRight
                                         text: card.modelData.name
-                                        color: card.selected ? "#152c29" : "#f4f5f6"
+                                        color: card.dropTarget ? "#ffffff" : (card.selected ? "#152c29" : "#f4f5f6")
                                         font.pixelSize: 12
                                     }
                                 }

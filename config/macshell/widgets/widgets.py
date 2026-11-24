@@ -1,14 +1,14 @@
 """Data for the Silky notification-centre widgets, streamed to MacShell as JSON lines.
 
-stdin  : "idle 0" / "idle 1" (from QML's IdleMonitor), "refresh" (re-fetch weather and stocks now)
+stdin  : "idle 0" / "idle 1" (from QML's IdleMonitor), "refresh" (re-fetch all), "refresh-ai" (re-fetch AI usage now)
 stdout : one JSON object every few seconds with weather, stocks, screen time and system usage
 config : ~/.config/silky/widgets.json (written by the QML deck: placed widgets, city, stock symbols)
-         ~/.config/silky/ai-keys.json (0600, written here from stdin "deepseek-key <key>")
 state  : ~/.local/state/silky/screen-time/YYYY-MM-DD.json (seconds per app and per hour, kept 30 days)
-         ~/.local/state/silky/deepseek-balance.json (the first balance seen today, for today's spend)
 """
+from contextlib import closing
 import datetime as dt
 import functools
+import http.client
 import json
 import os
 import re
@@ -16,7 +16,6 @@ import socket
 import sys
 import threading
 import time
-import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -25,13 +24,14 @@ HOME = Path.home()
 CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config")) / "silky/widgets.json"
 STATE = Path(os.environ.get("XDG_STATE_HOME", HOME / ".local/state")) / "silky/screen-time"
 CACHE = Path(os.environ.get("XDG_CACHE_HOME", HOME / ".cache")) / "silky"
-KEYS = CONFIG.with_name("ai-keys.json")
-BALANCE = STATE.parent / "deepseek-balance.json"
 CLAUDE_DIRS = [Path(os.environ["CLAUDE_CONFIG_DIR"]) / "projects"] if os.environ.get("CLAUDE_CONFIG_DIR") else \
     [HOME / ".claude/projects", Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config")) / "claude/projects"]
+CLAUDE_DESKTOP_USAGE = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config")) / "Claude/plan-usage-history.json"
 CODEX_DIR = Path(os.environ.get("CODEX_HOME", HOME / ".codex"))
-AI_EVERY = 30
-DEEPSEEK_EVERY = 10 * 60
+ANTIGRAVITY_DAEMON = HOME / ".gemini/antigravity/daemon"
+AI_EVERY = 15
+ANTIGRAVITY_EVERY = 15
+CLAUDE_DESKTOP_MAX_AGE = 30 * 60
 DEFAULT_STOCKS = ["sh000001", "sz399001", "hkHSI", "usIXIC", "usAAPL", "usNVDA"]
 TICK = 5            # seconds between samples
 WEATHER_EVERY = 15 * 60
@@ -42,6 +42,9 @@ lock = threading.Lock()
 data = {"weather": None, "stocks": [], "screenTime": None, "system": None, "ai": None, "errors": {}}
 idle = False
 wake = threading.Event()
+refresh_all = threading.Event()
+refresh_ai = threading.Event()
+push = threading.Event()
 
 
 def fetch(url, timeout=10):
@@ -236,7 +239,7 @@ def stocks(entries):
     return result
 
 
-# ───────────── AI usage: Claude Code and Codex from their local logs, DeepSeek from its balance API ─────────────
+# ───────────── AI usage: Claude Code and Codex from local logs, Antigravity from its desktop service ─────────────
 def local_day(stamp):
     """ISO timestamp (UTC 'Z' or with offset) -> (local date, local hour)."""
     try:
@@ -291,6 +294,7 @@ class AiUsage:
         self.codex_limits_at = ""
         self.codex_plan = ""
         self.claude_limited = None   # {"type": "five_hour", "resetsAt": epoch} from the last rejected request
+        self.claude_limits_seeded = False
 
     def recent(self, root, pattern):
         midnight = dt.datetime.combine(self.day, dt.time()).timestamp()
@@ -303,7 +307,47 @@ class AiUsage:
                 continue
         return out
 
+    def seed_claude_limits(self):
+        """Check the tail of Claude logs modified in the past 7 days for an active rate-limit rejection."""
+        now = time.time()
+        midnight = dt.datetime.combine(self.day, dt.time()).timestamp()
+        cutoff = now - 7 * 86400
+        for root in CLAUDE_DIRS:
+            if not root.is_dir():
+                continue
+            for path in root.glob("**/*.jsonl"):
+                try:
+                    st = path.stat()
+                except OSError:
+                    continue
+                if st.st_mtime < cutoff or st.st_mtime >= midnight:
+                    continue
+                try:
+                    with open(path, "rb") as handle:
+                        if st.st_size > 131072:
+                            handle.seek(st.st_size - 131072)
+                            handle.readline()
+                        chunk = handle.read()
+                except OSError:
+                    continue
+                if b"rate_limit_info" not in chunk:
+                    continue
+                for raw in chunk.splitlines():
+                    if b"rate_limit_info" not in raw:
+                        continue
+                    try:
+                        o = json.loads(raw)
+                    except ValueError:
+                        continue
+                    info = (o.get("apiErrorParams") or {}).get("rate_limit_info")
+                    if isinstance(info, dict) and info.get("status") == "rejected" and info.get("resetsAt") and info["resetsAt"] > now:
+                        if not self.claude_limited or info["resetsAt"] >= self.claude_limited["resetsAt"]:
+                            self.claude_limited = {"type": info.get("rateLimitType") or "five_hour", "resetsAt": info["resetsAt"]}
+
     def scan_claude(self):
+        if not self.claude_limits_seeded:
+            self.seed_claude_limits()
+            self.claude_limits_seeded = True
         for root in CLAUDE_DIRS:
             if not root.is_dir():
                 continue
@@ -359,7 +403,10 @@ class AiUsage:
                         elif day and day < self.day:
                             state["base"] = state["last"] = max(state["base"], total)
                     limits = payload.get("rate_limits")
-                    if isinstance(limits, dict) and stamp >= self.codex_limits_at:
+                    if (isinstance(limits, dict)
+                            and limits.get("limit_id") in (None, "codex")
+                            and (isinstance(limits.get("primary"), dict) or isinstance(limits.get("secondary"), dict))
+                            and stamp >= self.codex_limits_at):
                         self.codex_limits, self.codex_limits_at = limits, stamp
                         self.codex_plan = limits.get("plan_type") or self.codex_plan
         return CODEX_DIR.is_dir()
@@ -382,73 +429,93 @@ class AiUsage:
             used = 0.0 if fresh or not isinstance(used, (int, float)) else float(used)
             return {"used": used, "left": 100.0 - used, "minutes": w.get("window_minutes"),
                     "resetsAt": None if fresh else resets}
-        claude = dict(self.claude, models=sorted(self.claude["models"].items(), key=lambda i: -i[1])[:3]) if has_claude else None
+        desktop_quota = claude_desktop_quota()
+        claude = dict(self.claude, models=sorted(self.claude["models"].items(), key=lambda i: -i[1])[:3]) \
+            if has_claude or desktop_quota else None
         if claude is not None:
             limited = self.claude_limited
             claude["limited"] = limited if limited and limited["resetsAt"] > time.time() else None
+            claude["quota"] = desktop_quota
         codex = {"tokens": sum(max(0, f["last"] - f["base"]) for f in self.codex_files.values()),
                  "hours": self.codex_hours, "primary": window("primary"), "secondary": window("secondary"),
                  "plan": self.codex_plan} if has_codex else None
         return {"claude": claude, "codex": codex}
 
 
-def read_keys():
+def claude_desktop_quota():
+    """Read the latest percentages used from Claude Desktop's local usage history."""
     try:
-        keys = json.loads(KEYS.read_text())
-        return keys if isinstance(keys, dict) else {}
-    except (OSError, ValueError):
-        return {}
+        history = json.loads(CLAUDE_DESKTOP_USAGE.read_text())
+        if history["version"] not in (1, 2):
+            return None
+        sample = history["samples"][-1]
+        age = time.time() - sample["t"] / 1000
+        limits = sample["u"] if history["version"] == 2 else sample
+    except (OSError, ValueError, KeyError, IndexError, TypeError):
+        return None
+    if not 0 <= age <= CLAUDE_DESKTOP_MAX_AGE or not isinstance(limits, dict):
+        return None
+    windows = {}
+    for name, field in (("primary", "fh"), ("secondary", "sd")):
+        used = limits.get(field)
+        if type(used) in (int, float) and 0 <= used <= 100:
+            windows[name] = {"left": 100 - used}
+    return windows or None
 
 
-def write_key(name, value):
-    keys = read_keys()
-    if value:
-        keys[name] = value
-    else:
-        keys.pop(name, None)
-    KEYS.parent.mkdir(parents=True, exist_ok=True)
-    tmp = KEYS.with_suffix(".tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as handle:
-        json.dump(keys, handle)
-    os.replace(tmp, KEYS)
-    if name == "deepseek":
-        BALANCE.unlink(missing_ok=True)
+def antigravity_windows(response):
+    windows = {"primary": None, "secondary": None}
+    buckets = {"gemini-5h": "primary", "gemini-weekly": "secondary"}
+    for group in response["response"]["groups"]:
+        for bucket in group["buckets"]:
+            window = buckets.get(bucket.get("bucketId"))
+            left = bucket.get("remainingFraction")
+            if window is None or bucket.get("disabled") or type(left) not in (int, float) or not 0 <= left <= 1:
+                continue
+            reset = bucket.get("resetTime")
+            try:
+                reset = dt.datetime.fromisoformat(reset).timestamp() if reset else None
+            except (ValueError, TypeError, OverflowError):
+                reset = None
+            windows[window] = {"left": left * 100, "resetsAt": reset}
+    return windows if any(windows.values()) else None
 
 
-def deepseek():
-    key = read_keys().get("deepseek")
-    if not key:
-        return {"configured": False}
-    request = urllib.request.Request("https://api.deepseek.com/user/balance",
-                                     headers={"Authorization": "Bearer " + key, "Accept": "application/json"})
-    try:
-        with urllib.request.urlopen(request, timeout=10) as response:
-            body = json.loads(response.read())
-    except urllib.error.HTTPError as error:
-        return {"configured": True, "error": "invalid key" if error.code in (401, 403) else f"HTTP {error.code}"}
-    info = (body.get("balance_infos") or [{}])[0]
-    balance = float(info.get("total_balance") or 0)
-    currency = info.get("currency") or "CNY"
-    today = dt.date.today().isoformat()
-    try:
-        base = json.loads(BALANCE.read_text())
-    except (OSError, ValueError):
-        base = {}
-    # a new day, another currency or a top-up (balance went up) starts a new baseline
-    if base.get("date") != today or base.get("currency") != currency or balance > float(base.get("start", 0)):
-        base = {"date": today, "currency": currency, "start": balance}
-        BALANCE.parent.mkdir(parents=True, exist_ok=True)
-        BALANCE.write_text(json.dumps(base))
-    return {"configured": True, "available": body.get("is_available", True), "balance": balance,
-            "currency": currency, "spent": max(0.0, float(base["start"]) - balance)}
+def antigravity_quota():
+    """Read the Gemini model-group quota from the running Antigravity desktop daemon."""
+    for record in ANTIGRAVITY_DAEMON.glob("hub_*.json"):
+        try:
+            if record.stat().st_uid != os.getuid():
+                continue
+            endpoint = json.loads(record.read_text())
+            pid, port, csrf = endpoint["pid"], endpoint["httpPort"], endpoint["csrfToken"]
+            if type(pid) is not int or pid <= 0 or type(port) is not int or not 1 <= port <= 65535:
+                continue
+            proc = Path("/proc") / str(pid)
+            if proc.stat().st_uid != os.getuid() or (proc / "exe").resolve(strict=True).name != "language_server":
+                continue
+            if not isinstance(csrf, str) or not csrf.isascii() or not csrf or any(c in csrf for c in "\r\n"):
+                continue
+            # Use the same loopback service as the app, without proxies or access to Google login files.
+            with closing(http.client.HTTPConnection("127.0.0.1", port, timeout=2)) as conn:
+                conn.request("POST", "/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary",
+                             "{}", {"Content-Type": "application/json", "Connect-Protocol-Version": "1",
+                                    "x-codeium-csrf-token": csrf})
+                reply = conn.getresponse()
+                if reply.status == 200:
+                    quota = antigravity_windows(json.loads(reply.read(1024 * 1024)))
+                    if quota is not None:
+                        return quota
+        except (OSError, ValueError, TypeError, KeyError, AttributeError, http.client.HTTPException):
+            continue
+    return None
 
 
 def fetcher():
-    last_weather = last_stocks = last_ai = last_deepseek = 0
+    last_weather = last_stocks = last_ai = last_antigravity = 0
     weather_key = stocks_key = None
     ai = AiUsage()
-    deepseek_value = None
+    antigravity = None
     cached = CACHE / "widgets-weather.json"
     try:
         with lock:
@@ -461,6 +528,24 @@ def fetcher():
         now = time.time()
         city = str(config.get("city") or "").strip()
         symbols = config.get("stocks") if isinstance(config.get("stocks"), list) else DEFAULT_STOCKS
+        if "ai" in kinds and now - last_ai >= AI_EVERY:
+            try:
+                value = ai.summary()
+            except OSError as error:
+                value = None
+                with lock:
+                    data["errors"]["ai"] = str(error)
+            if now - last_antigravity >= ANTIGRAVITY_EVERY:
+                antigravity = antigravity_quota()
+                last_antigravity = now
+            if value is not None:
+                updated = dict(value, antigravity=antigravity)
+                with lock:
+                    changed = updated != data["ai"]
+                    data["ai"] = updated
+                if changed:
+                    push.set()
+            last_ai = now
         if "weather" in kinds and (now - last_weather >= WEATHER_EVERY or city != weather_key):
             try:
                 value = weather(city)
@@ -484,28 +569,15 @@ def fetcher():
                 with lock:
                     data["errors"]["stocks"] = str(error) or type(error).__name__
             last_stocks, stocks_key = now, symbols
-        if "ai" in kinds and now - last_ai >= AI_EVERY:
-            try:
-                value = ai.summary()
-            except OSError as error:
-                value = None
-                with lock:
-                    data["errors"]["ai"] = str(error)
-            if now - last_deepseek >= DEEPSEEK_EVERY:
-                try:
-                    deepseek_value = deepseek()
-                except (OSError, ValueError) as error:
-                    deepseek_value = {"configured": True, "error": str(error) or type(error).__name__}
-                last_deepseek = now
-            if value is not None:
-                value["deepseek"] = deepseek_value
-                with lock:
-                    data["ai"] = value
-            last_ai = now
-        wake.wait(10)
+        wake.wait(5)
         if wake.is_set():
             wake.clear()
-            last_weather = last_stocks = last_ai = last_deepseek = 0
+            if refresh_all.is_set():
+                refresh_all.clear()
+                last_weather = last_stocks = last_ai = last_antigravity = 0
+            if refresh_ai.is_set():
+                refresh_ai.clear()
+                last_ai = last_antigravity = 0
 
 
 # ───────────── screen time (focused Hyprland window while not idle or locked) ─────────────
@@ -611,13 +683,10 @@ def reader():
         if words[:1] == ["idle"] and len(words) == 2:
             idle = words[1] == "1"
         elif words == ["refresh"]:
+            refresh_all.set()
             wake.set()
-        elif words[:1] == ["deepseek-key"]:
-            try:
-                write_key("deepseek", words[1] if len(words) > 1 else "")
-            except OSError as error:
-                with lock:
-                    data["errors"]["ai"] = str(error)
+        elif words == ["refresh-ai"]:
+            refresh_ai.set()
             wake.set()
 
 
@@ -653,11 +722,14 @@ def main():
             last_save = now
         cpu_previous, usage = system(cpu_previous)
         with lock:
+            if usage["cpu"] is None and data["system"]:
+                usage["cpu"] = data["system"].get("cpu")
             data["screenTime"] = screen_summary(today, record)
             data["system"] = usage
             line = json.dumps(data)
         print(line, flush=True)
-        time.sleep(TICK)
+        push.wait(TICK)
+        push.clear()
 
 
 if __name__ == "__main__":

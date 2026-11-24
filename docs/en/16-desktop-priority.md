@@ -50,6 +50,7 @@ Set `ac_min_freq_mhz` under `[gpu]` to `0` to drop the GPU clock floor.
 
 ## Implementation and compatibility
 
+- Prefers the native C++ implementation ([`plugins/silky-desktop-priority/main.cpp`](../../plugins/silky-desktop-priority/main.cpp)), built and installed to `/usr/local/bin/silky-desktop-priority` by [`scripts/install-desktop-priority.sh`](../../scripts/install-desktop-priority.sh); falls back to the Python script [`bin/silky-desktop-priority`](../../bin/silky-desktop-priority) when `g++` is unavailable. The C++ binary filters non-target PIDs via `/proc/<pid>/comm` first, cutting `--status` runtime from ~50 ms to ~6.4 ms and substantially lowering resident CPU and memory compared to Python.
 - The service runs as root but keeps only `CAP_SYS_NICE`, which is required to give other processes a negative nice and a `uclamp.min`. It uses `ProtectSystem=strict`, `ProtectHome` and `PrivateNetwork`, a 64 MB memory cap, and runs at nice 5 itself.
 - `sched_setattr(2)` writes `SCHED_OTHER`, nice and `SCHED_FLAG_UTIL_CLAMP_MIN` in one call, thread by thread, because nice applies per thread on Linux. Syscall numbers are included for aarch64 and x86_64; other architectures fall back to nice only.
 - Only processes with UID ≥ 1000 are matched, by exact `/proc/<pid>/comm`, so children of MacShell such as `python3` and `inotifywait` are not boosted. PIDs and threads are cached by start time, so each pass reads only new processes.

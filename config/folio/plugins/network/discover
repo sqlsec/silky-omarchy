@@ -1,0 +1,220 @@
+#!/usr/bin/env python3
+"""Discover LAN file-sharing devices via Avahi and optional user config for Folio."""
+
+import json
+import os
+import re
+import subprocess
+from pathlib import Path
+from urllib.parse import urlparse
+
+# Supported Avahi service types: (scheme, protocol_label, default_port, icon, priority)
+SERVICE_MAP = {
+    "_smb._tcp": ("smb", "SMB", 445, "drive", 0),
+    "_sftp-ssh._tcp": ("sftp", "SFTP", 22, "peer", 1),
+    "_webdavs._tcp": ("davs", "WebDAV (HTTPS)", 443, "drive", 2),
+    "_webdav._tcp": ("dav", "WebDAV", 80, "drive", 3),
+    "_nfs._tcp": ("nfs", "NFS", 2049, "drive", 4),
+}
+
+# Overlay / VPN interface prefixes get lower preference than physical LAN interfaces.
+OVERLAY_PREFIXES = ("zt", "tailscale", "wg", "tun", "tap", "docker", "br-", "veth", "virbr")
+
+
+def unescape_avahi(text: str) -> str:
+    """Decode Avahi parsable-mode decimal escapes (\\NNN) and escaped punctuation."""
+    out = bytearray()
+    i = 0
+    n = len(text)
+    while i < n:
+        if text[i] == "\\" and i + 1 < n:
+            if i + 3 < n and text[i + 1 : i + 4].isdigit():
+                val = int(text[i + 1 : i + 4])
+                if 0 <= val <= 255:
+                    out.append(val)
+                    i += 4
+                    continue
+            out.extend(text[i + 1].encode("utf-8"))
+            i += 2
+        else:
+            out.extend(text[i].encode("utf-8"))
+            i += 1
+    return out.decode("utf-8", errors="replace").strip()
+
+
+def iface_rank(iface: str, proto: str) -> tuple[int, int]:
+    is_overlay = 1 if iface.startswith(OVERLAY_PREFIXES) else 0
+    is_ipv6 = 1 if proto != "IPv4" else 0
+    return (is_overlay, is_ipv6)
+
+
+def format_host_url(scheme: str, address: str, port: int, default_port: int, path: str = "/") -> str:
+    host = f"[{address}]" if ":" in address else address
+    port_part = f":{port}" if port and port != default_port else ""
+    if not path.startswith("/"):
+        path = "/" + path
+    return f"{scheme}://{host}{port_part}{path}"
+
+
+def discover_avahi() -> list[dict]:
+    try:
+        proc = subprocess.run(
+            ["avahi-browse", "-artpk"],
+            capture_output=True,
+            text=True,
+            timeout=4,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+
+    # Keyed by lowercase hostname so a host advertised on multiple NICs or
+    # protocols appears once with its best LAN address and preferred protocol.
+    best_by_host: dict[str, tuple[tuple[int, int, int], dict]] = {}
+
+    for line in proc.stdout.splitlines():
+        if not line.startswith("=;"):
+            continue
+        parts = line.split(";")
+        if len(parts) < 9:
+            continue
+        _, iface, ip_proto, raw_name, svc_type, _domain, raw_host, address, raw_port = parts[:9]
+        if svc_type not in SERVICE_MAP or not address:
+            continue
+        # Skip link-local IPv6 addresses without usable zone handling in GVfs.
+        if address.startswith("fe80:"):
+            continue
+        scheme, label, default_port, icon, svc_prio = SERVICE_MAP[svc_type]
+        try:
+            port = int(raw_port)
+        except ValueError:
+            port = default_port
+
+        name = unescape_avahi(raw_name) or unescape_avahi(raw_host)
+        hostname = unescape_avahi(raw_host).rstrip(".")
+        host_key = (hostname or name).lower()
+        url = format_host_url(scheme, address, port, default_port)
+
+        rank = (svc_prio, *iface_rank(iface, ip_proto))
+        item = {
+            "id": f"avahi:{scheme}:{host_key}",
+            "name": name,
+            "icon": icon,
+            "subtitle": label,
+            "details": [
+                ["Protocol", label],
+                ["Host", hostname or address],
+                ["Address", url],
+            ],
+            "open": {"mount": url, "verified": False},
+        }
+        prev = best_by_host.get(host_key)
+        if prev is None or rank < prev[0]:
+            best_by_host[host_key] = (rank, item)
+
+    return [entry[1] for entry in best_by_host.values()]
+
+
+def load_manual_servers() -> list[dict]:
+    config_home = Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
+    cfg = config_home / "folio" / "network-servers.json"
+    if not cfg.is_file():
+        return []
+    try:
+        data = json.loads(cfg.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(data, list):
+        return []
+
+    items = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        url = str(entry.get("url", "")).strip()
+        if not url:
+            continue
+        parsed = urlparse(url)
+        if parsed.scheme not in {"smb", "sftp", "ftp", "dav", "davs", "nfs"} or not parsed.hostname:
+            continue
+        name = str(entry.get("name", "")).strip() or parsed.hostname
+        icon = str(entry.get("icon", "")).strip() or ("peer" if parsed.scheme == "sftp" else "drive")
+        label = parsed.scheme.upper()
+        items.append(
+            {
+                "id": f"manual:{url}",
+                "name": name,
+                "icon": icon,
+                "subtitle": label,
+                "details": [
+                    ["Protocol", label],
+                    ["Host", parsed.hostname],
+                    ["Address", url],
+                ],
+                "open": {"mount": url, "verified": bool(entry.get("verified", False))},
+            }
+        )
+    return items
+
+
+def discover_gvfs_mounts(existing_hosts: set[str]) -> list[dict]:
+    gvfs = Path(f"/run/user/{os.getuid()}/gvfs")
+    if not gvfs.is_dir():
+        return []
+    items = []
+    for child in sorted(gvfs.iterdir()):
+        if not child.is_dir():
+            continue
+        m = re.match(r"^(smb-share|sftp|dav|ftp):(.*)$", child.name)
+        if not m:
+            continue
+        kind, rest = m.group(1), m.group(2)
+        kv = dict(part.split("=", 1) for part in rest.split(",") if "=" in part)
+        host = kv.get("server") or kv.get("host") or child.name
+        share = kv.get("share", "")
+        if kind != "smb-share" and host.lower() in existing_hosts:
+            continue
+        display = f"{host}/{share}" if share else host
+        items.append(
+            {
+                "id": f"gvfs:{child.name}",
+                "name": display,
+                "icon": "drive" if kind in {"smb-share", "dav"} else "peer",
+                "subtitle": "Mounted",
+                "details": [["Host", host]],
+                "open": {"path": str(child)},
+            }
+        )
+    return items
+
+
+def main() -> None:
+    manual = load_manual_servers()
+    avahi = discover_avahi()
+
+    seen_urls = {item["open"].get("mount", "").rstrip("/").lower() for item in manual}
+    items = list(manual)
+    for item in avahi:
+        url = item["open"].get("mount", "").rstrip("/").lower()
+        if url not in seen_urls:
+            seen_urls.add(url)
+            items.append(item)
+
+    existing_hosts = set()
+    for item in items:
+        for k, v in item.get("details", []):
+            if k == "Host" and v:
+                existing_hosts.add(str(v).lower())
+        url = item["open"].get("mount", "")
+        if url:
+            parsed = urlparse(url)
+            if parsed.hostname:
+                existing_hosts.add(parsed.hostname.lower())
+
+    items.extend(discover_gvfs_mounts(existing_hosts))
+    items.sort(key=lambda it: it["name"].lower())
+    print(json.dumps({"items": items}, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()

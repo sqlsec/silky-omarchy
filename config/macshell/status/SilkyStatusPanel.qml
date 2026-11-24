@@ -14,6 +14,8 @@ Item {
     required property var battery
     required property real charge
     property bool active: false
+    // true when Hyprland's silky-dock-glass plugin paints the Control Center Liquid Glass backdrop
+    property bool compositorOwned: false
     // the menu-bar battery's number (MacShell's showBatteryPercent); toggled from the right-click power-mode panel
     property bool showPercent: true
     signal dismiss()
@@ -37,31 +39,28 @@ Item {
 
     readonly property color downloadColor: palette.dark ? "#58dcf0" : "#00778a"
     readonly property color uploadColor: palette.dark ? "#bba4ff" : "#6743a5"
-    readonly property color thermalColor: palette.dark ? "#ffb36d" : "#a8551a"
+    readonly property color thermalColor: Status.thermalColor(summary ? summary.temp : null, palette.dark, palette.fg)
     readonly property bool batteryPowered: power.sample?.onBattery ?? UPower.onBattery
-    // Four power states, shared with the menu-bar battery. Color marks only what is worth noticing: charging green,
-    // external power without charging (e.g. held at the charge limit) the wallpaper's accent, on battery neutral like macOS,
-    // low battery red. Charging wins over low so a plugged-in low battery shows it is recovering.
+    // Five semantic power states aligned with the thermal/load palette:
+    // charging green, low (< 20%) red, on-battery medium (20-34%) amber, on-battery normal neutral,
+    // external power without charging (held at charge limit / full) cool cyan-blue.
     readonly property color batteryColor: palette.dark ? "#e6e8ef" : "#3b4252"
-    readonly property color chargingColor: palette.dark ? "#72e5a7" : "#167748"
-    // external power takes the wallpaper's dominant hue (sampled by status.py), blue when it has none
-    readonly property var wallpaperAccent: summary?.wallpaperAccent
-    readonly property color externalColor: wallpaperAccent ? wallpaperAccent[palette.dark ? "dark" : "light"]
-                                                           : palette.dark ? "#6cb8ff" : "#0b62c4"
-    readonly property color lowColor: palette.dark ? "#ff8279" : "#a62b25"
-    // the power chart is data, not state: its own hue so it never reads as a warning
-    readonly property color powerPlotColor: palette.dark ? "#b9a6ff" : "#5f43b2"
     readonly property bool batteryCharging: primaryBattery ? primaryBattery.status === "Charging"
                                                            : battery?.state === UPowerDeviceState.Charging
     readonly property string powerState: batteryCharging ? "charging" : charge < 20 ? "low"
-                                         : batteryPowered ? "battery" : "external"
-    readonly property color powerColor: powerState === "charging" ? chargingColor : powerState === "low" ? lowColor
-                                        : powerState === "battery" ? batteryColor : externalColor
+                                         : batteryPowered ? (charge < 35 ? "medium" : "battery") : "external"
+    readonly property color powerColor: Status.powerColor(batteryCharging, batteryPowered, charge, palette.dark, batteryColor)
     readonly property string powerStateText: powerState === "charging" ? "Charging"
                                              : batteryPowered ? "On battery" : "External power"
+    readonly property string powerBadgeText: !batteryPowered && primaryBattery?.status === "Not charging" && charge >= 50
+                                             ? "Power passthrough"
+                                             : (primaryBattery?.status || "")
+    // the power chart is data, not state: its own hue so it never reads as a warning
+    readonly property color powerPlotColor: palette.dark ? "#b9a6ff" : "#5f43b2"
     readonly property color panelTint: palette.dark ? "#14151b" : "#f2f4f9"
-    readonly property color surface: palette.dark ? Qt.rgba(0.09, 0.10, 0.13, 0.45)
-                                                  : Qt.rgba(1, 1, 1, 0.46)
+    readonly property color surface: compositorOwned
+        ? (palette.dark ? Qt.rgba(0.06, 0.07, 0.10, 0.28) : Qt.rgba(1, 1, 1, 0.36))
+        : (palette.dark ? Qt.rgba(0.09, 0.10, 0.13, 0.45) : Qt.rgba(1, 1, 1, 0.46))
     readonly property color outline: palette.dark ? Qt.rgba(1, 1, 1, 0.14)
                                                   : Qt.rgba(1, 1, 1, 0.74)
     readonly property color divider: palette.dark ? Qt.rgba(1, 1, 1, 0.13)
@@ -183,9 +182,12 @@ Item {
             sections.push({ "title": Status.tr("Hardware overview"), "icon": "thermal", "rows": hardware });
         }
         sections.push({ "rows": [], "gauges": [
-            { "label": Status.tr("CPU usage"), "value": data.usage?.cpu, "color": thermalColor },
-            { "label": Status.tr("Memory usage"), "value": data.usage?.memory, "color": uploadColor },
-            { "label": Status.tr("System disk usage"), "value": data.usage?.disk, "color": downloadColor }
+            { "label": Status.tr("CPU usage"), "value": data.usage?.cpu,
+              "color": Status.loadColor(data.usage?.cpu, palette.dark, palette.fg) },
+            { "label": Status.tr("Memory usage"), "value": data.usage?.memory,
+              "color": Status.loadColor(data.usage?.memory, palette.dark, palette.fg) },
+            { "label": Status.tr("System disk usage"), "value": data.usage?.disk,
+              "color": Status.loadColor(data.usage?.disk, palette.dark, palette.fg) }
         ] });
         const processes = data.cpuTop.map(item => ({
             "label": item[1],
@@ -251,7 +253,8 @@ Item {
                                                                     : Status.tr("Unavailable on external power"));
         var rows = [supply].concat(draw.value ? [draw] : [], sources);
         var groups = [{ "title": Status.tr("Power source"), "icon": "power", "rows": rows }];
-        if (data.profile)
+        // The power-mode card above the groups shows and switches the mode; keep the row only as a fallback.
+        if (data.profile && profileChoices.length === 0)
             groups[0].rows.push(metric(Status.tr("Power mode"), Status.tr(data.profile)));
         return groups.concat(data.batteries.map(item => ({
             "title": data.batteries.length === 1 ? Status.tr("Battery") : Status.tr("Battery") + " · " + item.name,
@@ -286,7 +289,8 @@ Item {
     SilkyStatusStream { id: network; mode: "network"; active: root.active && root.mode === mode }
     SilkyStatusStream { id: temperature; mode: "thermal"; active: root.active && root.mode === mode }
     SilkyStatusStream { id: power; mode: "power"; active: root.active && root.mode === mode }
-    SilkyStatusStream { id: profiles; mode: "profiles"; active: root.active && root.mode === mode }
+    // The power panel switches modes inline too, so it reads the same profile stream as the right-click menu.
+    SilkyStatusStream { id: profiles; mode: "profiles"; active: root.active && (root.mode === mode || root.mode === "power") }
 
     component LabelText: Text {
         color: root.palette.fg
@@ -296,8 +300,9 @@ Item {
     }
 
     Rectangle {
+        visible: !root.compositorOwned
         anchors.fill: parent
-        radius: 24
+        radius: 26
         gradient: Gradient {
             GradientStop {
                 position: 0
@@ -372,20 +377,19 @@ Item {
 
             Rectangle {
                 visible: root.mode !== "profiles"
-                radius: 12
-                border.color: root.outline
-                border.width: 1
+                radius: 14
                 width: parent.width
                 height: summaryContent.implicitHeight + 24
                 gradient: Gradient {
                     GradientStop {
                         position: 0
-                        color: root.tinted(root.panelTint, root.accent, root.palette.dark ? 0.16 : 0.09, 0.53)
+                        color: root.tinted(root.panelTint, root.accent, root.palette.dark ? 0.16 : 0.09,
+                                           root.compositorOwned ? (root.palette.dark ? 0.34 : 0.42) : 0.53)
                     }
                     GradientStop {
                         position: 1
                         color: root.tinted(root.panelTint, root.mode === "network" ? root.uploadColor : root.accent,
-                                           0.07, 0.48)
+                                           0.07, root.compositorOwned ? (root.palette.dark ? 0.26 : 0.34) : 0.48)
                     }
                 }
 
@@ -442,7 +446,7 @@ Item {
                         }
                         LabelText {
                             visible: root.mode === "power" && !!text
-                            text: root.primaryBattery ? Status.tr(root.primaryBattery.status) : ""
+                            text: root.powerBadgeText ? Status.tr(root.powerBadgeText) : ""
                             color: root.powerColor
                             font.pixelSize: 11
                         }
@@ -487,10 +491,8 @@ Item {
                 visible: root.mode === "power"
                 width: parent.width
                 height: powerPlot.implicitHeight + 20
-                radius: 12
+                radius: 14
                 color: root.surface
-                border.color: root.outline
-                border.width: 1
 
                 Column {
                     id: powerPlot
@@ -547,10 +549,8 @@ Item {
                 visible: root.mode === "power" && !!root.chargeLimit
                 width: parent.width
                 height: limitContent.implicitHeight + 20
-                radius: 12
+                radius: 14
                 color: root.surface
-                border.color: root.outline
-                border.width: 1
 
                 ColumnLayout {
                     id: limitContent
@@ -661,14 +661,136 @@ Item {
                 }
             }
 
+            // Power & Battery: switch the power mode in place (same command and per-source memory as right-click)
+            Rectangle {
+                visible: root.mode === "power" && root.profileChoices.length > 0
+                width: parent.width
+                height: modeContent.implicitHeight + 20
+                radius: 14
+                color: root.surface
+
+                ColumnLayout {
+                    id: modeContent
+                    x: 11
+                    y: 10
+                    width: parent.width - 22
+                    spacing: 8
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 6
+                        SilkyStatusIcon {
+                            Layout.preferredWidth: 15
+                            Layout.preferredHeight: 15
+                            kind: "power"
+                            ink: root.accent
+                        }
+                        LabelText {
+                            Layout.fillWidth: true
+                            text: Status.tr("Power mode")
+                            font.weight: Font.DemiBold
+                        }
+                        LabelText {
+                            visible: profileCall.running
+                            text: Status.tr("Applying…")
+                            color: root.muted
+                            font.pixelSize: 11
+                        }
+                    }
+
+                    // macOS-style segmented control: the selected mode sits on a raised pill
+                    Rectangle {
+                        id: modeTrack
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 32
+                        radius: 9
+                        color: root.palette.dark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05)
+                        readonly property int current: root.profileChoices.findIndex(choice => choice.key === profiles.sample?.current)
+                        readonly property real segment: (width - 4) / Math.max(1, root.profileChoices.length)
+
+                        Rectangle {
+                            visible: modeTrack.current >= 0
+                            x: 2 + modeTrack.current * modeTrack.segment
+                            y: 2
+                            width: modeTrack.segment
+                            height: parent.height - 4
+                            radius: 7
+                            color: root.palette.dark ? Qt.rgba(1, 1, 1, 0.16) : "#ffffff"
+                            border.width: root.palette.dark ? 0 : 1
+                            border.color: Qt.rgba(0, 0, 0, 0.06)
+                            Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                        }
+
+                        Row {
+                            x: 2
+                            y: 2
+                            Repeater {
+                                model: root.profileChoices
+                                delegate: Item {
+                                    id: modeSegment
+                                    required property var modelData
+                                    required property int index
+                                    readonly property bool selected: modeTrack.current === index
+                                    width: modeTrack.segment
+                                    height: modeTrack.height - 4
+                                    Accessible.role: Accessible.RadioButton
+                                    Accessible.checked: selected
+                                    Accessible.name: Status.tr(modelData.key)
+                                    Accessible.onPressAction: root.selectProfile(modelData.key)
+
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: 7
+                                        color: !modeSegment.selected && modeMouse.containsMouse ? root.palette.hover : "transparent"
+                                    }
+                                    Row {
+                                        anchors.centerIn: parent
+                                        spacing: 5
+                                        SilkyStatusIcon {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: 14
+                                            height: 14
+                                            kind: modeSegment.modelData.icon
+                                            ink: modeSegment.selected ? root.accent : root.muted
+                                        }
+                                        LabelText {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: Status.tr(modeSegment.modelData.key)
+                                            font.pixelSize: 12
+                                            font.weight: modeSegment.selected ? Font.DemiBold : Font.Normal
+                                            color: modeSegment.selected ? root.palette.fg : root.muted
+                                        }
+                                    }
+                                    MouseArea {
+                                        id: modeMouse
+                                        anchors.fill: parent
+                                        enabled: !profileCall.running
+                                        hoverEnabled: enabled
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.selectProfile(modeSegment.modelData.key)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    LabelText {
+                        visible: root.profileFailed
+                        Layout.fillWidth: true
+                        text: Status.tr("Could not change the power mode")
+                        color: root.palette.dark ? "#ff9c94" : "#a62b25"
+                        font.pixelSize: 11
+                        wrapMode: Text.Wrap
+                    }
+                }
+            }
+
             Rectangle {
                 visible: root.mode === "profiles" && root.profileChoices.length > 0
                 width: parent.width
                 height: profileRows.implicitHeight + 10
-                radius: 12
+                radius: 14
                 color: root.surface
-                border.color: root.outline
-                border.width: 1
 
                 Column {
                     id: profileRows
@@ -732,10 +854,8 @@ Item {
                 visible: root.mode === "profiles"
                 width: parent.width
                 height: 41
-                radius: 12
+                radius: 14
                 color: root.surface
-                border.color: root.outline
-                border.width: 1
                 Accessible.role: Accessible.CheckBox
                 Accessible.checked: root.showPercent
                 Accessible.name: Status.tr("Show battery percentage")
@@ -809,10 +929,8 @@ Item {
                 model: root.groups.length
                 Rectangle {
                     id: card
-                    radius: 12
+                    radius: 14
                     color: root.surface
-                    border.color: root.outline
-                    border.width: 1
                     required property int index
                     readonly property var section: root.groups[index]
                     width: content.width
@@ -980,7 +1098,7 @@ Item {
                                     }
                                     Rectangle {
                                         visible: row.cpu
-                                        Layout.preferredWidth: 50
+                                        Layout.preferredWidth: 42
                                         Layout.preferredHeight: 3
                                         radius: height / 2
                                         color: root.divider
@@ -988,7 +1106,7 @@ Item {
                                             width: parent.width * (row.entry.cpuLoad || 0)
                                             height: parent.height
                                             radius: parent.radius
-                                            color: root.thermalColor
+                                            color: Status.loadColor((row.entry.cpuLoad || 0) * 100, root.palette.dark, root.thermalColor)
                                         }
                                     }
                                     LabelText {

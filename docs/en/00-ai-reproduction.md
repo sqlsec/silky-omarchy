@@ -11,7 +11,7 @@ Hand this file and the repository URL to an AI coding assistant such as Claude C
 - Distribution: Omarchy 4.x, 4.5.0 here (Arch Linux + Hyprland 0.57.2, **Lua config**: `~/.config/hypr/*.lua`, `hl.config` / `hl.bind` / `hl.window_rule` / `hl.layer_rule`)
 - Test machine: Lenovo Yoga Slim 7 14Q8X9, Snapdragon X Elite, Adreno X1-85, aarch64, 2944×1840@90Hz, scale 2
 - Desktop shell: MacShell 0.5.2 (Quickshell 0.3.2 / Qt 6.12 / QML), lock screen MacLock; module 02 supports fresh and already patched 0.5.2 installations (see [02 · Versions](02-macshell.md#versions))
-- libinput 1.32.0 (03's patched build 1.32.0-1.2), kernel 7.3
+- libinput 1.32.0 (03's patched build 1.32.0-1.4), kernel 7.3
 - Input method: fcitx5 + WowType (pinyin + offline voice)
 - Rules: never change `/usr/share/omarchy/`, only `~/.config` and `~/.local`; run `hyprctl configerrors` after changing the Hyprland config
 
@@ -23,7 +23,9 @@ A general prompt for the AI:
 
 ```bash
 ./scripts/install-macshell-optimizations.sh   # 02: MacShell patch (MacShell 0.5.2 recommended)
+./scripts/install-macshell-wifi.sh --check && ./scripts/install-macshell-wifi.sh   # Wi-Fi scan fix and post-update hook (tested with MacShell 0.5.3)
 ./scripts/install-silky-gestures.sh           # 03: workspace gesture plugin
+./scripts/build-silky-libinput.sh             # 03: optional patched libinput build for aarch64
 python3 scripts/install-macshell-overview.py  # 13: four fingers up / down window overview (needs 02, 03)
 ./scripts/install-macos-theme.sh              # 04: macOS Tahoe theme
 ./scripts/install-folio-macos.sh              # 04: Optional Finder-style Folio (requires Folio 0.6.1)
@@ -34,6 +36,7 @@ omarchy theme set macos-tahoe-dark
 ./scripts/install-zsh.sh                      # 06: terminal
 ./scripts/install-maclock.sh                  # 07: MacLock for every lock
 ./scripts/install-boot-screen.sh              # 07: macOS-style boot unlock screen
+python3 scripts/install-login-transition.py   # 07: early wallpaper for MacShell greeter sessions
 ./scripts/install-nautilus-actions.sh         # 08: Nautilus context menu
 ./scripts/install-nautilus-zh-cn.py            # 08: Optional Simplified Chinese UI for Nautilus
 ./scripts/install-nautilus-wallpaper.py        # 08: Optional Set as Background action for Nautilus
@@ -63,6 +66,7 @@ Merge the global configuration snippets in 01 by hand. The optional WeChat updat
 
 - The [per-application menu bar](02-macshell.md#per-application-menu-bar) installs separately on MacShell 0.5.3. Run `python3 scripts/install-macshell-app-menus.py`, then reload MacShell.
 - [Notification Center widgets](02-macshell.md#notification-center-widgets) (weather, stocks, screen time, batteries, calendar, system, AI usage; small / medium / large) install separately: install the menu bar system monitors first, then run `python3 scripts/install-macshell-widgets.py` and reload MacShell. Files are in `config/macshell/widgets/`; the data process `widgets.py` is installed as `assets/silky-widgets.py`, the layout lives in `~/.config/silky/widgets.json` and screen time in `~/.local/state/silky/screen-time/`. Stock entries are resolved by `resolve()` in `widgets.py`: A-shares / Hong Kong / US use Tencent quotes, every other market uses Yahoo Finance.
+- Install [WeChat activation and notification banner fixes](02-macshell.md#wechat-activation-and-notification-banners) with `python3 scripts/macshell_notification_center.py --install`. The systemd user service reapplies them after updates.
 - **Effect**: Simplified Chinese; a compact "About This Mac" (correctly identifying Snapdragon / Adreno); dragging windows by touch; live glass on Vulkan; no periodic pointer stutter; wallpaper on the lock screen; battery icon without `%`; no desktop icons; only one screenshot tool
 - **Files**: `patches/macshell-0.5.1-silky.patch` and `patches/macshell-0.5.2-silky.patch` (unified diffs against `~/.config/quickshell/{MacShell,MacLock}`), `scripts/install-macshell-optimizations.sh`
 - **Keywords**:
@@ -116,6 +120,7 @@ Merge the global configuration snippets in 01 by hand. The optional WeChat updat
 
 ## 07 Lock and boot screens
 
+- The desktop draws the MacShell login wallpaper early. See [07 · Login wallpaper transition](07-lock-and-boot.md#login-wallpaper-transition) for the greeter installation and rollback.
 - **Effect**: every lock uses MacLock; the boot disk-unlock screen matches MacLock's layout (sharp wallpaper, round avatar near the bottom, user name, frosted password field, unit u = screen height / 1200)
 - **Files**: `bin/silky-lock`, `bin/silky-sleep-lock`, `config/systemd/silky-sleep-lock.service`, `config/omarchy/plugins/silky.idle/`, `config/hypr/bindings-lock.lua`, `config/omarchy/omarchy-menu-lock.jsonc`, `plymouth/silky-maclock.script`, `scripts/install-maclock.sh`, `scripts/install-boot-screen.sh`
 - **Keywords**:
@@ -190,6 +195,14 @@ Merge the global configuration snippets in 01 by hand. The optional WeChat updat
 - **Keywords**: `sched_setattr` (aarch64 274 / x86_64 314), `SCHED_FLAG_UTIL_CLAMP_MIN`, `CAP_SYS_NICE`, `/sys/class/devfreq/*gpu*/min_freq`, `power_supply/*/online`
 - **Pitfalls**: nice is per thread, so walk `/proc/<pid>/task`. Skip threads that are not `SCHED_OTHER` or whose nice is not 0 (Mesa's `disk$` cache threads are `SCHED_BATCH`). Split `/proc/…/stat` after the last `)`: thread names such as `[pango] fontcon` contain spaces, so counting columns with awk goes wrong. Hyprland lives in greetd's `session-N.scope`, the same cgroup as Chromium launched straight from the session, so the scope's `CPUWeight` is the wrong lever. aquamarine already has a high-priority EGL context. Don't use realtime scheduling
 - **Verify**: `/usr/local/bin/silky-desktop-priority --config /etc/silky/desktop-priority.conf --status`, `ps -L -o tid,ni,cls,comm -p "$(pgrep -x Hyprland)"`; preview without root with `--dry-run`
+
+## 17 Closed-lid sleep USB wakeup guard
+
+- **Effect**: temporarily disables `power/wakeup` on Qualcomm `dwc3-qcom` USB controllers while suspending with the lid closed and restores their prior state on resume; stops full-speed USB devices such as a YubiKey from firing `dp_hs_phy_irq` every ~5 minutes during firmware CX collapse exits while keeping lid-open wake, power-button wake, closed-lid USB-C PD charging, and open-lid USB wake intact
+- **Files**: `config/systemd/system-sleep/silky-dwc3-lid-wake` (→ `/usr/lib/systemd/system-sleep/`), `scripts/install-sleep-usb-wakeup.sh` (`--status` / `--uninstall`), `docs/en/17-sleep-usb-wakeup.md`
+- **Keywords**: `dwc3-qcom`, `device_may_wakeup`, `dp_hs_phy_irq`, `org.freedesktop.login1.Manager.LidClosed`, `/run/silky-dwc3-lid-wake.state`
+- **Pitfalls**: `systemd-sleep` runs every executable inside `/usr/lib/systemd/system-sleep/`, so backups must live outside it (`/var/backups/silky-omarchy/`); record only paths switched from `enabled` to `disabled` so resume never re-enables a controller the user intentionally disabled
+- **Verify**: `./scripts/install-sleep-usb-wakeup.sh --status`; after installing, close the lid on battery for 15 minutes with the YubiKey attached and check `journalctl -b -u systemd-suspend.service` shows a single suspend/resume and `/sys/power/pm_wakeup_irq` is not `dp_hs_phy_irq`
 
 ## Miscellaneous
 

@@ -1,6 +1,6 @@
 -- Silky Omarchy: touch-screen workspace swipes and the end-of-list rubber band.
 -- Loads the plugin built by scripts/install-silky-gestures.sh. The file name carries the Hyprland version it was
--- built for, so after a Hyprland update the stale build is simply not found (re-run the script) instead of failing to load.
+-- built for. The Omarchy post-update hook prepares a compatible build for the next session.
 local version = type(hl.version) == "function" and hl.version() or hl.version
 local plugin = os.getenv("HOME") .. "/.local/lib/silky-omarchy/silky-gestures-" .. tostring(version) .. ".so"
 

@@ -19,6 +19,7 @@ if [[ -f $classicui ]] && [[ ! -f $classicui.silky-backup ]]; then
 fi
 install -Dm 755 "$repo_root/wowtype-glass/silky-ime-theme" "$HOME/.local/bin/silky-ime-theme"
 install -Dm 755 "$repo_root/wowtype-glass/silky-xwayland-dpi" "$HOME/.local/bin/silky-xwayland-dpi"
+install -Dm 755 "$repo_root/wowtype-glass/silky-input-cycle" "$HOME/.local/bin/silky-input-cycle"
 install -Dm 644 "$repo_root/config/systemd/silky-ime-theme.service" "$HOME/.config/systemd/user/silky-ime-theme.service"
 systemctl --user daemon-reload
 systemctl --user enable --now silky-ime-theme.service
@@ -49,6 +50,19 @@ if command -v pkg-config >/dev/null && command -v make >/dev/null && pkg-config 
   fi
 else
   printf 'Skipped the WeChat preedit addon: needs make, pkg-config and fcitx5 headers (Fcitx5Core).\n' >&2
+fi
+
+# WPS Office only: drop KPromeMainWindow's outer frame margins on floating windows.
+if [[ -d /usr/lib/office6 ]] && command -v make >/dev/null && command -v g++ >/dev/null; then
+  wps_src="$repo_root/plugins/silky-wps-noborder"
+  wps_lib="$HOME/.local/lib/silky-omarchy/libsilkywpsnoborder.so"
+  wps_wrapper="$HOME/.local/bin/wps-dark-border"
+  make -s -C "$wps_src" -B
+  install -Dm 755 "$wps_src/libsilkywpsnoborder.so" "$wps_lib"
+  if [[ -f $wps_wrapper ]] && ! cmp -s "$wps_src/wps-dark-border" "$wps_wrapper"; then
+    cp -a "$wps_wrapper" "$wps_wrapper.bak.$(date +%Y%m%d-%H%M%S)"
+  fi
+  install -Dm 755 "$wps_src/wps-dark-border" "$wps_wrapper"
 fi
 
 printf 'Installed. Restart WeChat once so its built-in candidate bar loads the new skin.\n'

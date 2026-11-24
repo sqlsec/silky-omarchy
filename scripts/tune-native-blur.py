@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Make MacShell's "Normal Blur" style look like the old Liquid Glass, and quiet the About window's button.
+"""Tune MacShell's "Normal Blur" appearance and simplify the About window's trim.
 
 With barStyle / dockStyle "blur", Hyprland blurs what is under each MacShell surface and MacShell only draws a tint
 on top. MacShell's tints for that style were much heavier than Liquid Glass (dark: Dock and panels 38 %, the menu bar's
@@ -10,7 +10,8 @@ dropdown menus 64 %; Liquid Glass uses ~21 % plus a small brightness lift), so t
   * keeps the fade behind a clear menu bar below the `macbar` layer rule's ignore_alpha (0.05), so Hyprland does not blur a
     dark strip under the bar (it used to peak at 30 %);
   * adds Liquid Glass's soft light from above: a white sheen fading from the top edge, in light and dark mode;
-  * makes About This Mac's "More Info..." button a faint fill instead of a 75 % white slab in light mode.
+  * removes the About window's two outlines, gives Hyprland sole control of its corners,
+    and softens its "More Info..." button.
 
 Usage: tune-native-blur.py <MacShell dir>
 """
@@ -26,9 +27,11 @@ def tune(path, edits):
     for old, new in edits:
         if new in text:
             continue
-        if text.count(old) != 1:
-            raise SystemExit(f"Normal Blur tuning ({path.name}): expected text missing or repeated: {old[:70]!r}")
-        text = text.replace(old, new)
+        alternatives = (old,) if isinstance(old, str) else old
+        matches = [candidate for candidate in alternatives if candidate in text]
+        if len(matches) != 1 or text.count(matches[0]) != 1:
+            raise SystemExit(f"Normal Blur tuning ({path.name}): expected one match for {alternatives[0][:70]!r}")
+        text = text.replace(matches[0], new)
     if text != original:
         path.write_text(text)
 
@@ -75,7 +78,9 @@ tune(shell / "MacBar.qml", [
     ),
 ])
 
-tune(shell / "MacBar.qml", [
+# The bar contrast tuner replaces this fade (barFeather) with SilkyBarContrast; only tune it while it is there.
+if "barFeather" in (shell / "MacBar.qml").read_text():
+  tune(shell / "MacBar.qml", [
     (
         "                        GradientStop { position: 0.00; color: Qt.rgba(barFeather.c.r, barFeather.c.g, barFeather.c.b, 0.30) }\n"
         "                        GradientStop { position: 0.35; color: Qt.rgba(barFeather.c.r, barFeather.c.g, barFeather.c.b, 0.20) }\n"
@@ -85,7 +90,7 @@ tune(shell / "MacBar.qml", [
         "                        GradientStop { position: 0.35; color: Qt.rgba(barFeather.c.r, barFeather.c.g, barFeather.c.b, 0.03) }\n"
         "                        GradientStop { position: 0.65; color: Qt.rgba(barFeather.c.r, barFeather.c.g, barFeather.c.b, 0.015) }\n",
     ),
-])
+  ])
 
 tune(shell / "MacDock.qml", [
     (
@@ -101,10 +106,60 @@ tune(shell / "MacDock.qml", [
 
 tune(shell / "AboutApp.qml", [
     (
+        (
+            "            readonly property color bg: dark ? Qt.rgba(0.17, 0.17, 0.18, 0.84) : Qt.rgba(0.88, 0.87, 0.86, 0.88)\n",
+            "            // Match the Omarchy system menu's dark and light glass tints (ARGB).\n"
+            '            readonly property color bg: dark ? "#8c1c1c1e" : "#adf7f7f9"\n',
+        ),
+        "            // System menu glass tint at 61% dark and 74% light opacity (ARGB).\n"
+        '            readonly property color bg: dark ? "#9c1c1c1e" : "#bdf7f7f9"\n',
+    ),
+    (
         "            readonly property color btn: dark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(1, 1, 1, 0.75)\n"
         "            readonly property color btnDown: dark ? Qt.rgba(1, 1, 1, 0.2) : Qt.rgba(1, 1, 1, 0.5)\n",
         "            // Silky: a faint fill like macOS secondary buttons (the light one used to be a 75 % white slab)\n"
         "            readonly property color btn: dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.045)\n"
         "            readonly property color btnDown: dark ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(0, 0, 0, 0.10)\n",
+    ),
+    (
+        "                // this window draws its own macOS-style edge: no Hyprland border, and Hyprland's corner rounding\n"
+        "                // (also used for its shadow and blur) matches the window's own radius\n",
+        "                // Keep the Hyprland border off and align its shadow and blur with the window's radius.\n",
+    ),
+    (
+        "            readonly property color border: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.18)\n"
+        "            readonly property color edgeOuter: Qt.rgba(1, 1, 1, 0.50)     // thin dark line on the outside\n"
+        "            readonly property color edgeInner: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.65)      // soft highlight just inside it\n"
+        '            function lightBorder(active, c) { return active ? Qt.darker(c, dark ? 1.12 : 1.22) : "transparent"; }\n',
+        "            readonly property color border: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.18)\n"
+        '            function lightBorder(active, c) { return active ? Qt.darker(c, dark ? 1.12 : 1.22) : "transparent"; }\n',
+    ),
+    (
+        "            border.width: 1; border.color: pal.edgeOuter\n"
+        "            clip: true\n"
+        "\n"
+        "            // inner highlight: together with the outer line this is the two-tone edge macOS windows have\n"
+        "            Rectangle {\n"
+        "                anchors.fill: parent; anchors.margins: 1\n"
+        "                radius: frame.radius - 1\n"
+        "                color: \"transparent\"\n"
+        "                border.width: 1; border.color: pal.edgeInner\n"
+        "                z: 50\n"
+        "            }\n",
+        "            border.width: 0\n"
+        "            clip: true\n",
+    ),
+    (
+        "            radius: 18\n"
+        "            color: pal.bg\n"
+        "            border.width: 0\n",
+        "            // Let Hyprland clip the tint and its backdrop to the same rounded outline.\n"
+        "            readonly property real cornerRadius: 18\n"
+        "            color: pal.bg\n"
+        "            border.width: 0\n",
+    ),
+    (
+        'Math.round(frame.radius * win.uiS)',
+        'Math.round(frame.cornerRadius * win.uiS)',
     ),
 ])

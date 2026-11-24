@@ -1,12 +1,12 @@
 -- macOS Tahoe · Dark: window chrome. Loaded by Omarchy in place of the generated border colours.
--- A hairline edge, continuous-curve corners, a deep soft shadow under the focused window,
+-- Continuous-curve corners, a deep soft shadow under the focused window,
 -- and Liquid-Glass style frosting behind anything translucent.
 local active_border_color = "rgba(ffffff3d)"
 local inactive_border_color = "rgba(ffffff1f)"
 
 hl.config({
   general = {
-    border_size = 1,
+    border_size = 0,
     col = {
       active_border = active_border_color,
       inactive_border = inactive_border_color,

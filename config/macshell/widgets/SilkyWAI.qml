@@ -1,8 +1,8 @@
-// AI usage today: Claude Code and Codex from their local session logs, DeepSeek from its balance API.
+// Local Claude Code and Codex usage plus the Gemini model quota from Antigravity.
 // Every provider is shown the same way: badge + name, one main figure, its caption, two detail lines.
 //   Claude   tokens today      · requests, output tokens
 //   Codex    5-hour quota left · this week's quota left, next reset   (remaining, as the Codex app shows it)
-//   DeepSeek spent today       · balance                               (needs an API key, right-click)
+//   Antigravity  Gemini 5-hour quota left · weekly quota left, next reset
 //   small = one row per provider; medium = three columns; large = columns + tokens per hour + quota resets
 import QtQuick
 import "SilkyWidgetsFormat.js" as F
@@ -13,14 +13,16 @@ Item {
     readonly property var d: host.info ? host.info.ai : null
     readonly property var claude: d ? d.claude : null
     readonly property var codex: d ? d.codex : null
-    readonly property var ds: d ? d.deepseek : null
-    readonly property bool dsReady: ds !== null && ds.configured === true && !ds.error
+    readonly property var antigravity: d ? d.antigravity : null
+    readonly property var claudeQuota: claude ? claude.quota : null
+    readonly property bool claudeUsesWeekly: !!claudeQuota && (remaining(claudeQuota.secondary) === 0 || !claudeQuota.primary)
+    readonly property var claudeWindow: claudeQuota ? (claudeUsesWeekly ? claudeQuota.secondary : claudeQuota.primary) : null
 
     readonly property var providers: [
         // brand colours; logos are fetched by the installer into assets/ai-logos (LobeHub icons, see docs)
         { key: "claude", name: "Claude", glyph: "✳", color: "#d97757", inset: 0.18 },
         { key: "codex", name: "Codex", glyph: "◎", color: "#7a6cff", inset: 0 },
-        { key: "deepseek", name: "DeepSeek", glyph: "◆", color: "#4d6bfe", inset: 0.14 }
+        { key: "antigravity", name: "Antigravity", glyph: "A", color: "#4285f4", inset: 0.14 }
     ]
     function remaining(win) { return win && typeof win.left === "number" ? win.left : null; }
     function pct(v) { return v === null ? "—" : Math.round(v) + "%"; }
@@ -38,6 +40,12 @@ Item {
     function figures(key) {
         if (key === "claude") {
             if (!claude) return ["—", F.tr("tokens today"), F.tr("No logs"), ""];
+            if (remaining(claudeWindow) !== null) {
+                var other = claudeUsesWeekly ? claudeQuota.primary : claudeQuota.secondary;
+                return [pct(remaining(claudeWindow)), F.tr(claudeUsesWeekly ? "Weekly quota left" : "5-hour quota left"),
+                        other ? F.tr(claudeUsesWeekly ? "5-hour quota left" : "Week left") + " " + pct(remaining(other)) : "",
+                        remaining(claudeWindow) === 0 ? F.tr("Limit reached") : ""];
+            }
             if (claude.limited)      // Claude Code refused a request: the plan limit is used up until the reset
                 return ["0%", F.tr(claude.limited.type === "five_hour" ? "5-hour quota left" : "Weekly quota left"),
                         F.tr("Limit reached"), resetText({ resetsAt: claude.limited.resetsAt })];
@@ -49,16 +57,45 @@ Item {
             return [pct(remaining(codex.primary)), F.tr("5-hour quota left"),
                     F.tr("Week left") + " " + pct(remaining(codex.secondary)), resetText(codex.primary)];
         }
-        if (!ds || !ds.configured) return ["—", F.tr("spent today"), F.tr("Not set"), F.tr("Right-click to add a key")];
-        if (ds.error) return ["—", F.tr("spent today"), F.tr("Key error"), ds.error];
-        return [F.money(ds.spent, ds.currency), F.tr("spent today"), F.tr("Balance") + " " + F.money(ds.balance, ds.currency), ""];
+        if (!antigravity) return ["—", F.tr("Quota unavailable"), F.tr("Gemini models"), ""];
+        var primary = antigravity.primary, weekly = antigravity.secondary;
+        return [pct(remaining(primary)), F.tr("5-hour quota left"),
+                F.tr("Week left") + " " + pct(remaining(weekly)), resetText(primary)];
     }
-    // a quota bar where there is a quota (Codex, the 5-hour window); -1 = none
+    // A progress bar for the displayed quota, where one is available.
     function bar(key) {
-        if (key === "claude") return claude && claude.limited ? 0 : -1;
-        return key === "codex" && codex ? (remaining(codex.primary) === null ? -1 : remaining(codex.primary)) : -1;
+        if (key === "claude") {
+            var quota = remaining(claudeWindow);
+            return quota !== null ? quota : claude && claude.limited ? 0 : -1;
+        }
+        var usage = key === "codex" ? codex : antigravity;
+        var left = usage ? remaining(usage.primary) : null;
+        return left === null ? -1 : left;
     }
-    function barInk(v) { return v <= 15 ? (w.host.dark ? "#ff6b61" : "#c4302b") : v <= 35 ? (w.host.dark ? "#ffb35c" : "#b45a0f") : providers[1].color; }
+    // Both 5-hour (primary) and weekly (secondary) remaining percentages for the compact dual-meter view.
+    function quotas(key) {
+        if (key === "claude") {
+            if (claudeQuota)
+                return { fiveHour: remaining(claudeQuota.primary), weekly: remaining(claudeQuota.secondary) };
+            if (claude && claude.limited) {
+                return claude.limited.type === "five_hour"
+                    ? { fiveHour: 0, weekly: null }
+                    : { fiveHour: null, weekly: 0 };
+            }
+            return { fiveHour: null, weekly: null };
+        }
+        var usage = key === "codex" ? codex : antigravity;
+        if (!usage) return { fiveHour: null, weekly: null };
+        return { fiveHour: remaining(usage.primary), weekly: remaining(usage.secondary) };
+    }
+    // 4-tier quota scale (remaining %): abundant (> 65%) green, normal (36-65%) cyan,
+    // low (16-35%) amber, critical (<= 15%) red — mirrors the system load & battery palette.
+    function barInk(v) {
+        if (v <= 15) return w.host.dark ? "#ff453a" : "#c92a22";
+        if (v <= 35) return w.host.dark ? "#ff9f0a" : "#b85d00";
+        if (v <= 65) return w.host.dark ? "#64d2ff" : "#0071a4";
+        return w.host.dark ? "#30d158" : "#1c8241";
+    }
 
     SilkyWLabel { visible: !w.d; host: w.host; anchors.centerIn: parent; dim: true; text: F.tr("Loading…") }
 
@@ -69,7 +106,7 @@ Item {
         property string key: ""
         property color tint: "white"
         property string glyph: ""
-        property real inset: 0.16           // the bare marks (Claude, DeepSeek) sit inside the tile; Codex's logo is the tile
+        property real inset: 0.16           // Bare marks sit inside the tile; Codex's logo is the tile.
         property real s: 20
         width: s; height: s; radius: s * 0.26
         color: logo.status === Image.Ready ? "white" : tint
@@ -95,31 +132,62 @@ Item {
         property color trackInk: "gray"
         height: 4; radius: 2
         color: trackInk
-        Rectangle { width: Math.max(4, parent.width * Math.min(100, parent.value) / 100); height: parent.height; radius: 2; color: parent.ink }
+        Rectangle {
+            width: parent.width * Math.max(0, Math.min(100, parent.value)) / 100
+            height: parent.height; radius: parent.radius; color: parent.ink
+        }
+    }
+    component QuotaSlot: Item {
+        required property var host
+        property string label: ""
+        property var value: null        // 0..100 or null
+        property string display: "—"
+        property color ink: "white"
+        property bool muted: false      // e.g. 5h window blocked because weekly quota is exhausted
+        height: 20
+        SilkyWLabel { x: 0; y: 1; host: parent.host; dim: true; px: 10; text: parent.label }
+        SilkyWLabel {
+            anchors.right: parent.right; y: 0
+            host: parent.host; strong: parent.value !== null && !parent.muted; dim: parent.value === null || parent.muted
+            px: 11; text: parent.display
+        }
+        Meter {
+            x: 0; y: 16; width: parent.width; height: 3; radius: 1.5
+            value: parent.value === null ? 0 : parent.value
+            ink: parent.value === null ? "transparent"
+                : parent.muted ? (parent.host.dark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(0, 0, 0, 0.24))
+                : parent.ink
+            trackInk: parent.host.track
+        }
     }
 
-    // ───── small: one row per provider ─────
+    // ───── small: one row per provider with 5h + weekly dual meters ─────
     Column {
         visible: w.d !== null && w.host.size === "small"
-        x: 14; y: 13; width: parent.width - 28
-        spacing: 6
+        x: 14; y: 12; width: parent.width - 28
+        spacing: 7
         SilkyWLabel { host: w.host; dim: true; strong: true; px: 12; text: F.tr("AI usage today") }
         Repeater {
             model: w.providers
             Item {
                 required property var modelData
-                readonly property var f: w.figures(modelData.key)
-                readonly property real q: w.bar(modelData.key)
+                readonly property var qs: w.quotas(modelData.key)
+                readonly property real slotW: (width - 32 - 8) / 2
                 width: parent.width; height: 36
-                Badge { key: modelData.key; tint: modelData.color; glyph: modelData.glyph; inset: modelData.inset; s: 22; y: 3 }
-                SilkyWLabel { id: value; anchors.right: parent.right; y: 1; host: w.host; strong: true; px: 15; text: parent.f[0] }
-                SilkyWLabel { x: 30; y: 1; width: value.x - 34; host: w.host; strong: true; px: 12; text: modelData.name }
-                SilkyWLabel { x: 30; y: 18; width: parent.width - 30 - (parent.q >= 0 ? 62 : 0); host: w.host; dim: true; px: 10; text: parent.f[1] }
-                // the quota bar sits on the caption line, right-aligned under the figure
-                Meter {
-                    visible: parent.q >= 0
-                    anchors.right: parent.right; y: 23; width: 56
-                    value: parent.q; ink: w.barInk(parent.q); trackInk: w.host.track
+                Badge { key: modelData.key; tint: modelData.color; glyph: modelData.glyph; inset: modelData.inset; s: 24; y: 6 }
+                SilkyWLabel { x: 32; y: 0; width: parent.width - 32; host: w.host; strong: true; px: 12; text: modelData.name }
+                QuotaSlot {
+                    x: 32; y: 16; width: parent.slotW
+                    host: w.host; label: "5h"
+                    value: parent.qs.fiveHour; display: w.pct(parent.qs.fiveHour)
+                    muted: parent.qs.weekly === 0
+                    ink: parent.qs.fiveHour === null ? "transparent" : w.barInk(parent.qs.fiveHour)
+                }
+                QuotaSlot {
+                    x: 32 + parent.slotW + 8; y: 16; width: parent.slotW
+                    host: w.host; label: F.tr("7d")
+                    value: parent.qs.weekly; display: w.pct(parent.qs.weekly)
+                    ink: parent.qs.weekly === null ? "transparent" : w.barInk(parent.qs.weekly)
                 }
             }
         }

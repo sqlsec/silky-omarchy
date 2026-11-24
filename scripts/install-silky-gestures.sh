@@ -5,6 +5,7 @@ repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 plugin_dir="$repo_root/plugins/silky-gestures"
 lib_dir="$HOME/.local/lib/silky-omarchy"
 hypr_dir="$HOME/.config/hypr"
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/silky-omarchy"
 build_only=false
 
 usage() {
@@ -12,7 +13,7 @@ usage() {
 Usage: scripts/install-silky-gestures.sh [--build-only]
 
 Builds the Silky Gestures Hyprland plugin against the installed Hyprland
-headers and enables it. Re-run after every Hyprland update.
+headers and enables it. Installs automatic maintenance for Omarchy updates.
 
   --build-only  Build and install the plugin file, but do not touch the
                 Hyprland configuration or the running compositor.
@@ -26,7 +27,7 @@ case "${1:-}" in
   *) usage >&2; exit 2 ;;
 esac
 
-for command_name in g++ make pkg-config hyprctl; do
+for command_name in g++ make pkg-config Hyprland hyprctl jq; do
   command -v "$command_name" >/dev/null || {
     printf 'Missing required command: %s\n' "$command_name" >&2
     exit 1
@@ -39,10 +40,16 @@ pkg-config --exists hyprland || {
 }
 
 headers_version=$(pkg-config --modversion hyprland)
-running_version=$(hyprctl version -j | sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' | head -n1)
-if [[ -n "$running_version" && "$running_version" != "$headers_version" ]]; then
-  printf 'Running Hyprland is %s but the headers are %s. Log out and back in after the update, then re-run.\n' \
-    "$running_version" "$headers_version" >&2
+installed_abi=$(Hyprland --version | sed -n 's/^Version ABI string: //p')
+if [[ -z $installed_abi ]]; then
+  printf 'Could not determine the installed Hyprland ABI.\n' >&2
+  exit 1
+fi
+running=$(hyprctl version -j 2>/dev/null || true)
+running_version=$(jq -r '.version // empty' <<< "$running")
+running_abi=$(jq -r '.abiHash // empty' <<< "$running")
+if ! $build_only && [[ -n "$running_version" && "$running_abi" != "$installed_abi" ]]; then
+  printf 'The running Hyprland ABI differs from the installed build. Use --build-only or log out and back in.\n' >&2
   exit 1
 fi
 
@@ -64,10 +71,35 @@ backup_if_changed() {
 backup_if_changed "$plugin_dir/silky-gestures.so" "$target"
 install -m 755 "$plugin_dir/silky-gestures.so" "$target.new"
 mv -f "$target.new" "$target"
-find "$lib_dir" -maxdepth 1 -name 'silky-gestures-*.so' ! -name "silky-gestures-$headers_version.so" -delete
+printf '%s\n' "$installed_abi" > "$target.abi.new"
+mv -f "$target.abi.new" "$target.abi"
+if [[ -n "$running_version" && "$running_version" != "$headers_version" ]]; then
+  find "$lib_dir" -maxdepth 1 \( -name 'silky-gestures-*.so' -o -name 'silky-gestures-*.so.abi' \) \
+    ! -name "silky-gestures-$headers_version.so" ! -name "silky-gestures-$headers_version.so.abi" \
+    ! -name "silky-gestures-$running_version.so" ! -name "silky-gestures-$running_version.so.abi" -delete
+else
+  find "$lib_dir" -maxdepth 1 \( -name 'silky-gestures-*.so' -o -name 'silky-gestures-*.so.abi' \) \
+    ! -name "silky-gestures-$headers_version.so" ! -name "silky-gestures-$headers_version.so.abi" -delete
+fi
 printf 'Installed %s\n' "$target"
 
 $build_only && exit 0
+
+hook_staging=$(mktemp -d)
+trap 'rm -rf -- "$hook_staging"' EXIT
+printf '#!/usr/bin/env bash\nexec %q "$@"\n' "$repo_root/hooks/post-update-silky-gestures" \
+  > "$hook_staging/silky-gestures.hook"
+mkdir -p "$state_dir"
+installed_hook="$HOME/.config/omarchy/hooks/post-update.d/silky-gestures.hook"
+if [[ -f $installed_hook ]] && ! cmp -s "$hook_staging/silky-gestures.hook" "$installed_hook"; then
+  cp -p -- "$installed_hook" "$state_dir/post-update-silky-gestures.bak.$(date +%Y%m%d-%H%M%S-%N)"
+fi
+omarchy hook install post-update "$hook_staging/silky-gestures.hook"
+
+libinput_package="$HOME/.local/share/silky-omarchy/libinput/libinput-1.32.0-1.4-aarch64.pkg.tar.xz"
+if [[ -f $libinput_package ]] && { [[ -f $state_dir/libinput-maintained ]] || [[ $(pacman -Q libinput 2>/dev/null || true) == 'libinput 1.32.0-1.4' ]]; }; then
+  sha256sum -- "$libinput_package" > "$state_dir/libinput-maintained"
+fi
 
 backup_if_changed "$repo_root/config/hypr/silky-gestures.lua" "$hypr_dir/silky-gestures.lua"
 install -m 644 "$repo_root/config/hypr/silky-gestures.lua" "$hypr_dir/silky-gestures.lua"

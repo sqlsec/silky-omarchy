@@ -11,7 +11,7 @@ Item {
 
     Process {
         running: root.active
-        command: ["/usr/bin/python3", "-I", decodeURIComponent(Qt.resolvedUrl("assets/silky-status.py").toString().substring(7)), root.mode]
+        command: [decodeURIComponent(Qt.resolvedUrl("assets/silky-status").toString().substring(7)), root.mode]
         stdout: SplitParser {
             onRead: line => {
                 if (!root.active)

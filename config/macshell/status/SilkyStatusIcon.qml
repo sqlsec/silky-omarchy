@@ -4,10 +4,13 @@ Canvas {
     id: icon
     required property string kind
     property color ink: "white"
+    // Stroke width on the 20-unit grid; small glyphs need a heavier stroke to match their neighbours.
+    property real weight: 1.55
     implicitWidth: 16
     implicitHeight: 16
     onKindChanged: requestPaint()
     onInkChanged: requestPaint()
+    onWeightChanged: requestPaint()
     onWidthChanged: requestPaint()
     onHeightChanged: requestPaint()
 
@@ -16,7 +19,8 @@ Canvas {
         ctx.reset();
         ctx.scale(width / 20, height / 20);
         ctx.strokeStyle = ink;
-        ctx.lineWidth = 1.55;
+        ctx.lineWidth = weight;
+        let bulb = false;
         ctx.lineJoin = "round";
         ctx.lineCap = "round";
         ctx.beginPath();
@@ -183,6 +187,7 @@ Canvas {
             ctx.arc(10, 14.1, 3.5, -0.8, 3.94);
             ctx.closePath();
             line([10, 8, 10, 14.1]);
+            bulb = true;
             break;
         case "chip":
             ctx.rect(5, 5, 10, 10);
@@ -223,5 +228,12 @@ Canvas {
             break;
         }
         ctx.stroke();
+        if (bulb) {
+            // A filled bulb gives the thermometer the same visual weight as the solid Wi-Fi and search glyphs.
+            ctx.beginPath();
+            ctx.arc(10, 14.1, 2.1, 0, Math.PI * 2);
+            ctx.fillStyle = ink;
+            ctx.fill();
+        }
     }
 }

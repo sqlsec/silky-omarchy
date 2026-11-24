@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+"""Cycle Fcitx5 input methods (and Hyprland XKB layouts) without requiring omarchy-shell."""
+
+from collections import Counter
+import json
+import re
+import subprocess
+import sys
+
+
+CONTROLLER = [
+    "busctl",
+    "--user",
+    "--json=short",
+    "call",
+    "org.fcitx.Fcitx5",
+    "/controller",
+    "org.fcitx.Fcitx.Controller1",
+]
+
+VIRTUAL_KEYBOARD_RE = re.compile(
+    r"^(hl-virtual-keyboard|power-button|sleep-button|lid-switch|video-bus)"
+)
+
+
+def fcitx_call(method, *args):
+    out = subprocess.check_output(
+        [*CONTROLLER, method, *args],
+        text=True,
+        stderr=subprocess.DEVNULL,
+        timeout=1.5,
+    )
+    return json.loads(out).get("data", []) if out.strip() else []
+
+
+def hypr_keyboards():
+    try:
+        out = subprocess.check_output(
+            ["hyprctl", "-j", "devices"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=1.5,
+        )
+        return json.loads(out).get("keyboards", [])
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+        return []
+
+
+def layout_keyboard(keyboards):
+    typed = [
+        kb
+        for kb in keyboards
+        if not VIRTUAL_KEYBOARD_RE.match(kb.get("name", ""))
+        and len(kb.get("layout", "").split(",")) > 1
+    ]
+    if not typed:
+        return None
+    counts = Counter(kb.get("layout", "") for kb in keyboards)
+    layout = max((kb["layout"] for kb in typed), key=lambda item: counts[item])
+    return max(
+        (kb for kb in typed if kb.get("layout") == layout),
+        key=lambda kb: kb.get("active_layout_index", 0),
+    )
+
+
+def switch_xkb_layout(keyboards, index=None, step=1):
+    kb = layout_keyboard(keyboards)
+    if kb is None:
+        return
+    layout = kb["layout"]
+    count = len(layout.split(","))
+    target = index if index is not None else (kb.get("active_layout_index", 0) + step) % count
+    for item in keyboards:
+        if item.get("layout") == layout and item.get("name"):
+            subprocess.run(
+                ["hyprctl", "switchxkblayout", item["name"], str(target)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=1.5,
+            )
+
+
+def cycle_choice(methods, current, keyboards, step):
+    kb = layout_keyboard(keyboards)
+    primary = next((m for m in methods if m.startswith("keyboard-")), None)
+    if kb is None or primary is None:
+        if len(methods) > 1 and current in methods:
+            return methods[(methods.index(current) + step) % len(methods)], None
+        return None, None
+
+    choices = []
+    for method in methods:
+        if method == primary:
+            choices.extend((method, idx) for idx in range(len(kb["layout"].split(","))))
+        else:
+            choices.append((method, None))
+
+    cur = current or primary
+    pos = (cur, kb.get("active_layout_index", 0) if cur == primary else None)
+    if pos not in choices:
+        return None, None
+    return choices[(choices.index(pos) + step) % len(choices)]
+
+
+def main():
+    direction = sys.argv[1] if len(sys.argv) > 1 else "next"
+    if direction not in ("next", "back") or len(sys.argv) > 2:
+        print("Usage: silky-input-cycle [next|back]", file=sys.stderr)
+        return 1
+    step = -1 if direction == "back" else 1
+    keyboards = hypr_keyboards()
+
+    try:
+        group = fcitx_call("CurrentInputMethodGroup")[0]
+        group_info = fcitx_call("InputMethodGroupInfo", "s", group)
+        methods = list(dict.fromkeys(item[0] for item in group_info[1]))
+        current = fcitx_call("CurrentInputMethod")[0]
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError, IndexError):
+        # Fcitx5 is unavailable: still cycle Hyprland XKB layouts if multiple are configured.
+        switch_xkb_layout(keyboards, step=step)
+        return 0
+
+    if not methods:
+        return 0
+
+    if not current:
+        # No focused input context: fall back to Fcitx5 Toggle.
+        try:
+            fcitx_call("Toggle")
+        except (OSError, subprocess.SubprocessError):
+            pass
+        return 0
+
+    if current not in methods:
+        current = methods[0]
+
+    following, layout_index = cycle_choice(methods, current, keyboards, step)
+    if following is None:
+        if len(methods) == 1 and not methods[0].startswith("keyboard-"):
+            fcitx_call("Toggle")
+        return 0
+
+    if layout_index is not None:
+        switch_xkb_layout(keyboards, index=layout_index)
+
+    subprocess.run(
+        [
+            "busctl",
+            "--user",
+            "call",
+            "org.fcitx.Fcitx5",
+            "/controller",
+            "org.fcitx.Fcitx.Controller1",
+            "SetCurrentIM",
+            "s",
+            following,
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=1.5,
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

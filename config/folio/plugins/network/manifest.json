@@ -1,0 +1,11 @@
+{
+  "folio": 1,
+  "requires": ["avahi-browse", "python3"],
+  "poll": { "command": ["./discover"], "onDemand": true },
+  "view": {
+    "title": "Network",
+    "label": "Network",
+    "icon": "tailnet",
+    "empty": "No network devices found"
+  }
+}

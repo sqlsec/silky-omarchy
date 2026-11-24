@@ -60,7 +60,7 @@ $build_only && exit 0
 [[ -f "$shell_dir/MacDock.qml" ]] || { printf 'MacShell not found in %s\n' "$shell_dir" >&2; exit 1; }
 backup_dir="$HOME/.local/state/macshell/silky-backup-dock-glass-$stamp"
 mkdir -p "$backup_dir"
-cp -a "$shell_dir/MacDock.qml" "$backup_dir/"
+cp -a "$shell_dir/MacDock.qml" "$shell_dir/DockGlassPanel.qml" "$backup_dir/"
 [[ ! -f "$shell_dir/MacBar.qml" ]] || cp -a "$shell_dir/MacBar.qml" "$backup_dir/"
 [[ ! -f "$shell_dir/SilkyGlassMarker.qml" ]] || cp -a "$shell_dir/SilkyGlassMarker.qml" "$backup_dir/"
 [[ ! -f "$env_file" ]] || cp -a "$env_file" "$backup_dir/env"

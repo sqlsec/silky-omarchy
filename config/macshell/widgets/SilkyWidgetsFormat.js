@@ -29,16 +29,12 @@ var chinese = {
     "Rain": "中雨", "Heavy Rain": "大雨", "Freezing Rain": "冻雨", "Light Snow": "小雪", "Snow": "中雪",
     "Heavy Snow": "大雪", "Showers": "阵雨", "Heavy Showers": "强阵雨", "Snow Showers": "阵雪",
     "Thunderstorms": "雷阵雨", "No events today": "今天没有日程",
-    "AI Usage": "AI 用量", "AI usage today": "今日 AI 用量", "Claude Code, Codex and DeepSeek today": "Claude Code、Codex 和 DeepSeek 今日用量",
-    "Not set": "未设置", "Key error": "Key 无效", "requests": "次请求", "No logs": "没有记录", "tokens today": "今日 tokens",
-    "week": "本周", "Right-click to add an API key": "右键填写 API Key", "Balance": "余额", "spent today": "今日消费",
-    "Tokens per hour": "每小时 tokens", "until reset": "后重置", "output": "输出", "cache read": "缓存读取", "cache write": "缓存写入",
-    "DeepSeek API key": "DeepSeek API Key", "Paste a key, Enter to save": "粘贴 Key，回车保存",
-    "Saved only on this computer (~/.config/silky/ai-keys.json, 0600). Claude Code and Codex are read from their local logs, no sign-in needed.":
-        "只保存在本机（~/.config/silky/ai-keys.json，权限 0600）。Claude Code 和 Codex 读取本地日志，无需登录。",
-    "Remove key": "删除 Key", "Key saved": "已保存 Key",
+    "AI Usage": "AI 用量", "AI usage today": "今日 AI 用量", "Claude Code, Codex and Antigravity": "Claude Code、Codex 和 Antigravity 用量",
+    "No logs": "没有记录", "tokens today": "今日 tokens",
+    "Quota unavailable": "暂无额度", "Gemini models": "Gemini 模型",
+    "Tokens per hour": "每小时 tokens",
     "Fresh window": "窗口已重置", "Limit reached": "已达上限", "Weekly quota left": "本周剩余", "resets": "重置", "Requests": "请求", "Output": "输出",
-    "5-hour quota left": "5 小时剩余", "Week left": "本周剩余", "Right-click to add a key": "右键填写 Key",
+    "5-hour quota left": "5 小时剩余", "Week left": "本周剩余", "7d": "周",
     "Codex 5-hour quota": "Codex 5 小时", "Codex weekly quota": "Codex 本周", "left": "剩余",
     "Symbols you follow": "关注的代码", "drag to reorder": "拖动排序", "Add a code or name, Enter": "输入代码或名称，回车添加",
     "Now showing": "当前显示", "Remove Widget": "移除小组件",
@@ -62,7 +58,7 @@ var kinds = [
     { kind: "battery", name: "Batteries", note: "Laptop and connected devices" },
     { kind: "calendar", name: "Calendar", note: "Today, lunar date and the month" },
     { kind: "system", name: "System", note: "CPU, memory and disk" },
-    { kind: "ai", name: "AI Usage", note: "Claude Code, Codex and DeepSeek today" }
+    { kind: "ai", name: "AI Usage", note: "Claude Code, Codex and Antigravity" }
 ];
 
 function kindName(kind) {
@@ -140,7 +136,44 @@ function compact(n) {
     return (unit && n < 100 ? n.toFixed(1) : Math.round(n)) + units[unit];
 }
 
-function money(value, currency) {
-    if (typeof value !== "number" || !isFinite(value)) return "—";
-    return ({ CNY: "¥", USD: "$" }[currency] || (currency ? currency + " " : "")) + value.toFixed(2);
+// Multi-monitor process deduplication: MacBar instantiates one SilkyWidgetDeck per screen,
+// so keep a single silky-widgets.py backend alive across all screens and broadcast samples.
+var _widgetDecks = [];
+var _widgetOwner = null;
+var _widgetLatest = null;
+
+function registerWidgetDeck(deck) {
+    if (_widgetDecks.indexOf(deck) === -1) _widgetDecks.push(deck);
+    if (!_widgetOwner) {
+        _widgetOwner = deck;
+        deck.isProcessOwner = true;
+    }
+    if (_widgetLatest !== null) {
+        deck.latest = _widgetLatest;
+        if (deck.open) deck.info = _widgetLatest;
+    }
+}
+
+function unregisterWidgetDeck(deck) {
+    var i = _widgetDecks.indexOf(deck);
+    if (i >= 0) _widgetDecks.splice(i, 1);
+    if (_widgetOwner === deck) {
+        deck.isProcessOwner = false;
+        _widgetOwner = _widgetDecks.length > 0 ? _widgetDecks[0] : null;
+        if (_widgetOwner) _widgetOwner.isProcessOwner = true;
+    }
+}
+
+function broadcastWidgetSample(sample) {
+    _widgetLatest = sample;
+    for (var i = 0; i < _widgetDecks.length; i++) {
+        var d = _widgetDecks[i];
+        d.latest = sample;
+        if (d.open) d.info = sample;
+    }
+}
+
+function sendWidgetCommand(line) {
+    if (_widgetOwner && typeof _widgetOwner.sendLocal === "function")
+        _widgetOwner.sendLocal(line);
 }

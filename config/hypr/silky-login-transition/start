@@ -1,0 +1,13 @@
+#!/bin/bash
+set -eu
+
+# Use the same snapshot as the greeter, including the still it uses for a video.
+profile="/var/lib/macshell-greeter/users/$(id -un)/profile.json"
+wallpaper=$(jq -er '.wallpaper | strings' "$profile" 2>/dev/null) || exit 0
+[[ $wallpaper = /* && -f $wallpaper && -r $wallpaper ]] || exit 0
+
+export SILKY_LOGIN_WALLPAPER="$wallpaper"
+# This wallpaper-only process needs no desktop theme or portal integration.
+unset QT_QPA_PLATFORMTHEME
+export QT_QPA_PLATFORM=wayland
+exec /usr/bin/qs --no-duplicate --path "${BASH_SOURCE[0]%/*}/shell.qml"

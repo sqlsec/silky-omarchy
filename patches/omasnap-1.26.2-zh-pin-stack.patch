@@ -1,0 +1,811 @@
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -511,20 +511,25 @@
+ or choose **Keep on screen** from its right-click menu to turn it into a
+ standalone pin. Dragging a preview also keeps it available for reordering.
+ 
+-In the editor, `P` or `Ctrl+P` opens a standalone pin near the pointer.
+-`omasnap --pin-clipboard` opens a pin from the current clipboard image. Pins
+-are floating windows across workspaces, sized to show the full image without
+-cropping. Large captures open fitted to the work area. Drag anywhere on the
+-image to move it. The right-click menu provides copy, save, edit, reveal,
+-original size, opacity, and close.
+-
+-| Input on a standalone pin | Action |
++In the editor, `P` or `Ctrl+P` stores a pin in the lower-right stack.
++`omasnap --pin-clipboard` adds the current clipboard image to the same stack.
++Each monitor has its own stack, visible across workspaces. Cards show a
++thumbnail of the complete image. Detached images keep their proportions and
++large captures fit the work area.
++
++| Input | Action |
+ |---|---|
+-| Drag the image | Move the pin |
+-| Wheel / `Alt`+wheel | Zoom by 10% / 1% |
+-| `Ctrl`+wheel | Change opacity by 5% |
+-| Middle-click | Restore original size, fitted to the work area if needed |
+-| Double-click / `Esc` / `X` | Close the pin |
++| Click the folded stack | Expand the cards |
++| Click an expanded card | Open the image in the center of the work area |
++| Drag a card or detached image | Move it to any position |
++| Drag the lower-right grip of a detached image | Resize at the original aspect ratio |
++| Right-click a detached image | Return to stack, delete, or access image actions |
++| Right-click a stacked card | Collapse the stack or access image actions |
++| `Esc` / `X` while focused | Delete the pin |
++| Double-click a detached image | Delete the pin |
++| Wheel / `Alt`+wheel on a detached image | Zoom by 10% / 1% |
++| `Ctrl`+wheel on a detached image | Change opacity by 5% |
++| Middle-click on a detached image | Restore original size, fitted to the work area if needed |
+ | `Shift`+drag | Drag the full PNG into a file-capable drop target |
+ | `A` / `E` while hovered | Edit the pin |
+ | `Ctrl+C` | Copy the full image |
+diff --git a/i18n/omasnap_zh_CN.ts b/i18n/omasnap_zh_CN.ts
+--- a/i18n/omasnap_zh_CN.ts
++++ b/i18n/omasnap_zh_CN.ts
+@@ -1002,6 +1002,18 @@
+     <message>
+       <source>Save image</source>
+       <translation>保存图像</translation>
++    </message>
++    <message>
++      <source>Collapse stack</source>
++      <translation>收拢贴图</translation>
++    </message>
++    <message>
++      <source>Return to stack</source>
++      <translation>收回右下角</translation>
++    </message>
++    <message>
++      <source>Delete pin</source>
++      <translation>销毁贴图</translation>
+     </message>
+     <message>
+       <source>Original size</source>
+diff --git a/src/pin.cpp b/src/pin.cpp
+--- a/src/pin.cpp
++++ b/src/pin.cpp
+@@ -69,6 +69,7 @@
+ 
+ #include <algorithm>
+ #include <climits>
++#include <limits>
+ #include <memory>
+ #include <optional>
+ #include <functional>
+@@ -81,6 +82,14 @@
+ constexpr int kToastMs = 1200;
+ constexpr int kStackWatchMs = 180;
+ constexpr int kStackCloseMs = 360;
++constexpr QSize kDeckCard(160, 102);
++constexpr int kResizeGrip = 18;
++
++QSize deckCardSize(const QRect &area) {
++  return kDeckCard.boundedTo((area.size() - QSize(44, 48)).expandedTo(QSize(1, 1)));
++}
++
++enum class DeckAction { Store, Click, Drag, Fold, Remove };
+ 
+ // Every pin's title starts with this, followed by the process id, so pins
+ // can recognize each other in the compositor's client list and a dispatcher
+@@ -208,6 +217,7 @@
+            qMakePair(QStringLiteral("rounding"), QStringLiteral("0")),
+            qMakePair(QStringLiteral("no_shadow"), QStringLiteral("true")),
+            qMakePair(QStringLiteral("no_blur"), QStringLiteral("true")),
++           qMakePair(QStringLiteral("keep_aspect_ratio"), QStringLiteral("true")),
+            qMakePair(QStringLiteral("no_follow_mouse"), QStringLiteral("false"))}) {
+     commands.push_back(
+         QStringLiteral("dispatch hl.dsp.window.set_prop({ prop = \"%1\", "
+@@ -228,6 +238,13 @@
+ struct CompositorMonitor {
+   QRect geometry;
+   QRect workArea;
++  QString name;
++};
++
++struct DeckResult {
++  bool ok = false;
++  bool detached = false;
++  CompositorMonitor monitor;
+ };
+ 
+ QJsonArray compositorMonitors() {
+@@ -241,7 +258,8 @@
+   CompositorMonitor focused;
+   for (const QJsonValue &value : monitors) {
+     const QJsonObject monitor = value.toObject();
+-    const CompositorMonitor screen{pinMonitorGeometry(monitor), pinMonitorWorkArea(monitor)};
++    const CompositorMonitor screen{pinMonitorGeometry(monitor), pinMonitorWorkArea(monitor),
++                                   monitor.value(QStringLiteral("name")).toString()};
+     // The bar belongs to the monitor too; only placement uses the work area.
+     if (usePoint && screen.geometry.contains(point))
+       return screen;
+@@ -391,7 +409,7 @@
+       save();
+     }
+   }
+-  void setFree(const QString &title, bool free) {
++  bool setFree(const QString &title, bool free) {
+     setTilt(title, 0.0);
+     auto entries = state_.value(QStringLiteral("free")).toObject();
+     if (free)
+@@ -403,7 +421,7 @@
+       if (pin.title == title)
+         pin.free = free;
+     }
+-    save();
++    return save();
+   }
+   void setTilt(const QString &title, qreal degrees) {
+     auto tilts = state_.value(QStringLiteral("tilts")).toObject();
+@@ -527,6 +545,124 @@
+     if (next)
+       hyprDispatch(pinFocusDispatch(next->address));
+   }
++  DeckResult updateDeck(const QString &title, const CompositorMonitor &monitor,
++                        DeckAction action) {
++    auto own = std::find_if(pins.begin(), pins.end(), [&](const CompositorPin &pin) {
++      return pin.title == title;
++    });
++    if (monitor.name.isEmpty() || monitor.workArea.isEmpty() ||
++        (own == pins.end() && action != DeckAction::Remove))
++      return {};
++
++    const QString key = monitor.name;
++    auto decks = state_.value(QStringLiteral("decks")).toObject();
++    const auto original = decks.value(key).toObject();
++    QStringList cards;
++    for (const auto &entry : original.value(QStringLiteral("cards")).toArray()) {
++      if (std::any_of(pins.cbegin(), pins.cend(), [&](const CompositorPin &pin) {
++            return pin.title == entry.toString();
++          }))
++        cards.push_back(entry.toString());
++    }
++    bool expanded = original.value(QStringLiteral("expanded")).toBool() && !cards.isEmpty();
++    bool detached = false;
++    if (action == DeckAction::Store) {
++      // A moved pin can be returned to a different monitor.
++      for (const QString &other : decks.keys()) {
++        if (other == key)
++          continue;
++        auto deck = decks.value(other).toObject();
++        auto entries = deck.value(QStringLiteral("cards")).toArray();
++        for (qsizetype i = entries.size(); i > 0; --i) {
++          if (entries.at(i - 1).toString() == title)
++            entries.removeAt(i - 1);
++        }
++        if (entries.isEmpty()) {
++          decks.remove(other);
++        } else {
++          deck.insert(QStringLiteral("cards"), entries);
++          decks.insert(other, deck);
++        }
++      }
++      cards.removeAll(title);
++      cards.prepend(title);
++      expanded = false;
++    } else if (action == DeckAction::Click) {
++      if (!cards.contains(title))
++        return {};
++      detached = expanded;
++      expanded = !expanded;
++    } else if (action == DeckAction::Drag) {
++      detached = cards.contains(title);
++      if (!detached)
++        return {};
++      expanded = false;
++    } else if (action == DeckAction::Fold) {
++      expanded = false;
++    }
++    if (detached || action == DeckAction::Remove)
++      cards.removeAll(title);
++
++    const QRect area = monitor.workArea;
++    const QSize cardSize = deckCardSize(area);
++    const int margin = qRound(kCornerMargin);
++    const QPoint corner(area.right() + 1 - margin - cardSize.width(),
++                        area.bottom() + 1 - margin - cardSize.height());
++    const int rows = std::max(1, (area.height() - 2 * margin + kPinGap) /
++                                    (cardSize.height() + kPinGap));
++    const int columns = cards.isEmpty() ? 1 : 1 + (int(cards.size()) - 1) / rows;
++    const int columnStep = columns == 1 ? cardSize.width() + kPinGap :
++        std::clamp((corner.x() - area.left() - margin) / (columns - 1),
++                   1, cardSize.width() + kPinGap);
++    QStringList commands;
++    // Hyprland animates position and damages the moved surfaces. Submit one
++    // batch per interaction, in back-to-front order, with no per-frame IPC.
++    for (qsizetype index = cards.size(); index > 0; --index) {
++      const int depth = int(index - 1);
++      const auto pin = std::find_if(pins.begin(), pins.end(), [&](const CompositorPin &entry) {
++        return entry.title == cards.at(depth);
++      });
++      const QPoint offset = expanded
++          ? QPoint(-(depth / rows) * columnStep, -(depth % rows) * (cardSize.height() + kPinGap))
++          : QPoint(-5 * std::min(depth, 3), -7 * std::min(depth, 3));
++      const QPoint target = corner + offset;
++      if (pin->rect.topLeft() != target)
++        commands.push_back(QStringLiteral("dispatch ") +
++                           pinMoveDispatch(pin->address, target.x(), target.y()));
++      commands.push_back(QStringLiteral("dispatch ") + pinRaiseDispatch(pin->address));
++      pin->rect = QRect(target, cardSize);
++    }
++    if (!commands.isEmpty()) {
++      bool ok = false;
++      const auto replies = runForOutput(QStringLiteral("hyprctl"),
++          {QStringLiteral("--batch"), commands.join(QStringLiteral("; "))}, &ok)
++          .split(QLatin1Char('\n'), Qt::SkipEmptyParts);
++      if (!ok || replies.size() != commands.size() ||
++          !std::all_of(replies.cbegin(), replies.cend(), [](const QString &reply) {
++            return reply.trimmed() == QStringLiteral("ok");
++          }))
++        return {};
++    }
++
++    if (cards.isEmpty()) {
++      decks.remove(key);
++    } else {
++      decks.insert(key, QJsonObject{{QStringLiteral("cards"), QJsonArray::fromStringList(cards)},
++                                    {QStringLiteral("expanded"), expanded}});
++    }
++    state_.insert(QStringLiteral("decks"), decks);
++    if (action == DeckAction::Store) {
++      if (hoverOwner() == title)
++        state_.remove(QStringLiteral("hover"));
++      targets_.remove(title);
++      if (!setFree(title, true))
++        return {};
++    } else if (!save()) {
++      return {};
++    }
++    return {true, detached, monitor};
++  }
++
+   QVector<CompositorPin> pins;
+ private:
+   bool save() {
+@@ -833,7 +969,7 @@
+         dragPreview_ = preview.drag;
+         path_ = pinDocument_->previewPath();
+         sharedPath_.clear();
+-        if (standalone_)
++        if (standalone_ && !inDeck_)
+           resizePin(pinZoom_);
+         update();
+       }
+@@ -871,6 +1007,13 @@
+   }
+ 
+   [[nodiscard]] bool standalone() const { return standalone_; }
++
++  void prepareDeck(const CompositorMonitor &monitor) {
++    deckMonitor_ = monitor;
++    inDeck_ = true;
++    setFixedSize(deckCardSize(monitor.workArea));
++    setTilt(0.0, false);
++  }
+ 
+   void setPlacementSnapshot(const QRect &screen, const QVector<CompositorPin> &pins) {
+     dragScreen_ = screen;
+@@ -1016,6 +1159,10 @@
+ 
+   void resizeEvent(QResizeEvent *event) override {
+     QWidget::resizeEvent(event);
++    if (nativeResize_) {
++      const QSize original = pinOriginalSize();
++      pinZoom_ = std::max(width(), height()) / qreal(std::max(original.width(), original.height()));
++    }
+     updateCardMask();
+   }
+ 
+@@ -1036,7 +1183,31 @@
+     painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+     painter.setOpacity(opacity_ * pinOpacity_);
+     if (standalone_) {
++      if (inDeck_) {
++        const QRectF frame = QRectF(rect()).adjusted(0.75, 0.75, -0.75, -0.75);
++        painter.setOpacity(1.0);
++        painter.setBrush(chromeTheme().surface);
++        painter.setPen(QPen((hovered_ ? chromeTheme().activeBorder
++                                     : chromeTheme().inactiveBorder).brush(frame), 1.5));
++        painter.drawRoundedRect(frame, 7, 7);
++        const QImage &preview = dragPreview_.isNull() ? image_ : dragPreview_;
++        const QSize thumb = preview.size().scaled(size() - QSize(8, 8), Qt::KeepAspectRatio);
++        QRect picture(QPoint(), thumb);
++        picture.moveCenter(rect().center());
++        painter.drawImage(picture, preview);
++        return;
++      }
+       painter.drawImage(QRectF(rect()), image_);
++      if (hovered_ || resizeOrigin_) {
++        // A small two-tone grip stays legible over both light and dark pixels.
++        for (const int inset : {5, 10}) {
++          const QLineF line(width() - inset, height() - 3, width() - 3, height() - inset);
++          painter.setPen(QPen(QColor(0, 0, 0, 170), 3, Qt::SolidLine, Qt::RoundCap));
++          painter.drawLine(line);
++          painter.setPen(QPen(QColor(255, 255, 255, 230), 1, Qt::SolidLine, Qt::RoundCap));
++          painter.drawLine(line);
++        }
++      }
+       if (!toast_.isEmpty())
+         paintToast(painter);
+       return;
+@@ -1117,8 +1288,10 @@
+ 
+   void mousePressEvent(QMouseEvent *event) override {
+     if (event->button() == Qt::MiddleButton) {
+-      if (standalone_)
++      if (standalone_ && !inDeck_)
+         resizePin(1.0);
++      else if (inDeck_)
++        deckAction(DeckAction::Fold);
+       else
+         close();
+       event->accept();
+@@ -1127,12 +1300,16 @@
+     const QPointF position = event->position();
+     if (event->button() == Qt::LeftButton) {
+       if (standalone_) {
+-        if (event->modifiers() == Qt::ShiftModifier) {
+-          beginFileDrag();
+-        } else {
+-          if (QWindow *handle = windowHandle())
++        if (!deckActionPending_) {
++          if (event->modifiers() == Qt::ShiftModifier) {
++            beginFileDrag();
++          } else if (inDeck_) {
++            deckPress_ = position;
++          } else if (resizeGrip().contains(position.toPoint())) {
++            startPinResize(position);
++          } else if (QWindow *handle = windowHandle()) {
+             handle->startSystemMove();
+-          beginDragWatch();
++          }
+         }
+         event->accept();
+         return;
+@@ -1172,8 +1349,21 @@
+     }
+   }
+ 
++  void mouseReleaseEvent(QMouseEvent *event) override {
++    if (standalone_ && event->button() == Qt::LeftButton) {
++      if (std::exchange(deckPress_, std::nullopt))
++        deckAction(DeckAction::Click);
++      if (std::exchange(resizeOrigin_, std::nullopt))
++        pinResizeTimer_.start();
++      event->accept();
++      return;
++    }
++    QWidget::mouseReleaseEvent(event);
++  }
++
+   void mouseDoubleClickEvent(QMouseEvent *event) override {
+-    if (standalone_ && event->button() == Qt::LeftButton &&
++    if (standalone_ && !inDeck_ && !deckActionPending_ &&
++        event->button() == Qt::LeftButton &&
+         event->modifiers() == Qt::NoModifier) {
+       close();
+       event->accept();
+@@ -1196,7 +1386,10 @@
+     menu->addAction(text("Edit"), this, &PinWindow::reopenInEditor);
+     menu->addAction(text("Show in folder"), this, &PinWindow::revealFile);
+     menu->addSeparator();
+-    if (standalone_) {
++    if (standalone_ && inDeck_) {
++      menu->addAction(text("Collapse stack"), this, [this] { deckAction(DeckAction::Fold); });
++    } else if (standalone_) {
++      menu->addAction(text("Return to stack"), this, [this] { deckAction(DeckAction::Store); });
+       menu->addAction(text("Original size"), this, [this] { resizePin(1.0); });
+       auto *opacity = makePinMenu(menu);
+       opacity->setTitle(text("Opacity"));
+@@ -1212,7 +1405,7 @@
+       keep->setCheckable(true);
+       keep->setChecked(expiry_.kept());
+     }
+-    menu->addAction(text("Close"), this, &PinWindow::close);
++    menu->addAction(text(standalone_ ? "Delete pin" : "Close"), this, &PinWindow::close);
+     menuOpen_ = true;
+     updateExpiryPause();
+     connect(menu, &QMenu::aboutToHide, this, [this, menu] {
+@@ -1367,7 +1560,7 @@
+   void watchCompositorDrag(Qt::KeyboardModifiers modifiers) {
+     // Super+mouse is consumed by Hyprland, so arm the same geometry watch
+     // when Super reaches a hovered pin, including entering with it held.
+-    if (hovered_ && modifiers.testFlag(Qt::MetaModifier))
++    if (!standalone_ && hovered_ && modifiers.testFlag(Qt::MetaModifier))
+       beginDragWatch(true);
+   }
+ 
+@@ -1628,6 +1821,26 @@
+   }
+ 
+   void mouseMoveEvent(QMouseEvent *event) override {
++    if (standalone_) {
++      const QPointF position = event->position();
++      if (deckPress_ && event->buttons().testFlag(Qt::LeftButton) &&
++          (position - *deckPress_).manhattanLength() >= QApplication::startDragDistance()) {
++        deckPress_.reset();
++        if (QWindow *handle = windowHandle(); handle && handle->startSystemMove())
++          deckAction(DeckAction::Drag);
++      } else if (resizeOrigin_ && event->buttons().testFlag(Qt::LeftButton)) {
++        const QPointF delta = position - *resizeOrigin_;
++        const QPointF diagonal(resizeStartSize_.width(), resizeStartSize_.height());
++        const qreal factor = 1.0 + QPointF::dotProduct(delta, diagonal) /
++                                       QPointF::dotProduct(diagonal, diagonal);
++        const QSize original = pinOriginalSize();
++        const qreal initial = std::max(diagonal.x(), diagonal.y()) /
++                             std::max(original.width(), original.height());
++        resizePin(initial * factor);
++      }
++      updatePinCursor(position);
++      return;
++    }
+     pointerWokeDuringWatch();
+     watchCompositorDrag(event->modifiers());
+     const int control = controlRectAt(event->position());
+@@ -1688,8 +1901,7 @@
+   void wheelEvent(QWheelEvent *event) override {
+     const int delta = event->angleDelta().y() != 0 ? event->angleDelta().y()
+                                                  : event->pixelDelta().y();
+-    if (standalone_ && delta != 0 && !dragWatchTimer_.isActive() &&
+-        !finishRequested_ && !snapPending_) {
++    if (standalone_ && !inDeck_ && !deckActionPending_ && !resizeOrigin_ && delta != 0) {
+       const int direction = delta > 0 ? 1 : -1;
+       if (event->modifiers().testFlag(Qt::ControlModifier)) {
+         setPinOpacity(pinOpacity_ + direction * 0.05);
+@@ -1788,7 +2000,7 @@
+     // The compositor may still list this window while it closes, so it is
+     // excluded by name rather than trusted to be gone.
+     static_cast<void>(QtConcurrent::run(&pinPool(),
+-        [title = windowTitle(), screen = dragScreen_,
++        [title = windowTitle(), screen = dragScreen_, deck = deckMonitor_, docked = inDeck_,
+          advanceFocus = !expired_ && (hovered_ || isActiveWindow())] {
+       PinPlacement placement;
+       if (!placement.ready())
+@@ -1797,6 +2009,8 @@
+       if (placement.hoverOwner() == title)
+         placement.setHover({});
+       placement.release(title);
++      if (docked)
++        placement.updateDeck(title, deck, DeckAction::Remove);
+       placement.arrange(screen, !placement.hoverOwner().isEmpty() &&
+                                  placement.hoverScreen() == screen, title);
+       if (advanceFocus)
+@@ -1813,7 +2027,10 @@
+     watchCompositorDrag(QGuiApplication::keyboardModifiers());
+     openStack();
+     hoveredControl_ = controlRectAt(event->position());
+-    setCursor(hoveredControl_ >= 0 ? Qt::PointingHandCursor : Qt::ArrowCursor);
++    if (standalone_)
++      updatePinCursor(event->position());
++    else
++      setCursor(hoveredControl_ >= 0 ? Qt::PointingHandCursor : Qt::ArrowCursor);
+     update();
+   }
+ 
+@@ -1873,14 +2090,121 @@
+       setInitialPinSize(workArea);
+       updateCardMask();
+       update();
+-      placeResizedPin(true);
++      deckAction(DeckAction::Store);
+     });
+     watcher->setFuture(QtConcurrent::run([path = path_] { return QImage(path); }));
+   }
+ 
++  QSize pinOriginalSize() const {
++    const QSize logical = pngLogicalSize(image_);
++    return logical.isEmpty() ? image_.size() : logical;
++  }
++
++  QRect resizeGrip() const {
++    return rect().adjusted(std::max(0, width() - kResizeGrip),
++                          std::max(0, height() - kResizeGrip), 0, 0);
++  }
++
++  void updatePinCursor(const QPointF &position) {
++    if (inDeck_)
++      setCursor(Qt::PointingHandCursor);
++    else if (resizeOrigin_ || resizeGrip().contains(position.toPoint()))
++      setCursor(Qt::SizeFDiagCursor);
++    else
++      setCursor(Qt::OpenHandCursor);
++  }
++
++  void deckAction(DeckAction action) {
++    if (closing_ || deckActionPending_)
++      return;
++    deckActionPending_ = true;
++    pinResizeTimer_.stop();
++    nativeResize_ = false;
++    const bool wasDocked = inDeck_;
++    if (action == DeckAction::Store) {
++      inDeck_ = true;
++      setFixedSize(deckCardSize(dragScreen_));
++      update();
++    }
++    auto *watcher = new QFutureWatcher<DeckResult>(this);
++    connect(watcher, &QFutureWatcher<DeckResult>::finished, this,
++            [this, watcher, action, wasDocked] {
++      const auto result = watcher->result();
++      watcher->deleteLater();
++      deckActionPending_ = false;
++      if (closing_)
++        return;
++      if (!result.ok) {
++        if (inDeck_ && !wasDocked) {
++          inDeck_ = false;
++          resizePin(pinZoom_);
++          update();
++        }
++        return;
++      }
++      dragScreen_ = result.monitor.workArea;
++      if (action == DeckAction::Store) {
++        toast_.clear();
++        prepareDeck(result.monitor);
++      } else if (result.detached) {
++        inDeck_ = false;
++        centerAfterResize_ = action == DeckAction::Click;
++        resizePin(pinZoom_);
++        if (centerAfterResize_)
++          pinResizeTimer_.start();
++      }
++      updateCardMask();
++      update();
++    });
++    const auto apply = [this, watcher, action] {
++      if (closing_)
++        return;
++      watcher->setFuture(QtConcurrent::run(&pinPool(),
++          [title = windowTitle(), monitor = deckMonitor_, action] {
++        PinPlacement placement;
++        if (!placement.ready())
++          return DeckResult{};
++        const auto own = std::find_if(placement.pins.cbegin(), placement.pins.cend(),
++                                      [&](const CompositorPin &pin) { return pin.title == title; });
++        if (own == placement.pins.cend())
++          return DeckResult{};
++        auto target = monitor;
++        if (action == DeckAction::Store) {
++          target = compositorMonitor(compositorMonitors(), own->rect.center(), true);
++        }
++        if (target.workArea.isEmpty())
++          return DeckResult{};
++        // Promotion also removes this window from the timed preview column.
++        const auto result = placement.updateDeck(title, target, action);
++        if (result.ok && action == DeckAction::Store)
++          placement.arrange(target.workArea, placement.hoverScreen() == target.workArea &&
++                                           !placement.hoverOwner().isEmpty(), title);
++        return result;
++      }));
++    };
++    if (action == DeckAction::Store)
++      QTimer::singleShot(pinResizeTimer_.interval(), this, apply);
++    else
++      apply();
++  }
++
++  void startPinResize(const QPointF &position) {
++    pinResizeTimer_.stop();
++    if (auto *handle = windowHandle()) {
++      const QSize area = screen() ? screen()->availableGeometry().size() : dragScreen_.size();
++      setMinimumSize(fittedPinImageSize(image_, area, 0.0));
++      setMaximumSize(fittedPinImageSize(image_, area, std::numeric_limits<qreal>::max()));
++      nativeResize_ = handle->startSystemResize(Qt::RightEdge | Qt::BottomEdge);
++      if (nativeResize_)
++        return;
++    }
++    resizeOrigin_ = position;
++    resizeStartSize_ = size();
++  }
++
+   void resizePin(qreal zoom) {
+-    const QSize logical = pngLogicalSize(image_);
+-    const QSize original = logical.isEmpty() ? image_.size() : logical;
++    nativeResize_ = false;
++    const QSize original = pinOriginalSize();
+     const QSize workArea = !dragScreen_.isEmpty() ? dragScreen_.size()
+                          : screen() ? screen()->availableGeometry().size() : QSize{};
+     const QSize frame = fittedPinImageSize(image_, workArea, zoom);
+@@ -1893,37 +2217,52 @@
+     pinZoom_ = std::clamp(zoom, effective - halfPixel, effective + halfPixel);
+     if (frame != size()) {
+       setFixedSize(frame);
+-      pinResizeTimer_.start();
+-    }
+-  }
+-
+-  void placeResizedPin(bool promoted = false) {
+-    if (closing_ || dragScreen_.isEmpty() ||
+-        (!promoted && dragWatchTimer_.isActive()))
+-      return;
+-    static_cast<void>(QtConcurrent::run(&pinPool(),
+-        [title = windowTitle(), area = dragScreen_, frame = size(), promoted] {
++      if (!resizeOrigin_)
++        pinResizeTimer_.start();
++    }
++  }
++
++  void placeResizedPin(int attempt = 0) {
++    if (closing_ || inDeck_ || deckActionPending_)
++      return;
++    const bool center = std::exchange(centerAfterResize_, false);
++    auto *watcher = new QFutureWatcher<bool>(this);
++    connect(watcher, &QFutureWatcher<bool>::finished, this,
++            [this, watcher, center, attempt] {
++      const bool placed = watcher->result();
++      watcher->deleteLater();
++      if (center && !placed && attempt < 4 && !closing_ && !inDeck_) {
++        centerAfterResize_ = true;
++        QTimer::singleShot(pinResizeTimer_.interval(), this,
++                           [this, attempt] { placeResizedPin(attempt + 1); });
++      }
++    });
++    watcher->setFuture(QtConcurrent::run(&pinPool(),
++        [title = windowTitle(), frame = size(), center, area = dragScreen_] {
+       PinPlacement placement;
+       if (!placement.ready())
+-        return;
+-      auto own = std::find_if(placement.pins.cbegin(), placement.pins.cend(),
+-                              [&](const CompositorPin &pin) { return pin.title == title; });
++        return false;
++      const auto own = std::find_if(placement.pins.cbegin(), placement.pins.cend(),
++                                    [&](const CompositorPin &pin) { return pin.title == title; });
+       if (own == placement.pins.cend())
+-        return;
++        return false;
+       const QPoint origin = own->rect.topLeft();
+-      if (promoted) {
+-        placement.setFree(title, true);
+-        if (placement.hoverOwner() == title)
+-          placement.setHover({});
+-        placement.arrange(area, placement.hoverScreen() == area &&
+-                                !placement.hoverOwner().isEmpty(), title);
+-      }
+-      const QRect target = pinVisibleRect(QRect(origin, frame), area,
++      if (center) {
++        // A client-initiated resize can interrupt a running move. Wait for
++        // its configure before sending the centered position.
++        if (own->rect.size() != frame)
++          return false;
++        QRect target(QPoint(), frame);
++        target.moveCenter(area.center());
++        return placement.move(title, target) && hyprDispatch(pinRaiseDispatch(own->address)) &&
++               hyprDispatch(pinFocusDispatch(own->address));
++      }
++      const auto monitor = compositorMonitor(compositorMonitors(), origin, true);
++      const QRect target = pinVisibleRect(QRect(origin, frame), monitor.workArea,
+                                           qRound(kCornerMargin));
+       if (own->rect.size() != frame && !resizeCompositorPin(own->address, frame))
+-        return;
+-      if (target.topLeft() != origin)
+-        placement.move(title, target);
++        return false;
++      return target.topLeft() == origin || placement.move(title, target);
+     }));
+   }
+ 
+@@ -2083,6 +2422,14 @@
+   QString toast_;
+   bool standalone_ = false;
+   bool promoting_ = false;
++  bool inDeck_ = false;
++  bool deckActionPending_ = false;
++  CompositorMonitor deckMonitor_;
++  std::optional<QPointF> deckPress_;
++  std::optional<QPointF> resizeOrigin_;
++  QSize resizeStartSize_;
++  bool nativeResize_ = false;
++  bool centerAfterResize_ = false;
+   bool menuOpen_ = false;
+   PinMenuAppearance menuAppearance_;
+   qreal pinZoom_ = 1.0;
+@@ -2133,14 +2480,15 @@
+       settle->deleteLater();
+     }
+   });
+-  auto screen = std::make_shared<QRect>();
++  auto screen = std::make_shared<CompositorMonitor>();
+   QObject::connect(settle, &QTimer::timeout, &window, [&window, watcher, screen] {
+     const QString title = window.windowTitle();
+     const QSize frame = window.size();
+-    const QRect geometry = *screen;
++    const CompositorMonitor monitor = *screen;
+     watcher->setFuture(QtConcurrent::run(&pinPool(),
+-        [title, frame, screen = geometry, standalone = window.standalone()]() -> PlacementResult {
++        [title, frame, monitor, standalone = window.standalone()]() -> PlacementResult {
+       PinPlacement placement;
++      const QRect screen = monitor.workArea;
+       if (!placement.ready() || screen.isEmpty())
+         return {};
+       auto own = std::find_if(placement.pins.begin(), placement.pins.end(),
+@@ -2154,13 +2502,10 @@
+       if (!preservePinFrame(own->address))
+         return {};
+       if (standalone) {
+-        const QPoint anchor = compositorPointer().value_or(screen.center());
+-        const QRect target = pinVisibleRect(QRect(anchor + QPoint(16, 16), frame),
+-                                            screen, qRound(kCornerMargin));
+-        if ((own->rect.size() != frame && !resizeCompositorPin(own->address, frame)) ||
+-            !placement.move(title, target))
++        if (!placement.updateDeck(title, monitor, DeckAction::Store).ok)
+           return {};
+-        placement.setFree(title, true);
++        placement.arrange(screen, placement.hoverScreen() == screen &&
++                                  !placement.hoverOwner().isEmpty(), title);
+         return {screen, placement.pins};
+       }
+       // A new capture is the front of the idle deck. Keep an already-open
+@@ -2179,15 +2524,15 @@
+   QObject::connect(monitor, &QFutureWatcher<CompositorMonitor>::finished, &window,
+                    [&window, monitor, watcher, settle, screen, attempts = 0]() mutable {
+     const auto result = monitor->result();
+-    *screen = result.workArea;
+-    if (screen->isEmpty() && ++attempts < 10) {
++    *screen = result;
++    if (result.workArea.isEmpty() && ++attempts < 10) {
+       QTimer::singleShot(50, &window, [monitor] {
+         monitor->setFuture(QtConcurrent::run(&pinPool(), [] { return compositorMonitor(compositorMonitors()); }));
+       });
+       return;
+     }
+     monitor->deleteLater();
+-    if (screen->isEmpty()) {
++    if (result.workArea.isEmpty()) {
+       qWarning("omasnap: could not determine the pin monitor after retries");
+       if (window.standalone()) {
+         window.setInitialPinSize({});
+@@ -2199,6 +2544,7 @@
+     }
+     if (window.standalone()) {
+       window.setInitialPinSize(result.workArea);
++      window.prepareDeck(result);
+       window.show();
+     } else {
+       window.setFixedSize(pinFrameSize(result.geometry.size()));
+diff --git a/tests/pin-interaction-smoke.cpp b/tests/pin-interaction-smoke.cpp
+--- a/tests/pin-interaction-smoke.cpp
++++ b/tests/pin-interaction-smoke.cpp
+@@ -555,7 +555,7 @@
+     return false;
+   }
+   const QSize native = image.size();
+-  if (window.size() != native) {
++  if (!QTest::qWaitFor([&] { return window.size() == native; }, 3000)) {
+     error = QStringLiteral("The standalone pin changed the image's proportions");
+     return false;
+   }
+@@ -580,6 +580,20 @@
+     error = QStringLiteral("Middle-click did not restore the pin's original size");
+     return false;
+   }
++  const QPoint grip(window.width() - 5, window.height() - 5);
++  QTest::mousePress(&window, Qt::LeftButton, Qt::NoModifier, grip);
++  const QPoint moved = grip + QPoint(100, 56);
++  QMouseEvent resize(QEvent::MouseMove, moved, window.mapToGlobal(moved),
++                     Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
++  QApplication::sendEvent(&window, &resize);
++  QTest::mouseRelease(&window, Qt::LeftButton, Qt::NoModifier, moved);
++  if (window.width() < native.width() + 90 ||
++      qAbs(window.height() - qRound(window.width() * native.height() /
++                                    qreal(native.width()))) > 1) {
++    error = QStringLiteral("The resize grip did not enlarge the pin proportionally");
++    return false;
++  }
++  QTest::mouseClick(&window, Qt::MiddleButton, Qt::NoModifier, background);
+   const auto opaque = window.grab().toImage().pixelColor(1, 1).alpha();
+   QWheelEvent fade(background, window.mapToGlobal(background), {}, QPoint(0, -120),
+                    Qt::NoButton, Qt::ControlModifier, Qt::NoScrollPhase, false);
+@@ -614,9 +628,9 @@
+     return false;
+   }
+   menu->hide();
+-  QTest::mouseDClick(&window, Qt::LeftButton, Qt::NoModifier, background);
++  QTest::keyClick(&window, Qt::Key_Escape);
+   if (window.isVisible()) {
+-    error = QStringLiteral("Double-click did not close the standalone pin");
++    error = QStringLiteral("Escape did not delete the focused pin");
+     return false;
+   }
+   QToolTip::hideText();

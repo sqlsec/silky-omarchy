@@ -14,9 +14,11 @@ text = path.read_text()
 original = text
 
 
-def replace(old, new):
+def replace(old, new, applied=None):
+    """Swap old for new once. `applied` lists lines that prove the edit is already there, so local edits
+    around it (for example another property between the press fields and the handler) keep it idempotent."""
     global text
-    if new in text:
+    if new in text or (applied and all(line in text for line in applied)):
         return
     if text.count(old) != 1:
         raise SystemExit(f"Dock hover label tuning: expected text missing or repeated: {old[:70]!r}")
@@ -42,6 +44,7 @@ replace(
     "                                    onPressed: mouse => {\n"
     "                                        var mp = ma.mapToItem(ui, mouse.x, mouse.y);\n"
     "                                        muteX = mp.x; muteY = mp.y; cell.tipMuted = true;\n",
+    ["property real muteX: 0\n", "property real muteY: 0\n", "muteX = mp.x; muteY = mp.y; cell.tipMuted = true;\n"],
 )
 replace(
     "                                    onPositionChanged: mouse => {\n"
@@ -52,6 +55,7 @@ replace(
     "                                            if (Math.abs(mq.x - muteX) > 4 || Math.abs(mq.y - muteY) > 4) cell.tipMuted = false;\n"
     "                                        }\n"
     "                                        if (!(pressedButtons & Qt.LeftButton) || cell.isSep) return;\n",
+    ["if (Math.abs(mq.x - muteX) > 4 || Math.abs(mq.y - muteY) > 4) cell.tipMuted = false;\n"],
 )
 
 if text != original:

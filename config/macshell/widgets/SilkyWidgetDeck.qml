@@ -24,10 +24,10 @@ Item {
         if (viewHeight <= 0 || h <= 1) return 1;
         var seen = (Math.min(top + h, viewTop + viewHeight) - Math.max(top, viewTop)) / h;
         var t = Math.max(0, Math.min(1, seen));       // the share of the card still in view
-        return 0.12 + 0.88 * t * t;
+        return t * t * (3 - 2 * t);
     }
     property bool editing: false
-    readonly property bool wantsKeyboard: menuOpen && (menuKind === "weather" || menuKind === "stocks" || menuKind === "ai")
+    readonly property bool wantsKeyboard: menuOpen && (menuKind === "weather" || menuKind === "stocks")
 
     // palette for SilkyWLabel (host: deck)
     readonly property bool dark: theme ? theme.dark : true
@@ -40,36 +40,42 @@ Item {
     // while the right-click menu is open the deck is at least as tall as the menu, so the panel never clips it
     height: Math.max(Math.min(col.height, maxHeight), menuOpen ? menuBox.height + 8 : 0)
     onOpenChanged: {
-        if (open) info = latest;
-        else { editing = false; closeMenu(); }
+        if (open) {
+            info = latest;
+            send("refresh-ai");
+        } else { editing = false; closeMenu(); }
     }
     onEditingChanged: closeMenu()
 
-    // ───────────── data ─────────────
+    // ───────────── data (shared single backend across all monitors) ─────────────
+    property bool isProcessOwner: false
     property var info: null
     property var latest: null
     readonly property string script: decodeURIComponent(Qt.resolvedUrl("assets/silky-widgets.py").toString().substring(7))
+    Component.onCompleted: F.registerWidgetDeck(deck)
+    Component.onDestruction: F.unregisterWidgetDeck(deck)
     Process {
         id: proc
-        running: true
+        running: deck.isProcessOwner
         stdinEnabled: true
         command: ["/usr/bin/python3", "-I", deck.script]
         stdout: SplitParser {
             onRead: line => {
                 try {
-                    deck.latest = JSON.parse(line);
-                    if (deck.open) deck.info = deck.latest;
+                    F.broadcastWidgetSample(JSON.parse(line));
                 } catch (error) {
                     console.warn("Silky widgets:", error);
                 }
             }
         }
-        onExited: restart.restart()
+        onExited: if (deck.isProcessOwner) restart.restart()
     }
-    Timer { id: restart; interval: 5000; onTriggered: proc.running = true }
-    function send(line) { if (proc.running) proc.write(line + "\n"); }
+    Timer { id: restart; interval: 5000; onTriggered: if (deck.isProcessOwner) proc.running = true }
+    function sendLocal(line) { if (proc.running) proc.write(line + "\n"); }
+    function send(line) { F.sendWidgetCommand(line); }
     // screen time pauses after 2 idle minutes (video players' idle inhibitors keep it counting)
     IdleMonitor {
+        enabled: deck.isProcessOwner
         timeout: 120
         respectInhibitors: true
         onIsIdleChanged: deck.send("idle " + (isIdle ? 1 : 0))
@@ -247,7 +253,20 @@ Item {
             Rectangle {
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: editLabel.implicitWidth + 28; height: 28; radius: 14
-                color: deck.editing ? deck.accent : editMouse.containsMouse ? (deck.theme ? deck.theme.btnHover : "#555") : (deck.theme ? deck.theme.btnOff : "#444")
+                color: deck.editing ? deck.accent : deck.glass ? "transparent"
+                    : editMouse.containsMouse ? (deck.theme ? deck.theme.btnHover : "#555") : (deck.theme ? deck.theme.btnOff : "#444")
+                Loader {
+                    anchors.fill: parent
+                    active: deck.glass !== null && !deck.editing
+                    sourceComponent: deck.glass
+                    onLoaded: item.r = 14
+                }
+                Rectangle {
+                    visible: deck.glass !== null && !deck.editing && editMouse.containsMouse
+                    anchors.fill: parent
+                    radius: 14
+                    color: deck.dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.06)
+                }
                 SilkyWLabel {
                     id: editLabel
                     anchors.centerIn: parent
@@ -413,7 +432,6 @@ Item {
     }
     function closeMenu() {
         if (menuIndex < 0) return;
-        keyField.text = "";
         if (menuKind === "weather") commitCity();
         menuIndex = -1;
         menuField.focus = false;
@@ -657,72 +675,6 @@ Item {
                         }
                         MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { deck.upRed = modelData; deck.save(); } }
                     }
-                }
-            }
-
-            // AI usage: the DeepSeek API key (handed to the data process on stdin, which stores it with mode 0600)
-            Column {
-                id: aiSection
-                visible: deck.menuKind === "ai"
-                width: parent.width
-                spacing: 6
-                readonly property var dsInfo: deck.info && deck.info.ai ? deck.info.ai.deepseek : null
-                Item {
-                    width: parent.width; height: 16
-                    SilkyWLabel { host: deck; dim: true; px: 11; text: F.tr("DeepSeek API key") }
-                    SilkyWLabel {
-                        anchors.right: parent.right; host: deck; px: 11
-                        color: aiSection.dsInfo && aiSection.dsInfo.configured && !aiSection.dsInfo.error ? "#4cd97b" : deck.fg2
-                        text: !aiSection.dsInfo || !aiSection.dsInfo.configured ? F.tr("Not set")
-                            : aiSection.dsInfo.error ? F.tr("Key error") : F.tr("Key saved")
-                    }
-                }
-                Rectangle {
-                    width: parent.width; height: 30; radius: 8
-                    color: deck.theme ? deck.theme.btnOff : "#444"
-                    border.width: keyField.activeFocus ? 2 : 0
-                    border.color: deck.accent
-                    TextInput {
-                        id: keyField
-                        anchors.fill: parent
-                        anchors.leftMargin: 9; anchors.rightMargin: 9
-                        verticalAlignment: TextInput.AlignVCenter
-                        echoMode: TextInput.Password
-                        color: deck.fg
-                        selectionColor: deck.accent
-                        font.family: deck.fam; font.pixelSize: 13
-                        clip: true
-                        onAccepted: {
-                            var key = text.trim();
-                            if (/^[A-Za-z0-9_\-]{10,}$/.test(key)) deck.send("deepseek-key " + key);
-                            text = "";
-                        }
-                        Keys.onEscapePressed: deck.closeMenu()
-                        Text {
-                            visible: !keyField.text
-                            anchors.verticalCenter: parent.verticalCenter
-                            color: deck.fg3
-                            font.family: deck.fam; font.pixelSize: 13
-                            text: F.tr("Paste a key, Enter to save")
-                        }
-                    }
-                    MouseArea { anchors.fill: parent; cursorShape: Qt.IBeamCursor
-                                onPressed: m => { keyField.forceActiveFocus(); m.accepted = false; } }
-                }
-                Text {
-                    width: parent.width
-                    wrapMode: Text.WordWrap
-                    color: deck.fg2
-                    font.family: deck.fam; font.pixelSize: 10
-                    text: F.tr("Saved only on this computer (~/.config/silky/ai-keys.json, 0600). Claude Code and Codex are read from their local logs, no sign-in needed.")
-                }
-                Rectangle {
-                    visible: aiSection.dsInfo !== null && aiSection.dsInfo.configured === true
-                    width: dropKey.implicitWidth + 20; height: 24; radius: 8
-                    color: dropMouse.containsMouse ? (deck.theme ? deck.theme.btnHover : "#555") : (deck.theme ? deck.theme.btnOff : "#444")
-                    SilkyWLabel { id: dropKey; anchors.centerIn: parent; host: deck; px: 11; text: F.tr("Remove key") }
-                    MouseArea { id: dropMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                onClicked: deck.send("deepseek-key") }
                 }
             }
 

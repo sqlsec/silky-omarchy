@@ -13,4 +13,10 @@ if file then
   for _, ns in ipairs({ "macdock", "macbar", "macspot", "macswitch", "macwall", "macosd" }) do
     hl.layer_rule({ name = "silky-liquid-glass-noblur-" .. ns, match = { namespace = ns }, blur = false })
   end
+  -- About Omarchy Linux uses the plugin's half-resolution mipmap backdrop blur instead of Hyprland's multi-pass blur.
+  hl.window_rule({
+    name = "silky-mipmap-blur-about",
+    match = { class = "^org\\.quickshell$", initial_title = "^About Omarchy Linux$" },
+    no_blur = true,
+  })
 end

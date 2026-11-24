@@ -44,47 +44,58 @@ Details:
 - `hl.gesture`'s pinch is not used: its function actions run only after the fingers lift, so they cannot track the fingers
 - Troubleshooting: every touchpad pinch emits `silkypinch>>finger count`. If a four-finger pinch does nothing, run `socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock | grep silky`, pinch again, and see how many fingers libinput reported
 
-- Pinch travel: the panel is fully open once the spread shrinks by about 25% (was 35%), and fully closed after spreading about 30%; on release it completes past one third of the way, otherwise it goes back
-- Troubleshooting: touchpad swipe gestures likewise emit `silkyswipe>>finger count`. If a pinch does nothing but `silkyswipe>>4` shows up, libinput classified the pinch as a swipe (see "Four- / five-finger pinch recognition on the touchpad" below)
+- Pinch travel: the panel is fully open once the spread shrinks by about 22% (was 35%), and fully closed after spreading about 28%; on release it completes past one third of the way, otherwise it goes back
+- Troubleshooting: touchpad swipe gestures likewise emit `silkyswipe>>finger count`. If a pinch does nothing but `silkyswipe>>4` or `silkyswipe>>3` shows up, libinput classified the pinch as a swipe (see "Four- / five-finger pinch recognition on the touchpad" below)
 
 The tunables are constants at the top of `main.cpp`: edge width `EDGE_PX`, finger count `MULTI_FINGERS`, flick speed `FLICK_PX_PER_SEC`, maximum rubber-band offset `RUBBER_LIMIT`, resistance `RUBBER_STIFFNESS`, plus the pinch finger count `PINCH_FINGERS` and the touchscreen threshold `PINCH_START`. Run the installer again after changing them.
 
 ## Four- / five-finger pinch recognition on the touchpad
 
-On the touchpad, "pinch or swipe" is decided by libinput; the plugin only gets the result. For gestures with more than three fingers, libinput 1.32 tracks only the topmost and bottommost touch points:
+Libinput classifies touchpad gestures before the Hyprland plugin receives them. Stock 1.32.0 compares only the topmost and bottommost contacts, can drop a stationary thumb so the remaining three fingers start a three-finger drag or swipe down, and caps gesture dispatch at four fingers. An earlier multi-finger patch lifted the four-finger cap, but still relied on a 100 ms thumb window, excluded stationary contacts in the bottom software-button area or side-pressed thumbs flagged as `PALM_TOUCH_SIZE`, and diluted vertical finger contraction with a 4:1 unweighted centroid when five wide fingers grabbed inward.
 
-- In a whole-hand pinch the thumb usually moves less than the other fingers. When the other fingers move more than 8 mm while the thumb moves under 2.5 mm, libinput decides the thumb is "resting", masks it and cancels the gesture, and the remaining fingers are taken as a three-finger drag or a swipe
-- When the two tracked points move in neighbouring directions (say one down and one down-right), it is classified as a swipe
+The updated [multi-finger pinch patch (`1.32.0-1.4`)](../../patches/libinput-1.32.0-multifinger-pinch.patch) models whole-hand landing timing and geometry:
 
-That is why four- and five-finger pinches often failed to bring up the Applications panel. [`patches/libinput-1.32.0-multifinger-pinch.patch`](../../patches/libinput-1.32.0-multifinger-pinch.patch) makes gestures with four or more fingers use all touch points: it compares the change in "hand spread" (the average distance of the points to their common centre) with how far that centre moved.
+- **350 ms whole-hand assembly and thumb exemption**: when 4 or 5 real MT slots assemble within 350 ms alongside at least 2 regular active fingers, a stationary thumb in the bottom software-button stripe and side-pressed thumb/pinky contacts flagged as `PALM_TOUCH_SIZE` / `PALM_PRESSURE` / `PALM_EDGE` remain part of the hand, and fast upper-finger motion no longer demotes the thumb from `THUMB_STATE_PINCH` to `SUPPRESSED`.
+- **Combined radial dispersion and opposing thumb-to-cluster span**: both radial spread and the distance between the lowest contact (thumb) and the upper finger cluster are strictly translation-invariant under rigid four-finger horizontal/vertical swipes (zero change), while preserving full contraction magnitude during a wide five-finger vertical grab.
+- **Dynamic `3 → 4 → 5` promotion and early-swipe recovery**: if the first three fingers start an early `3FG_DRAG_OR_SWIPE`, `SWIPE` (preventing false three-finger swipes down), or `HOLD` within 220 ms before the 4th/5th finger lands, the early gesture is cancelled and rebaselined to 4 or 5 fingers. If a 5th finger lands within 260 ms after a 4-finger pinch has already started, its initial distance is recalibrated against the current scale so the gesture upgrades to 5 fingers without a progress jump.
+- **Clean lift completion and rapid post-pinch tap unlock**: lifting the first finger ends the whole-hand pinch so trailing fingers cannot start a swipe; the lift guard clears immediately once all fingers leave, a fresh touch begins (an immediate tap right after pinching), or a lone corner contact lingers past 120 ms.
 
 | Condition | Result |
 | --- | --- |
-| Spread changes ≥ 2.5 mm and by at least 35% of the centre's movement | Pinch |
-| Centre moves ≥ 3 mm and the spread changes by less than 35% of that | Swipe |
+| 4 fingers: combined spread or opposing-span change ≥ 1.5 mm and ≥ 34% of centroid travel | Pinch or spread |
+| 5 fingers: combined spread or opposing-span change ≥ 1.3 mm and ≥ 22% of centroid travel | Pinch or spread |
+| 4 fingers: travel ≥ 4 mm (change < 22%) or ≥ 7 mm (change < 34%); 5 fingers: rigid travel ≥ 9 mm (change < 16%) | Swipe |
 | Otherwise | Keep waiting |
 
-Verified with simulated traces: a five-finger pinch (thumb moving or not), three fingers plus thumb, and four fingers held together are all classified as pinches about 30% into the motion; four-finger left/right and up/down swipes (including fingers spreading slightly) are classified as swipes at about 8–10%. Two- and three-finger gestures are unaffected. **The effect with real fingers needs confirming on this machine after installing.**
-
-The patch has to be applied to libinput 1.32.0 sources together with [`libinput-1.32.0-immediate-3fg-release.patch`](../../patches/libinput-1.32.0-immediate-3fg-release.patch) (3fg first, then multifinger). The packages already built on this machine are in `~/.local/share/silky-omarchy/libinput/`:
+On Arch Linux ARM aarch64, run these commands from the repository root. The build requires `base-devel`, libinput's runtime dependencies, and the stock Arch `libinput 1.32.0-1` package (if Meson or Ninja are not installed globally, the build script automatically extracts cached archives from `/var/cache/pacman/pkg/`). It preserves the package's device rules and configuration and applies the [immediate three-finger drag release patch](../../patches/libinput-1.32.0-immediate-3fg-release.patch).
 
 ```bash
-sudo pacman -U ~/.local/share/silky-omarchy/libinput/libinput-1.32.0-1.2-aarch64.pkg.tar.xz
+./scripts/build-silky-libinput.sh
+sudo pacman -U ~/.local/share/silky-omarchy/libinput/libinput-1.32.0-1.4-aarch64.pkg.tar.xz
 ```
 
-Log out and back in after installing (Hyprland loads libinput at start-up). To go back to the version with only the three-finger-drag patch:
+Log out and back in after installation so Hyprland loads the new library. Verify `1.32.0-1.4` with `pacman -Q libinput`, then watch Hyprland's socket2 for `silkypinch>>4` and `silkypinch>>5`. Isolated C trajectory simulations verified staggered `3 → 5` landing with bottom-button/palm-sized thumbs, 4 mm wide-hand vertical grabs, seamless `4 → 5` mid-pinch promotion, rapid post-pinch taps with a lingering corner thumb, and crisp four-finger swipes; physical touchpad feel requires verification in the new login session.
+
+To roll back, reinstall the stock package and log out and back in.
 
 ```bash
-sudo pacman -U ~/.local/share/silky-omarchy/libinput/libinput-1.32.0-1.1-aarch64.pkg.tar.xz
+sudo pacman -U /var/cache/pacman/pkg/libinput-1.32.0-1-aarch64.pkg.tar.xz
 ```
 
-## Rapid repeated clicks
+## Rapid repeated clicks and Dock pass-through
 
-Hyprland decides which window is under the pointer only when the pointer moves. MacShell's Spotlight / Applications panel is a full-screen layer: while open it takes input for the whole screen, closed it takes none. Clicking the Dock's Applications icon rapidly without moving the pointer, every click after the second one (which lands on the panel and closes it) was still delivered to the now-closed panel layer, and nothing happened until the mouse moved.
+While Applications is open, `macspot` carves the Dock capsule out of its overlay input mask ([`tune-apps-dock-passthrough.py`](../../scripts/tune-apps-dock-passthrough.py) and [`tune-apps-panel.py`](../../scripts/tune-apps-panel.py)) so the Dock stays directly interactive: clicking the Dock's Applications icon smoothly closes or reverses the panel, and rapid repeated clicks always hit the same `MacDock` surface without cross-layer region races; clicking any other Dock icon launches or switches to that app while dismissing Applications; clicking empty desktop space anywhere outside the panel and Dock still closes Applications immediately.
 
-The plugin listens for mouse buttons: on press, if no other button is held, the pointer is not locked, and the current pointer focus is a layer surface (or nothing), it first makes Hyprland re-resolve the surface under the pointer (`simulateMouseMovement`), then handles the click. With focus on a normal window it does nothing.
+In addition, `onMouseButton` in `silky-gestures` only triggers synthetic pointer focus re-evaluation when the currently focused surface differs from the top `LayerSurface` actually under a stationary cursor, avoiding redundant motion events during rapid taps on Dock or panel icons.
 
-Measured with a virtual mouse (pointer resting on the icon): bursts of 8, 9 and 11 clicks at 6–9 clicks per second toggled the panel on every click, ending in the state matching the parity of the click count; before the fix only the first two clicks worked.
+Reload the [gesture plugin](../../scripts/install-silky-gestures.sh) and update both `MacBar.qml` and `MacDock.qml` via [`restore-silky-apps-panel.py`](../../scripts/restore-silky-apps-panel.py) or the [MacShell optimizations installer](../../scripts/install-macshell-optimizations.sh):
+
+```bash
+python3 scripts/restore-silky-apps-panel.py
+qs ipc -c MacShell call macshell reload
+```
+
+Verify outside click-to-dismiss with a stationary pointer, rapid repeated clicks on the Dock Applications icon, clicking other Dock icons while Applications is open, rapid icon taps immediately after opening the panel, and typing in the search field. Roll back by restoring the `MacBar.qml.before-apps-update.*` and `MacDock.qml.before-apps-update.*` backups in `~/.local/state/silky-omarchy/` along with the versioned plugin backup, then reloading both.
 
 ## Install
 
@@ -101,9 +112,21 @@ The script:
 
 Add `--build-only` to just build it without enabling it.
 
-### After a Hyprland update
+### Automatic recovery after system updates
 
-The plugin is tied to the Hyprland version. The file name carries the version, so after a Hyprland update the old file is not loaded; the gestures are simply inactive for a while, with no errors. Log in again and run the installer once more.
+`./scripts/install-silky-gestures.sh` registers the [Omarchy post-update hook](../../hooks/post-update-silky-gestures) once. It runs after package changes during `omarchy update` and skips work that is already current.
+
+- **Hyprland** checks the installed ABI in addition to the version. It rebuilds and hot-loads when the running ABI matches, or prebuilds for the next login when it differs.
+- **Applications and Dock integration**: [`restore-silky-apps-panel.py`](../../scripts/restore-silky-apps-panel.py) restores pinch handling, the critically-damped Tahoe transition, Dock pass-through, and `silky-dock-glass` panel markers across compatible `MacBar.qml` and `MacDock.qml` layouts (verified against MacShell 0.5.2 and 0.5.3), backing up existing files before writing.
+- **libinput** tracks the digest of the local `1.32.0-1.4` archive. If stock `1.32.0-1` (or an older `1.1`–`1.3` local build) replaces it, the hook verifies the archive and restores `1.32.0-1.4` automatically. Other upstream versions keep the new system package and report that an updated patch is needed.
+
+Run the gesture installer once after installing the patched libinput to enroll it. To check the hook separately, run the following command. A current installation needs no rebuild or file changes.
+
+```bash
+~/.config/omarchy/hooks/post-update.d/silky-gestures.hook
+```
+
+To stop libinput recovery, remove `${XDG_STATE_HOME:-$HOME/.local/state}/silky-omarchy/libinput-maintained` before restoring the stock package. To disable all three recovery steps, move `silky-gestures.hook` out of `post-update.d`. The same state directory holds the MacBar backups.
 
 ## Moving and resizing floating windows on the touchscreen
 
@@ -125,9 +148,14 @@ Folio handles touches in its file area directly. A swipe scrolls the files and a
 
 Only floating windows are handled; tiled windows and windows filling the whole screen go to the app as usual. The 20 px workspace swipe at the left and right screen edges takes priority. A finger on a shell layer above the windows (MacShell's Applications / Spotlight panel, the menu bar, the Dock, popup menus: any top or overlay layer, judged by its input region) is left to that layer alone, so it never drags the window behind it.
 
-### Floating windows cannot be dragged under the menu bar
+### Floating windows cannot cross the menu bar
 
-The menu bar uses a reserved area at the top of the screen (the top of `monitor.reserved`, 21 px on this machine). Hyprland only keeps tiled windows out of it; floating windows could be dragged right under the menu bar. The plugin listens to Hyprland's drag controller (`g_layoutManager->dragController()->m_events.motion / ended`, used by both mouse and touch): after each drag step, if the top of the window (title bar included) is above the bottom of the reserved area + 4 px, it is put back below; when resizing from the top edge, the top stops there while the bottom stays put. After the drag ends (`doLater`) it checks once more.
+The menu bar uses a reserved area at the top of the screen (the top of `monitor.reserved`, e.g. 23 px). Hyprland only keeps tiled windows out of it; floating windows can otherwise end up under the menu bar during drags, multi-monitor layout changes, workspace moves, leaving fullscreen, or window open — especially windows like `foot` whose server-side `hyprbars` title bar extends 30 px above `window.at.y`.
+
+Since 0.8.4, the plugin enforces two layers of protection in the compositor:
+- **During drags**: listens to `g_layoutManager->dragController()->m_events.motion / ended` (both mouse and touch). After each drag step, if the top of the window (title bar included, `RESERVED_EXTENTS`) is above the bottom of the reserved area + 4 px, it is put back below; when resizing from the top edge, the top stops there while the bottom stays put. Checked once more in `doLater` after the drag ends.
+- **Non-drag lifecycle and multi-monitor guard**: listens to `window.openLate`, `window.floating`, `window.fullscreen`, `window.moveToWorkspace`, `workspace.moveToMonitor`, `monitor.added / removed / layoutChanged`, `layer.opened`, `config.reloaded`, and plugin load. Skipping fullscreen and hidden windows, any floating window whose frame actually crosses `monitor.y + reserved.top` is moved back below the menu bar (reducing height if needed to stay within the work area), while snapped half/quarter windows flush with `monitor.y + reserved.top` are left untouched.
+- **Exact title-bar inset for Lua**: exposes `hl.plugin.silky_gestures.window_top_inset(address)` returning the real distance from the client surface top to the outer decorated top (`hyprbars` included), used by [`silky-workspaces.lua`](../../config/hypr/silky-workspaces.lua) and [`silky-shortcuts.lua`](../../config/hypr/silky-shortcuts.lua).
 
 ### Windows with a title bar (terminals) and Omarchy's title bar
 
@@ -153,6 +181,10 @@ Do not touch the screen while reinstalling the plugin: a finger held down at the
 Tested on the Yoga Slim 7 14Q8X9's touchscreen: title-area drags, edge/corner resizing, long-press drags, tapping buttons and scrolling all work.
 
 Tunables at the top of `main.cpp`: `TITLE_PX`, `RESIZE_PX`, `CORNER_PX`, `HOLD_MS`.
+
+### Native snap preview overlay (`0.8.5`)
+
+[`plugins/silky-gestures/snap-preview.hpp`](../../plugins/silky-gestures/snap-preview.hpp) renders the half-screen and corner drag-snap preview directly inside Hyprland at `RENDER_POST_WINDOWS` using `CRectPassElement` and `CBorderPassElement` (65 ms fade-in, 45 ms fade-out, 90 ms smooth move on the same output), exposed to [`config/hypr/silky-folio.lua`](../../config/hypr/silky-folio.lua) via `hl.plugin.silky_gestures.snap_preview(output, x, y, w, h)` and `snap_preview_hide()`. This avoids waking a fullscreen transparent Vulkan layer in MacShell over socket2, while falling back automatically to [`FolioSnapPreview.qml`](../../config/macshell/FolioSnapPreview.qml) if the plugin is not loaded.
 
 ## Verify
 

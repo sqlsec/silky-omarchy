@@ -1,0 +1,41 @@
+pkgname=libinput
+pkgver=1.32.0
+pkgrel=1.4
+pkgdesc='Input device management library with Silky Omarchy touchpad gestures'
+arch=('aarch64')
+url='https://wayland.freedesktop.org/libinput/'
+license=('MIT')
+depends=('glibc' 'libevdev' 'libgcc' 'libwacom' 'lua54' 'mtdev' 'systemd-libs')
+makedepends=('meson' 'ninja')
+provides=('libinput.so=10-64')
+optdepends=('libinput-tools: debug utilities')
+options=('!strip' '!debug')
+source=(
+  "libinput-$pkgver.tar.gz::https://gitlab.freedesktop.org/libinput/libinput/-/archive/$pkgver/libinput-$pkgver.tar.gz"
+  "libinput-$pkgver-immediate-3fg-release.patch"
+  "libinput-$pkgver-multifinger-pinch.patch"
+)
+sha256sums=(
+  '7dd6c1ca964c86eb6810ccd6639cda634e68bdca43bf3afec39e94e942fac8d4'
+  'f99981fbed04f6198d651c8089ab5c570686ab285e9b1d3d9a7b2add98987c03'
+  'f95eececdf4bb274ffa50d3c716c0b45563ab24702c952fc6a8002836901d50e'
+)
+
+prepare() {
+  cd "$srcdir/libinput-$pkgver"
+  patch -Np1 -i "$srcdir/libinput-$pkgver-immediate-3fg-release.patch"
+  patch -Np1 -i "$srcdir/libinput-$pkgver-multifinger-pinch.patch"
+}
+
+build() {
+  meson setup build "$srcdir/libinput-$pkgver" --prefix=/usr --libdir=lib --buildtype=release \
+    -Dtests=false -Ddebug-gui=false -Ddocumentation=false -Dlibwacom=true -Dmtdev=true
+  ninja -C build libinput.so.10.13.0
+}
+
+package() {
+  # Preserve the distribution's udev rules, quirks, plugin files and headers.
+  bsdtar -xf "$startdir/stock-libinput.pkg" -C "$pkgdir" \
+    --exclude='.PKGINFO' --exclude='.BUILDINFO' --exclude='.MTREE' --exclude='.INSTALL'
+  install -m755 build/libinput.so.10.13.0 "$pkgdir/usr/lib/libinput.so.10.13.0"
+}

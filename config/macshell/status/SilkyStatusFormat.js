@@ -33,6 +33,7 @@ var chinese = {
     "Battery": "电池",
     "Power source": "供电来源",
     "External power": "外接电源",
+    "Power passthrough": "电源直供",
     "On battery": "电池供电",
     "Online": "已连接",
     "Status": "状态",
@@ -109,4 +110,56 @@ function duration(seconds) {
     var minutes = Math.max(1, Math.ceil(seconds / 60));
     var hours = Math.floor(minutes / 60);
     return hours > 0 ? hours + " h " + (minutes % 60) + " min" : minutes + " min";
+}
+
+// 4-tier thermal scale: cool (< 50°C) green, normal (50-64°C) cyan, warm (65-79°C) amber, hot (>= 80°C) red.
+function thermalColor(temp, dark, fallback) {
+    if (typeof temp !== "number" || !isFinite(temp))
+        return fallback || (dark ? "#e6e8ef" : "#3b4252");
+    if (temp >= 80)
+        return dark ? "#ff453a" : "#c92a22";
+    if (temp >= 65)
+        return dark ? "#ff9f0a" : "#b85d00";
+    if (temp >= 50)
+        return dark ? "#64d2ff" : "#0071a4";
+    return dark ? "#30d158" : "#1c8241";
+}
+
+// Menu-bar thermometer: the bar stays monochrome until the CPU runs warm (65 °C), then shares the panel's amber and red.
+function barThermalColor(temp, dark, ink) {
+    if (typeof temp !== "number" || !isFinite(temp) || temp < 65)
+        return ink;
+    return thermalColor(temp, dark, ink);
+}
+
+// 4-tier load scale (%): low (< 35%) green, normal (35-64%) cyan, high (65-84%) amber, critical (>= 85%) red.
+function loadColor(percent, dark, fallback) {
+    if (typeof percent !== "number" || !isFinite(percent))
+        return fallback || (dark ? "#e6e8ef" : "#3b4252");
+    if (percent >= 85)
+        return dark ? "#ff453a" : "#c92a22";
+    if (percent >= 65)
+        return dark ? "#ff9f0a" : "#b85d00";
+    if (percent >= 35)
+        return dark ? "#64d2ff" : "#0071a4";
+    return dark ? "#30d158" : "#1c8241";
+}
+
+// 4-tier semantic power palette aligned with thermal/load/quota colors (green = healthiest):
+// charging or external passthrough -> green; on battery: > 65% green, 36-65% cyan, 20-35% amber, < 20% red.
+function powerColor(charging, onBattery, charge, dark, neutral) {
+    if (charging)
+        return dark ? "#30d158" : "#1c8241";
+    if (typeof charge === "number" && isFinite(charge) && charge < 20)
+        return dark ? "#ff453a" : "#c92a22";
+    if (!onBattery)
+        return dark ? "#30d158" : "#1c8241";
+    if (typeof charge === "number" && isFinite(charge)) {
+        if (charge <= 35)
+            return dark ? "#ff9f0a" : "#b85d00";
+        if (charge <= 65)
+            return dark ? "#64d2ff" : "#0071a4";
+        return dark ? "#30d158" : "#1c8241";
+    }
+    return neutral || (dark ? "#e6e8ef" : "#3b4252");
 }

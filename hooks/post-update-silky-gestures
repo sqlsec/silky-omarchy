@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Restore the touchpad and Applications panel after Omarchy updates.
+set -euo pipefail
+
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/silky-omarchy"
+config_dir="${XDG_CONFIG_HOME:-$HOME/.config}"
+lib_dir="$HOME/.local/lib/silky-omarchy"
+script="$repo_root/scripts/install-silky-gestures.sh"
+shell_dir="${MACSHELL_DIR:-$config_dir/quickshell/MacShell}"
+failed=0
+
+repair_plugin() {
+  local version abi running_abi target
+  version=$(pkg-config --modversion hyprland) || return 1
+  abi=$(Hyprland --version | sed -n 's/^Version ABI string: //p') || return 1
+  if [[ -z $abi ]]; then
+    printf 'Silky Gestures: could not determine the installed Hyprland ABI.\n' >&2
+    return 1
+  fi
+  target="$lib_dir/silky-gestures-$version.so"
+  if [[ -f $target && -f $target.abi && $(< "$target.abi") == "$abi" ]]; then
+    return 0
+  fi
+
+  running_abi=$(hyprctl version -j 2>/dev/null | jq -r '.abiHash // empty' || true)
+  if [[ $running_abi == "$abi" ]]; then
+    "$script"
+  else
+    "$script" --build-only
+  fi
+}
+
+repair_apps() {
+  local outcome
+  outcome=$(MACSHELL_DIR="$shell_dir" python3 "$repo_root/scripts/restore-silky-apps-panel.py") || return 1
+  [[ -n $outcome ]] || return 0
+  printf '%s\n' "$outcome"
+  # Stock MacShell watches its files. Silky's explicit reload path is needed
+  # only when that watcher is disabled in the running shell.
+  if grep -Fq 'Quickshell.watchFiles = false' "$shell_dir/shell.qml" &&
+      command -v qs >/dev/null && qs ipc -c MacShell show >/dev/null 2>&1; then
+    qs ipc -c MacShell call macshell reload || return 1
+  fi
+}
+
+repair_libinput() {
+  local installed archive
+  [[ -f $state_dir/libinput-maintained ]] || return 0
+  installed=$(pacman -Q libinput) || return 1
+  case "$installed" in
+    'libinput 1.32.0-1.4') return 0 ;;
+    'libinput 1.32.0-1'|'libinput 1.32.0-1.1'|'libinput 1.32.0-1.2'|'libinput 1.32.0-1.3')
+      archive="$HOME/.local/share/silky-omarchy/libinput/libinput-1.32.0-1.4-aarch64.pkg.tar.xz"
+      if [[ ! -f $archive || $(pacman -Qp -- "$archive") != 'libinput 1.32.0-1.4' ]] ||
+          ! sha256sum --check --status "$state_dir/libinput-maintained"; then
+        printf 'Silky libinput: the saved patched package is missing or invalid: %s\n' "$archive" >&2
+        return 1
+      fi
+      sudo -n pacman -U --needed --noconfirm -- "$archive" || return 1
+      printf 'Silky libinput restored. It will load at the next login.\n'
+      ;;
+    *)
+      printf 'Silky libinput: %s needs a compatible patch. The system package was left installed.\n' "$installed" >&2
+      return 1
+      ;;
+  esac
+}
+
+repair_plugin || failed=1
+repair_apps || failed=1
+repair_libinput || failed=1
+exit "$failed"

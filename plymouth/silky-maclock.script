@@ -35,8 +35,15 @@ bullet.sprites = [];
 global.layout_width = 0;
 global.layout_height = 0;
 global.k = 1;
-global.progress = 0;
+global.progress = 0.08;
 global.bullet_count = 0;
+global.boot_visible = 1;
+global.anim_frame = 0;
+# Fast ease-out cubic sweep during Plymouth's ~0.5 s active window, settling cleanly at 90 %
+# so --retain-splash holds a finished-looking macOS bar until Hyprland hands off to MacLock.
+global.anim_start = 0.08;
+global.anim_limit = 0.90;
+global.anim_duration = 0.45;
 
 # Size relative to the panel the images were drawn for. On that panel k is 1 and images are used untouched.
 fun fit(img) {
@@ -62,7 +69,8 @@ fun set_dialog(opacity) {
 }
 
 fun set_boot(opacity) {
-  logo.sprite.SetOpacity(opacity);
+  global.boot_visible = opacity > 0 ? 1 : 0;
+  logo.sprite.SetOpacity(0);
   track.sprite.SetOpacity(opacity);
   fill.sprite.SetOpacity(opacity);
 }
@@ -78,7 +86,8 @@ fun place_bullets() {
 
 fun update_fill() {
   w = Math.Int(global.track_w * global.progress);
-  if (w < 2) w = 2;
+  if (w < global.track_h) w = global.track_h;
+  if (w > global.track_w) w = global.track_w;
   fill.sprite.SetImage(fill.original.Scale(w, global.track_h));
 }
 
@@ -125,9 +134,10 @@ fun layout() {
   t = fit(track.image);
   global.track_w = t.GetWidth();
   global.track_h = t.GetHeight();
+  bar_y = H - u(108) - global.track_h;
   track.sprite.SetImage(t);
-  track.sprite.SetPosition(W / 2 - global.track_w / 2, H / 2 + l.GetHeight() / 2 + u(10), 10);
-  fill.sprite.SetPosition(W / 2 - global.track_w / 2, H / 2 + l.GetHeight() / 2 + u(10), 11);
+  track.sprite.SetPosition(W / 2 - global.track_w / 2, bar_y, 10);
+  fill.sprite.SetPosition(W / 2 - global.track_w / 2, bar_y, 11);
   update_fill();
 }
 
@@ -138,6 +148,19 @@ set_boot(1);
 fun refresh_callback() {
   # A display that comes up late makes the window bigger: lay everything out again.
   if (Window.GetWidth() != global.layout_width || Window.GetHeight() != global.layout_height) layout();
+
+  if (global.boot_visible == 1 && global.progress < global.anim_limit) {
+    global.anim_frame++;
+    t = (global.anim_frame / 50.0) / global.anim_duration;
+    if (t > 1.0) t = 1.0;
+    inv = 1.0 - t;
+    eased = 1.0 - inv * inv * inv;
+    target = global.anim_start + eased * (global.anim_limit - global.anim_start);
+    if (target > global.progress) {
+      global.progress = target;
+      update_fill();
+    }
+  }
 }
 Plymouth.SetRefreshFunction(refresh_callback);
 
@@ -155,6 +178,9 @@ Plymouth.SetDisplayPasswordFunction(display_password_callback);
 
 fun display_normal_callback() {
   global.bullet_count = 0;
+  global.anim_frame = 0;
+  global.progress = global.anim_start;
+  update_fill();
   set_dialog(0);
   set_boot(1);
 }

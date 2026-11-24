@@ -62,19 +62,28 @@ hl.animation({
 
 ### Touchscreen scrolling in WeChat’s conversation list
 
-The local WeChat Wayland adapter used to accumulate 34 logical pixels of touch movement into one mouse-wheel notch. Slow drags paused and then jumped. The updated [touch adapter](../../plugins/wechat-wayland/touch-scroll.c) sends continuous scroll deltas after recognising a vertical drag and ends the scroll on release or cancellation. Taps still go to WeChat, and the native touchpad and mouse wheel keep their own input paths.
+WeChat 4.x is a closed-source frameless Qt client that paints its own top bar and window controls (minimize `—`, maximize `□`, close `×`) inside the app, so we keep its built-in controls rather than stacking a duplicate compositor title bar. Previously, native Wayland startup depended on a binary patch and SHA-256 check pinned to `wechat-bin 4.1.13.26` on ARM64; upgrading to `4.1.13.29` broke the hash check and silently fell back to XWayland (`QT_QPA_PLATFORM=xcb`), which broke top-bar mouse dragging, disabled touchscreen scrolling in both the conversation list and chat pane, and left the minimize button inert.
 
-If `~/.local/bin/wechat-wayland-touch` is already set up with `touch-scroll.so` enabled, run this from the repository root.
+The updated Wayland adapter [plugins/wechat-wayland/touch-scroll.c](../../plugins/wechat-wayland/touch-scroll.c) and launcher [bin/wechat-wayland-touch](../../bin/wechat-wayland-touch) fix these issues at the Wayland protocol layer without patching the WeChat binary:
+
+- **Empty `wl_touch.frame` guard**: WeChat’s bundled `QWaylandInputDevice::Touch::touch_frame()` dereferences an empty touch-point list and segfaults whenever an empty `wl_touch.frame` arrives (for example, right after `silky-gestures` sends `touch_cancel` + `touch_frame`). The `LD_AUDIT` adapter only forwards `touch_frame` when the current frame actually delivered a `down`, `motion`, or `up` event, keeping native Wayland stable across WeChat upgrades.
+- **Top-bar drag and built-in window controls**: under native Wayland, dragging the top bar uses `xdg_toplevel.move` natively and close hides to the tray. Because WeChat sends void `xdg_toplevel` requests through `wl_proxy_marshal_array`, Omarchy sets global `suppress_event = "maximize"`, and Hyprland ignores `set_minimized`, the adapter intercepts both `wl_proxy_marshal_array` and `wl_proxy_marshal_array_flags` and only forwards requests that follow an in-window pointer button or touch tap within 500 ms: `xdg_toplevel.set_minimized` (opcode 13) minimizes to the Dock (via MacShell Genie or `omarchy-hyprland-window-minimize`), and `set_maximized` (opcode 9) / `unset_maximized` (opcode 10) toggle maximization on the active WeChat window via `hyprctl eval`, while blocking unsolicited `set_maximized` requests emitted by bundled Qt when reopening from the tray or launcher.
+- **Touchscreen scrolling in the conversation list and chat pane**: single-finger touches below the top bar (`y >= 54` logical px) buffer `touch_down` instead of forwarding it immediately, preventing WeChat from opening the conversation or item under your finger on press before a scroll starts; moving vertically by 6 px drops the buffered press silently and enters 1:1 zero-lag scrolling (`WL_POINTER_AXIS_SOURCE_FINGER`) across both the conversation list and chat history pane, while lifting in place (tap) or dragging horizontally by 6 px flushes the buffered press normally so taps and text selection still work. On release, a main-thread `wl_surface_frame` VSync callback drives exponential kinetic glide from the last 90 ms of finger velocity (piggybacking on Qt's own surface commits so it stops cleanly at list bounds), and touching the screen during glide brakes immediately while suppressing an accidental tap. Touchpad scrolling and mouse wheel stay intact. Set `WECHAT_TOUCH_SCROLL_SCALE` (default `1.0`) to tune scroll gain, `WECHAT_TOUCH_SCROLL=0` to disable touch-to-scroll while keeping the empty-frame guard and minimize forwarding, or `WECHAT_WAYLAND=0` to fall back to XWayland temporarily.
+
+Run the installer from the repository root to build the adapter, install the launcher and user desktop entry, and reload Hyprland:
 
 ```bash
 ./scripts/install-wechat-touch-scroll.sh
 ```
 
-The installer requires GCC or a compatible C compiler, `pkg-config`, the Wayland client development files and Hyprland Lua configuration. The local setup uses the existing native Wayland launcher for WeChat 4.1.13.26 on ARM64. The installer updates the adapter and reloads Hyprland. Quit WeChat from the tray and reopen it from the app launcher to load the new scrolling logic.
+It requires GCC or a compatible C compiler, `pkg-config`, the Wayland client development files, and Hyprland Lua configuration. It backs up before overwriting `~/.local/share/wechat-wayland/touch-scroll.so`, `~/.local/bin/wechat-wayland-touch`, `~/.local/share/applications/wechat.desktop`, and `~/.config/hypr/silky-wechat-glass.lua`. Quit WeChat completely and reopen it from the app launcher to apply.
 
-To verify, drag slowly over a short distance in the conversation list with one finger, reverse direction, then release and tap a conversation. An isolated test covered small deltas, reversal, release, cancellation and taps. The restarted WeChat process loaded the new library on this machine. Physical touchscreen feel still needs to be checked.
+To verify:
 
-To roll back, quit WeChat and restore the installer’s `*.bak.*` copies of `touch-scroll.c` and `touch-scroll.so` in `~/.local/share/wechat-wayland/` and `~/.config/hypr/silky-wechat-glass.lua`. Run `hyprctl reload`, then reopen WeChat.
+- Run `hyprctl clients -j | jq -c '.[] | select(.class=="wechat") | {title, xwayland}'` and confirm `xwayland` is `false`, and that `/proc/$(pgrep -x wechat | head -n 1)/maps` maps `touch-scroll.so`.
+- Live testing on this machine confirmed WeChat `4.1.13.29` (ARM64) launches directly in native Wayland with the adapter loaded. Isolated unit tests verified empty `touch_frame` suppression, post-cancel empty-frame filtering, normal tap forwarding, vertical drag-to-scroll below the top bar, and top-bar exclusion. Physical touchscreen feel across both panes and live click checks on the signed-in main window controls remain to be checked interactively.
+
+To roll back, quit WeChat and restore the installer’s `*.bak.*` copies of `touch-scroll.c` and `touch-scroll.so` in `~/.local/share/wechat-wayland/`, `~/.local/bin/wechat-wayland-touch`, `~/.local/share/applications/wechat.desktop`, and `~/.config/hypr/silky-wechat-glass.lua`. Run `hyprctl reload`, then reopen WeChat.
 
 
 ## Apply and verify

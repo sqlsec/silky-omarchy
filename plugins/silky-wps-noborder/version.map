@@ -1,0 +1,7 @@
+Qt_5 {
+  global:
+    _ZN6kso_qt7QLayout18setContentsMarginsERKNS_8QMarginsE;
+    _ZN6kso_qt7QLayout18setContentsMarginsEiiii;
+  local:
+    *;
+};

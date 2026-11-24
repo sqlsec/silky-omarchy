@@ -19,6 +19,23 @@ hl.window_rule({
 --   for a few frames of the open animation and then snapped away.
 o.window("^(org\\.quickshell)$", { float = true, center = true, border_size = 0 })
 
+-- AppAbout ("关于 <App>" / "About <App>") draws its own 18 px rounded card.
+-- Skip compositor blur and match its 18 px radius to avoid a blurred halo.
+hl.window_rule({
+  name = "silky-app-about-no-blur",
+  match = { class = "^org\\.quickshell$", initial_title = "^(关于 |About )" },
+  no_blur = true,
+  rounding = 18,
+})
+-- About Omarchy Linux uses the window backdrop, with the same tint as the system menu.
+hl.window_rule({
+  name = "silky-about-omarchy-glass",
+  match = { class = "^org\\.quickshell$", initial_title = "^About Omarchy Linux$" },
+  no_blur = false,
+  xray = false,
+  rounding = 18,
+})
+
 -- These are transparent, click-through animation/control overlays. Compositor blur on them blurred the whole desktop
 -- while a restored window was handing over from its captured copy to the real surface.
 hl.layer_rule({ name = "silky-minimize-fx", match = { namespace = "^macshell-minimize$" }, no_anim = true, animation = "none", blur = false })

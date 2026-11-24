@@ -11,6 +11,8 @@ config=${XDG_CONFIG_HOME:-"$HOME/.config"}
 target="$data/silky-omarchy/folio"
 launcher="$HOME/.local/bin/folio"
 desktop="$data/applications/folio.desktop"
+portal_service="$data/dbus-1/services/org.freedesktop.impl.portal.desktop.folio.service"
+fm1_service="$data/dbus-1/services/org.freedesktop.FileManager1.service"
 macshell="$config/quickshell/MacShell"
 
 if [[ ! -x /usr/bin/folio || ! -r /usr/share/applications/folio.desktop ]]; then
@@ -60,8 +62,11 @@ from pathlib import Path
 
 source, output, launcher = sys.argv[1:]
 entry, *actions = re.split(r"(?m)(?=^\[Desktop Action )", Path(source).read_text(), maxsplit=1)
-launcher = re.sub(r'([\\`"$])', r'\\\1', launcher)
-entry = re.sub(r"(?m)^Exec=.*$", lambda _: f'Exec="{launcher}" %U', entry, count=1)
+if any(ch in launcher for ch in ' \t\n"\'\\`$|&;<>()'):
+    exec_bin = '"' + re.sub(r'([\\`"$])', r'\\\1', launcher) + '"'
+else:
+    exec_bin = launcher
+entry = re.sub(r"(?m)^Exec=.*$", lambda _: f"Exec={exec_bin} %U", entry, count=1)
 entry = re.sub(r"(?m)^Icon=.*$", "Icon=system-file-manager", entry, count=1)
 if not re.search(r"(?m)^Name\[zh_CN\]=", entry):
     entry = re.sub(r"(?m)^Name=.*$", r"\g<0>\nName[zh_CN]=文件", entry, count=1)
@@ -91,6 +96,30 @@ install_file() {
 install_file "$source_dir/build/folio" "$target/folio" 755
 install_file "$repo/bin/silky-folio" "$launcher" 755
 install_file "$staging/folio.desktop" "$desktop" 644
+cat > "$staging/org.freedesktop.impl.portal.desktop.folio.service" <<EOF
+[D-BUS Service]
+Name=org.freedesktop.impl.portal.desktop.folio
+Exec=$launcher chooser
+EOF
+install_file "$staging/org.freedesktop.impl.portal.desktop.folio.service" "$portal_service" 644
+cat > "$staging/org.freedesktop.FileManager1.service" <<EOF
+[D-BUS Service]
+Name=org.freedesktop.FileManager1
+Exec=$launcher --file-manager-service
+EOF
+install_file "$staging/org.freedesktop.FileManager1.service" "$fm1_service" 644
+if command -v dbus-send >/dev/null; then
+  dbus-send --session --dest=org.freedesktop.DBus --type=method_call \
+    /org/freedesktop/DBus org.freedesktop.DBus.ReloadConfig 2>/dev/null || true
+fi
+pkill -f '^/usr/bin/folio chooser$' 2>/dev/null || true
+network_plugin="$data/folio/plugins/network"
+mkdir -p -- "$network_plugin/i18n"
+chmod 755 "$data/folio" "$data/folio/plugins" "$network_plugin" "$network_plugin/i18n"
+install_file "$repo/config/folio/plugins/network/manifest.json" "$network_plugin/manifest.json" 644
+install_file "$repo/config/folio/plugins/network/discover" "$network_plugin/discover" 755
+install_file "$repo/config/folio/plugins/network/i18n/zh-CN.json" "$network_plugin/i18n/zh-CN.json" 644
+install_file "$repo/config/folio/plugins/network/i18n/zh-TW.json" "$network_plugin/i18n/zh-TW.json" 644
 if [[ -f $config/hypr/hyprland.lua ]]; then
   hypr_main=$(realpath -- "$config/hypr/hyprland.lua")
   install_file "$repo/config/hypr/silky-folio.lua" "$config/hypr/silky-folio.lua" 644

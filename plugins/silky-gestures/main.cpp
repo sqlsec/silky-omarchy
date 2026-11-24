@@ -64,6 +64,8 @@
 #include <hyprland/src/render/Context.hpp>
 #include <hyprland/src/render/Texture.hpp>
 #include <hyprland/src/render/pass/TexPassElement.hpp>
+#include <hyprland/src/render/pass/RectPassElement.hpp>
+#include <hyprland/src/render/pass/BorderPassElement.hpp>
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 #include <hyprland/src/state/MonitorState.hpp>
 #include <hyprland/src/state/WorkspaceState.hpp>
@@ -293,31 +295,85 @@ static void onSwipeEnd(const IPointer::SSwipeEndEvent& e, Event::SCallbackInfo& 
 
 // ══════════════ floating windows stay below the menu bar ══════════════
 // Hyprland keeps tiled windows out of the reserved area at the top (the menu bar's exclusive zone), but a floating
-// window can be dragged straight under the bar. After every drag step, mouse or touch, and when the drag ends, a
-// window whose top (titlebar included) is above the reserved area is put back just below it. A resize from the top
-// edge stops there instead.
+// window can still slide or be placed under the bar (for example during a drag, when switching monitors/workspaces, or
+// when a server-side hyprbars titlebar extends above window.at.y). After every drag step, when a drag ends, and on
+// window/workspace/monitor/reload events, any floating window whose top (titlebar included) crosses the menu bar is
+// put back below it. A resize from the top edge stops there instead.
 static PHLWINDOWREF g_lastDragged;
+static bool         g_keepAllPending = false;
 
-static void keepBelowMenuBar(PHLWINDOW window, bool resizing) {
-    if (!window || !window->mapped() || !window->isFloating() || !window->layoutTarget())
+static void keepBelowMenuBar(PHLWINDOW window, bool resizing, double triggerGap = TOP_GAP_PX, double targetGap = TOP_GAP_PX) {
+    if (!window || !window->mapped() || window->isHidden() || !window->isFloating() || !window->layoutTarget())
+        return;
+    if (Fullscreen::controller() && Fullscreen::controller()->isFullscreen(window))
         return;
     const auto MONITOR = window->m_monitor.lock();
     if (!MONITOR || MONITOR->m_reservedArea.top() <= 0)
         return;
 
-    const double LIMIT = MONITOR->m_position.y + MONITOR->m_reservedArea.top() + TOP_GAP_PX;
-    const CBox   FULL  = window->getWindowBoxUnified(Desktop::View::RESERVED_EXTENTS); // titlebar included
-    const double OVER  = LIMIT - FULL.y;
-    if (OVER <= 0.5)
+    const double BAR_BOTTOM = MONITOR->m_position.y + MONITOR->m_reservedArea.top();
+    const CBox   FULL       = window->getWindowBoxUnified(Desktop::View::RESERVED_EXTENTS); // titlebar included
+    if (FULL.y >= BAR_BOTTOM + triggerGap - 0.5)
         return;
 
     const auto TARGET = window->layoutTarget();
     CBox       box    = TARGET->position();
+    double     gap    = targetGap;
+
+    if (!resizing) {
+        const double WORK_BOTTOM = MONITOR->m_position.y + MONITOR->m_size.y - MONITOR->m_reservedArea.bottom();
+        const double TOP_INSET   = std::max(0.0, box.y - FULL.y);
+        const double AVAIL_H     = std::max(120.0, WORK_BOTTOM - BAR_BOTTOM - TOP_INSET);
+        if (gap > 0.0 && BAR_BOTTOM + gap + TOP_INSET + box.h > WORK_BOTTOM)
+            gap = 0.0;
+        if (box.h > AVAIL_H)
+            box.h = AVAIL_H;
+    }
+
+    const double OVER = (BAR_BOTTOM + gap) - FULL.y;
+    if (OVER <= 0.5)
+        return;
+
     box.y += OVER;
     if (resizing)
         box.h = std::max(1.0, box.h - OVER); // resizing from the top: the edge stops, the bottom stays put
     g_layoutManager->setTargetGeom(box, TARGET);
     TARGET->warpPositionSize();
+}
+
+static void scheduleKeepBelowMenuBar(PHLWINDOW window) {
+    if (!window)
+        return;
+    g_pEventLoopManager->doLater([ref = PHLWINDOWREF{window}] {
+        keepBelowMenuBar(ref.lock(), false, 0.0, TOP_GAP_PX);
+    });
+}
+
+static void scheduleKeepAllBelowMenuBar() {
+    if (g_keepAllPending)
+        return;
+    g_keepAllPending = true;
+    g_pEventLoopManager->doLater([] {
+        g_keepAllPending = false;
+        for (const auto& window : Desktop::windowState()->windows())
+            keepBelowMenuBar(window, false, 0.0, TOP_GAP_PX);
+    });
+}
+
+static int windowTopInset(lua_State* lua) {
+    const std::string_view address = luaL_checkstring(lua, 1);
+    const auto&            windows = Desktop::windowState()->windows();
+    const auto             it      = std::ranges::find_if(windows, [&](const auto& window) {
+        return window && window->mapped() && std::format("{:#x}", reinterpret_cast<uintptr_t>(window.get())) == address;
+    });
+    if (it == windows.end()) {
+        lua_pushnumber(lua, 0);
+        return 1;
+    }
+    const auto main = (*it)->getWindowMainSurfaceBox();
+    const auto full = (*it)->getWindowBoxUnified(Desktop::View::RESERVED_EXTENTS);
+    lua_pushnumber(lua, std::max(0.0, std::ceil(main.y - full.y)));
+    return 1;
 }
 
 #include "foot-layout.hpp"
@@ -420,14 +476,7 @@ static struct {
 } g_bar;
 
 static bool windowPinned(PHLWINDOW window) {
-    const std::string JSON = HyprlandAPI::invokeHyprctlCommand("clients", "", "j");
-    const std::string ADDR = std::format("\"address\": \"0x{:x}\"", (uintptr_t)window.get());
-    const auto        AT   = JSON.find(ADDR);
-    if (AT == std::string::npos)
-        return false;
-    const auto END    = JSON.find("\n}", AT);
-    const auto PINNED = JSON.find("\"pinned\": true", AT);
-    return PINNED != std::string::npos && (END == std::string::npos || PINNED < END);
+    return window && static_cast<bool>(window->m_state & Desktop::View::WINDOW_STATE_PINNED);
 }
 
 static void restoreAfterTitlebarDrag() {
@@ -499,20 +548,25 @@ static void resetPinch() {
 }
 
 // ── Launchpad pinch → MacShell ──
-// socket2 lines "silkylaunchpad>>begin", "silkylaunchpad>>update,<amount>", "silkylaunchpad>>end[,cancel]".
+// socket2 lines "silkylaunchpad>>begin", "silkylaunchpad>>update,<amount>[,<wall ms>]", "silkylaunchpad>>end[,cancel]".
 // amount = how far the fingers pinched in: 1 - scale (0 at the start, > 0 pinching in, < 0 spreading out).
 static void postLaunchpad(const std::string& data) {
     IPC::Socket2::sock()->postEvent({.event = "silkylaunchpad", .data = data});
 }
 
-static void postLaunchpadAmount(double scale) {
-    postLaunchpad(std::format("update,{:.4f}", 1.0 - scale));
+static double eventWallMs(uint32_t timeMs);
+
+static void postLaunchpadAmount(double scale, uint32_t timeMs = 0) {
+    if (timeMs != 0)
+        postLaunchpad(std::format("update,{:.4f},{:.1f}", 1.0 - scale, eventWallMs(timeMs)));
+    else
+        postLaunchpad(std::format("update,{:.4f}", 1.0 - scale));
 }
 
 // touch screen: four or five fingers, before any swipe started, whose spread changes enough → a pinch from now on
 static bool checkPinch() {
     if (g_touch.pinching) {
-        postLaunchpadAmount(fingerSpread() / g_touch.pinchRef);
+        postLaunchpadAmount(fingerSpread() / g_touch.pinchRef, g_touch.motionMs);
         return true;
     }
     if (g_touch.started || g_touch.finished || g_touch.fingers.size() < PINCH_FINGERS || g_touch.pinchRef <= 1)
@@ -525,7 +579,7 @@ static bool checkPinch() {
         return false;
     g_touch.pinching = true;
     postLaunchpad("begin");
-    postLaunchpadAmount(RATIO);
+    postLaunchpadAmount(RATIO, g_touch.motionMs);
     return true;
 }
 
@@ -557,7 +611,7 @@ static void onPinchUpdate(const IPointer::SPinchUpdateEvent& e, Event::SCallback
     if (!g_padPinch.active)
         return;
     info.cancelled = true;
-    postLaunchpadAmount(e.scale);
+    postLaunchpad(std::format("update,{:.4f},{:.1f}", 1.0 - e.scale, eventWallMs(e.timeMs)));
 }
 
 static void onPinchEnd(const IPointer::SPinchEndEvent& e, Event::SCallbackInfo& info) {
@@ -1229,30 +1283,54 @@ static void liftFinger(int32_t id, bool cancelled, Event::SCallbackInfo& info) {
     }
 }
 
-// ══════════════ clicks on a shell layer that just changed its input region ══════════════
-// Hyprland only works out which surface is under the pointer when the pointer moves. A layer surface that changes its
-// input region under a pointer at rest keeps the pointer focus (or never gets it): MacShell's Spotlight / Applications
-// overlay takes the whole screen while open and nothing once it closes, so clicking the Dock's Applications icon
-// quickly, without moving, sent every click after the second one to the closed overlay, and nothing happened until the
-// mouse moved. So when a button goes down with no other button held and the pointer focus is a layer surface (or
-// nothing), the surface under the pointer is looked up again first; the click then lands where it is seen to land.
+// Refresh pointer focus only when a shell layer opens or closes under a stationary cursor so the focused
+// surface diverges from what actually sits under the pointer. When focus already matches, skip synthetic
+// motion so rapid taps/clicks on Dock or Applications icons are never disturbed.
+static SP<CWLSurfaceResource> topLayerSurfaceAtPointer() {
+    const auto POS = g_pInputManager->getMouseCoordsInternal();
+    const auto MONITOR = State::monitorState()->query().vec(POS).run();
+    if (!MONITOR)
+        return nullptr;
+    const auto& HIT = Desktop::viewState()->hitTest();
+    Vector2D local;
+    PHLLS layer;
+    if (auto popup = HIT.layerPopupSurfaceAt(POS, MONITOR, &local, &layer))
+        return popup;
+    for (const auto L : {ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, ZWLR_LAYER_SHELL_V1_LAYER_TOP}) {
+        if (auto surf = HIT.layerSurfaceAt(POS, &MONITOR->m_layerSurfaceLayers[L], &local, &layer))
+            return surf;
+    }
+    return nullptr;
+}
+
 static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info) {
     if (handleFootMouse(e, info))
         return;
     if (e.state != WL_POINTER_BUTTON_STATE_PRESSED || g_pInputManager->hasHeldButtons() || g_pInputManager->isConstrained() ||
         g_pSessionLockManager->isSessionLocked())
         return;
-    const auto FOCUS = g_pSeatManager->m_state.pointerFocus.lock();
-    if (FOCUS) {
-        const auto SURFACE = Desktop::View::CWLSurface::fromResource(FOCUS);
-        const auto VIEW    = SURFACE ? SURFACE->view() : nullptr;
-        if (!VIEW || VIEW->type() != Desktop::View::VIEW_TYPE_LAYER_SURFACE)
-            return;
+    if (g_padPinch.active) {
+        g_padPinch.active = false;
+        postLaunchpad("end,cancel");
     }
-    g_pInputManager->simulateMouseMovement();
+    const auto FOCUS          = g_pSeatManager->m_state.pointerFocus.lock();
+    const auto FOCUS_SURFACE  = FOCUS ? Desktop::View::CWLSurface::fromResource(FOCUS) : nullptr;
+    const auto FOCUS_VIEW     = FOCUS_SURFACE ? FOCUS_SURFACE->view() : nullptr;
+    const bool FOCUS_IS_LAYER = FOCUS_VIEW && FOCUS_VIEW->type() == Desktop::View::VIEW_TYPE_LAYER_SURFACE;
+    const auto TOP_LAYER      = topLayerSurfaceAtPointer();
+
+    if (TOP_LAYER) {
+        if (FOCUS == TOP_LAYER)
+            return;
+        g_pInputManager->simulateMouseMovement();
+        return;
+    }
+    if (FOCUS_IS_LAYER || !FOCUS)
+        g_pInputManager->simulateMouseMovement();
 }
 
 #include "titlebar-marks.hpp"
+#include "snap-preview.hpp"
 
 // ══════════════ plugin ══════════════
 static std::vector<CHyprSignalListener> g_listeners;
@@ -1275,10 +1353,21 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         return 0;
     });
     HyprlandAPI::addLuaFunction(handle, "silky_gestures", "window_layout_limits", windowLayoutLimits);
+    HyprlandAPI::addLuaFunction(handle, "silky_gestures", "window_top_inset", windowTopInset);
+    HyprlandAPI::addLuaFunction(handle, "silky_gestures", "is_dragging_window", [](lua_State* lua) {
+        const std::string_view address = luaL_checkstring(lua, 1);
+        const auto& drag = g_layoutManager->dragController();
+        const auto target = drag ? drag->target() : nullptr;
+        const auto window = target ? target->window() : nullptr;
+        lua_pushboolean(lua, window && std::format("{:#x}", reinterpret_cast<uintptr_t>(window.get())) == address);
+        return 1;
+    });
     HyprlandAPI::addLuaFunction(handle, "silky_gestures", "enable_titlebar_marks", [](lua_State*) {
         g_titlebarMarksEnabled = true;
         return 0;
     });
+    HyprlandAPI::addLuaFunction(handle, "silky_gestures", "snap_preview", luaSnapPreview);
+    HyprlandAPI::addLuaFunction(handle, "silky_gestures", "snap_preview_hide", luaSnapPreviewHide);
     auto& events = Event::bus()->m_events;
     g_listeners.emplace_back(events.gesture.swipe.begin.listen([](const IPointer::SSwipeBeginEvent& e, Event::SCallbackInfo&) {
         g_pad.over = 0;
@@ -1290,6 +1379,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     g_listeners.emplace_back(events.gesture.swipe.end.listen(onSwipeEnd));
     g_listeners.emplace_back(events.render.pre.listen(sampleOverviewSwipe));
     g_listeners.emplace_back(events.render.stage.listen(renderTitlebarMarks));
+    g_listeners.emplace_back(events.render.stage.listen(renderSnapPreview));
     g_listeners.emplace_back(events.gesture.pinch.begin.listen(onPinchBegin));
     g_listeners.emplace_back(events.gesture.pinch.update.listen(onPinchUpdate));
     g_listeners.emplace_back(events.gesture.pinch.end.listen(onPinchEnd));
@@ -1301,6 +1391,15 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     g_listeners.emplace_back(events.input.touch.down.listen(onTouchDown));
     g_listeners.emplace_back(g_layoutManager->dragController()->m_events.motion.listen([] { onDragMotion(); }));
     g_listeners.emplace_back(g_layoutManager->dragController()->m_events.ended.listen([] { onDragEnded(); }));
+    g_listeners.emplace_back(events.window.openLate.listen([](PHLWINDOW window) { scheduleKeepBelowMenuBar(window); }));
+    g_listeners.emplace_back(events.window.floating.listen([](PHLWINDOW window) { scheduleKeepBelowMenuBar(window); }));
+    g_listeners.emplace_back(events.window.fullscreen.listen([](PHLWINDOW window) { scheduleKeepBelowMenuBar(window); }));
+    g_listeners.emplace_back(events.window.moveToWorkspace.listen([](PHLWINDOW window, PHLWORKSPACE) { scheduleKeepBelowMenuBar(window); }));
+    g_listeners.emplace_back(events.workspace.moveToMonitor.listen([](PHLWORKSPACE, PHLMONITOR) { scheduleKeepAllBelowMenuBar(); }));
+    g_listeners.emplace_back(events.monitor.added.listen([](PHLMONITOR) { scheduleKeepAllBelowMenuBar(); }));
+    g_listeners.emplace_back(events.monitor.removed.listen([](PHLMONITOR) { scheduleKeepAllBelowMenuBar(); }));
+    g_listeners.emplace_back(events.monitor.layoutChanged.listen([] { scheduleKeepAllBelowMenuBar(); }));
+    g_listeners.emplace_back(events.layer.opened.listen([](PHLLS) { scheduleKeepAllBelowMenuBar(); }));
     g_listeners.emplace_back(events.input.touch.motion.listen(onTouchMotion));
     g_listeners.emplace_back(events.input.touch.up.listen([](const ITouch::SUpEvent& e, Event::SCallbackInfo& info) { liftFinger(e.touchID, false, info); }));
     g_listeners.emplace_back(events.input.touch.cancel.listen([](const ITouch::SCancelEvent& e, Event::SCallbackInfo& info) { liftFinger(e.touchID, true, info); }));
@@ -1315,17 +1414,21 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         g_footTouch.reset();
         g_footRightDown = false;
         trackFootSnap({}, false);
+        hideSnapPreview(true);
     }));
     g_listeners.emplace_back(events.config.reloaded.listen([] {
         if (!g_overviewAdded)
             addOverviewGesture();
+        scheduleKeepAllBelowMenuBar();
     }));
     addOverviewGesture();
+    scheduleKeepAllBelowMenuBar();
 
-    return {"silky-gestures", "Touch-screen workspace swipes, Launchpad pinch and four-finger window overview (touchpad and touch screen), rubber band, raising / moving / resizing floating windows, kept below the menu bar", "sqlsec", "0.8.3"};
+    return {"silky-gestures", "Touch-screen workspace swipes, Launchpad pinch and four-finger window overview (touchpad and touch screen), rubber band, raising / moving / resizing floating windows, kept below the menu bar", "sqlsec", "0.8.6"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
+    hideSnapPreview(true);
     cancelFootHold();
     g_footGreen.reset();
     g_footTouch.reset();

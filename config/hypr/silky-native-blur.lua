@@ -10,15 +10,26 @@ end
 if silky_cached_window_blur then
   -- Keep the tuned blur passes and shader blend. A wallpaper-only cache can
   -- show the wallpaper through a new window while it submits its first buffers.
+  -- Instead, disable compositor blur for ordinary windows by default and keep
+  -- live backdrop blur only on windows with translucent glass surfaces.
   hl.config({
     decoration = { blur = { new_optimizations = true, passes = 2 } },
     render = { use_shader_blur_blend = true },
   })
-end
 
--- About is a translucent panel. Include the actual windows beneath it in its blur.
-hl.window_rule({
-  name = "silky-about-live-blur",
-  match = { class = "^org\\.quickshell$", initial_title = "^About Omarchy Linux$" },
-  xray = false,
-})
+  hl.window_rule({
+    name = "silky-blur-default-off",
+    match = { class = ".*" },
+    no_blur = true,
+  })
+  hl.window_rule({
+    name = "silky-blur-allowlist-apps",
+    match = { class = "^(folio|md\\.obsidian\\.Obsidian|org\\.gnome\\.Nautilus)$" },
+    no_blur = false,
+  })
+  hl.window_rule({
+    name = "silky-blur-allowlist-macshell",
+    match = { class = "^org\\.quickshell$", initial_title = "^(About Omarchy Linux|macshell Settings)$" },
+    no_blur = false,
+  })
+end

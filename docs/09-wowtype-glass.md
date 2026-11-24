@@ -72,14 +72,27 @@ Hyprland 默认给弹出层做淡入淡出（`fadePopups` 继承 `fade`），旧
 
 ## WPS 的候选栏、迷你工具栏与字体
 
+- WPS 随包提供自己的 Qt Fcitx 插件。编辑器进程缺少 `QT_IM_MODULE=fcitx` 时，Omarchy 可以切换到 WowType，但 WPS 正文接不到候选词。`wps-dark-border` 为调用它的 WPS 启动项指定 XWayland 和 Fcitx。从仓库根目录运行 `./scripts/install-wowtype-glass.sh` 更新启动器，然后保存文档、退出 WPS，再从应用程序面板或文件管理器重新打开。在正文中按 `Super+I`，输入 `ninhao` 并选「你好」。本机已验证 WPS 从桌面入口打开后加载自带的 Fcitx 插件，并在隔离的 X11 测试窗口中确认 WowType 候选词可以上屏。需要回滚时恢复 `~/.local/bin/wps-dark-border.bak.*` 并重开 WPS。[Fcitx Wayland 文档](https://fcitx-im.org/wiki/Using_Fcitx_5_on_Wayland)
+- MacShell Dock 将 WPS 文字、表格、演示、PDF 和整合窗口归到红色 WPS Office 图标。拖选文字时出现的迷你工具栏不占 Dock 位置。已有的 WPS 固定项也会合并。运行 `./scripts/install-macshell-optimizations.sh`，或单独执行 `python3 scripts/tune-wps-dock.py ~/.config/quickshell/MacShell/MacDock.qml --backup`，再运行 `qs -c MacShell ipc call macshell reload`。在 WPS 正文里拖选文字并打开右键菜单，检查 Dock 里只有一个 WPS 图标，点击它仍能切回文档。回滚时用脚本输出的备份恢复 `MacDock.qml` 后重载 MacShell。
 - WPS 走 XWayland。Fcitx5 的 X11 候选栏从 Xresources 读取 `Xft.dpi`。有 `xprop`（Arch 的 `xorg-xprop`）时，安装脚本和 Hyprland 启动时会用内置屏幕的缩放补上这个值，无内置屏幕时使用第一个输出。例如 2× 对应 192 DPI。已经配置的 DPI 会优先使用。其他读取 Xresources 的 X11 应用也可能使用这个值。[Fcitx 的 DPI 说明](https://fcitx-im.org/wiki/Theme_Customization#Classic_User_interface)
-- Omarchy 的浮动工作区会给新窗口套用默认尺寸和层叠位置。Hyprland 规则通过 `o.window(..., { float = true })` 将 `Fcitx5 Input Window` 和 WPS 文字的划词迷你工具栏（类名和标题均为 `wps`）登记为自行浮动。这两种弹窗现在按应用给出的尺寸和位置显示。候选栏禁用 Hyprland 模糊和窗口动画，避免首帧出现大片背景。迷你工具栏同时关闭了 Hyprland 阴影。
-- **修复 WPS 划选文字后再次框选把前一段文字带过去的问题**：在浮动工作区的点击聚焦（`input:follow_mouse = 0`）下，划选文字松手后弹出的迷你工具栏如果抢走焦点，用户直接去文档别处重新滑选其他文字时，WPS 的选区/鼠标状态会错乱，把上一段划选的文字带过去而不是重新框选。[`config/hypr/silky-ime.lua`](../config/hypr/silky-ime.lua) 给该规则加上 `no_initial_focus = true`，弹出迷你工具栏时焦点继续留在主文档窗口（仍可直接点击工具栏上的按钮）。运行 `./scripts/install-wowtype-glass.sh`（或手动同步 `~/.config/hypr/silky-ime.lua` 后执行 `hyprctl reload`）立即生效，无需重启 WPS；实机已验证在 WPS 文字中连续划选多段文字可正常重新框选。回滚只需去掉 `no_initial_focus = true`（或恢复 `~/.config/hypr/silky-ime.lua.bak.*`）并执行 `hyprctl reload`。
-- 在 WPS 正文里点出光标，用 `Super+I` 切到 WowType。在同一页不同高度输入拼音，候选词应靠近光标；拖选文字时，迷你工具栏应以紧凑尺寸弹出。可用 `xprop -root RESOURCE_MANAGER` 检查 DPI。
+- Omarchy 的浮动工作区会给新窗口套用默认尺寸和层叠位置，导致 WPS 的浮动迷你工具栏、右键菜单等弹出面板被强行拉大并在周围出现大片白边。Hyprland 规则通过 `o.window(..., { float = true })` 将 `Fcitx5 Input Window` 和 WPS 各组件（文字 `wps`、表格 `et`、演示 `wpp`、PDF `wpspdf` 及整合外壳 `wpsoffice`，`initial_class` 与 `title` 均匹配 `^(wps|et|wpp|wpspdf|wpsoffice)$`）的弹出面板登记为自行浮动（规则名 `silky-wps-popups`）。这些弹窗现在按应用给出的紧凑尺寸和位置显示，不再出现多余白边；候选栏禁用 Hyprland 模糊和窗口动画以避免首帧出现大片背景，WPS 弹出面板同时关闭了 Hyprland 阴影。
+- **修复 WPS 划选文字后再次框选把前一段文字带过去的问题**：在浮动工作区的点击聚焦（`input:follow_mouse = 0`）下，划选文字松手后弹出的迷你工具栏如果抢走焦点，用户直接去文档别处重新滑选其他文字时，WPS 的选区/鼠标状态会错乱，把上一段划选的文字带过去而不是重新框选。[`config/hypr/silky-ime.lua`](../config/hypr/silky-ime.lua) 给 `silky-wps-popups` 加上 `no_initial_focus = true`，弹出迷你工具栏时焦点继续留在主文档窗口（仍可直接点击工具栏上的按钮）。运行 `./scripts/install-wowtype-glass.sh`（或手动同步 `~/.config/hypr/silky-ime.lua` 后执行 `hyprctl reload`）立即生效，无需重启 WPS；实机已验证在 WPS 文字中连续划选多段文字可正常重新框选。回滚只需去掉 `silky-wps-popups` 中的 `no_initial_focus = true`（或恢复 `~/.config/hypr/silky-ime.lua.bak.*`）并执行 `hyprctl reload`。
+- **去掉 WPS 浮动窗口外圈黑边**：WPS 整合模式的主窗口 `KPromeMainWindow`（`wps-office-cn 12.1.2.29183-1`）在非最大化时会通过 `_updateMargins()` / `onSkinChanged()` 给主布局强行加上四周外边距（普通 2 px、触屏设备 5 px，再乘 DPI 缩放，在 2× 屏上表现为一圈约 10 物理像素的粗黑边）。[`plugins/silky-wps-noborder/`](../plugins/silky-wps-noborder/silky-wps-noborder.cpp) 构建一个很小的 `LD_PRELOAD` 拦截库（`~/.local/lib/silky-omarchy/libsilkywpsnoborder.so`），仅在 `QLayout::setContentsMargins` 作用于 `KPromeMainWindow` 及其 `centralWidget()` 根布局时把边距归零，其他控件不受影响。[`wps-dark-border`](../plugins/silky-wps-noborder/wps-dark-border)（安装到 `~/.local/bin/wps-dark-border`，由用户目录 `~/.local/share/applications/wps-office-*.desktop` 调用）通过 `bwrap --ro-bind-data` 在运行时为 `/usr/bin/{wps,et,wpp,wpspdf}` 追加该 `LD_PRELOAD`（同时保留 `/usr/lib/libfreetype.so` 和暗色皮肤兜底），不修改任何系统包文件。完全退出并重新打开 WPS 后生效；回滚只需删除 `~/.local/lib/silky-omarchy/libsilkywpsnoborder.so` 并恢复 `~/.local/bin/wps-dark-border.bak.*`。
+- 在 WPS 正文里点出光标，用 `Super+I` 切到 WowType，在同一页不同高度输入拼音，候选词应靠近光标；在 WPS 文字、表格、演示中拖选内容或右键打开菜单与迷你工具栏，弹出框应紧贴内容、无大片白边；完全退出并重新打开 WPS 浮动窗口，左右和底部不再出现外圈粗黑边（WPS 实机界面效果待重启 WPS 后确认）。可用 `xprop -root RESOURCE_MANAGER` 检查 DPI。
 
 如果 WPS 报缺字体，可从自己的 Windows `Windows/Fonts` 将 Linux 能识别的字体复制到 `~/.local/share/fonts/Windows/`，运行 `fc-cache -f`，保存文档后完全退出并重新打开 WPS。用 `fc-match -f '%{family} %{file}\n' '宋体'` 检查实际匹配的字体，核对返回的家族名称和文件。
 
 新版 Windows 的 `simfang.ttf` 家族名是「仿宋」，旧文档可能明确要求 `仿宋_GB2312`。遇到这种情况，安装内嵌家族名为 `FangSong_GB2312,仿宋_GB2312` 的字体文件，然后用 `fc-match -f '%{family} %{file}\n' '仿宋_GB2312'` 再确认，不必在 WPS 里对文档点「永久转换」。[安阳学院字体下载页](https://www.ayxy.edu.cn/xxh/contents/127/2224.html)
+
+## MacShell 下 `Super+I` 切换输入法失效
+
+Omarchy `4.0.0.r8205` 起，默认的 `Super+I` / `Super+Shift+I` 绑定调用 `omarchy-input-method cycle [back]`，而它内部通过 `omarchy-shell shell cycleInput` 转发给 Omarchy 自带外壳里的 `indicator.py`。当系统用 MacShell 替代 `omarchy-shell` 后，该 IPC 返回 `omarchy-shell is not running`，导致在任何停留在 `keyboard-us` 输入上下文的窗口（例如 ChatGPT 桌面端）里按 `Super+I` 都无法切到 WowType，且每次更新 `omarchy-dev` 都会保留这套依赖 `omarchy-shell` 的默认绑定。
+
+修复：[`wowtype-glass/silky-input-cycle`](../wowtype-glass/silky-input-cycle)（安装到 `~/.local/bin/silky-input-cycle`）直接通过 `busctl` 调用 `org.fcitx.Fcitx5` 的 `Controller1` 接口（`CurrentInputMethodGroup`、`InputMethodGroupInfo`、`CurrentInputMethod`、`SetCurrentIM`）按组内顺序正反向轮换输入法，多键盘布局下与 Omarchy 原版一致先轮换 `hyprctl switchxkblayout`，Fcitx5 未运行时退回仅切换键盘布局。[`config/hypr/silky-ime.lua`](../config/hypr/silky-ime.lua) 在 `default.hypr.omarchy` 之后加载，先 `hl.unbind` 掉默认绑定，再把 `SUPER + I` / `SUPER + SHIFT + I` 绑定到 `~/.local/bin/silky-input-cycle`（及 `back`），不修改 `/usr/share/omarchy/` 下的软件包文件，系统更新后仍继续生效。
+
+- 安装与生效：从仓库根目录运行 `./scripts/install-wowtype-glass.sh`（会自动安装脚本、更新 `~/.config/hypr/silky-ime.lua` 并执行 `hyprctl reload`），无需重启应用或重新登录。
+- 验证：本机已验证 `hyprctl reload` 与 `hyprctl configerrors` 无报错，`hyprctl binds -j` 中 `SUPER + I` / `SUPER + SHIFT + I` 各保留一条绑定，直接执行 `~/.local/bin/silky-input-cycle` 与 `~/.local/bin/silky-input-cycle back` 可在 `wowtype` 与 `keyboard-us` 之间切换（`fcitx5-remote -n` 实时变化）；在 ChatGPT 等窗口内按实体键盘 `Super+I` 切换待用户实机确认。
+- 回滚：删掉 `~/.local/bin/silky-input-cycle`，从 `~/.config/hypr/silky-ime.lua` 移除 `SUPER + I` / `SUPER + SHIFT + I` 覆盖段并运行 `hyprctl reload`。
 
 ## 验证
 

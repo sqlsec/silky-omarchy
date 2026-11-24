@@ -52,7 +52,7 @@ Omarchy 被挪走的动作：
 
 在同一工作区，分别对两个窗口按 `Super+T` 可将它们切为平铺。聚焦已全屏或最大化的平铺窗口时，按一次会让它回到分屏布局。应用自身的全屏状态可以保留在平铺区域内。MacShell「显示」和「窗口」菜单的浮动／平铺操作使用同一动作。
 
-Hyprland 切回浮动时会还原窗口的浮动尺寸和位置，微信曾因此伸进菜单栏。如果还原位置离菜单栏太近，快捷键会把窗口放到当前屏幕顶部保留区下方 4 个逻辑像素，高度超过剩余空间时也会缩短。在微信主窗口按 `Super+T` 切入浮动，确认窗口上沿位于菜单栏下方，再按一次确认可切回平铺。
+Hyprland 切回浮动时会还原窗口的浮动尺寸和位置，微信和带服务端标题栏的终端（`hyprbars`）曾因此伸进菜单栏。如果还原位置离菜单栏太近，快捷键会计入窗口顶部装饰高度（优先读取 `silky_gestures.window_top_inset`，回退到 `o.silky_titlebar_height`），把窗口放到当前屏幕顶部保留区下方 4 个逻辑像素，高度超过剩余空间时也会缩短。在微信或 Foot 窗口按 `Super+T` 切入浮动，确认窗口外框上沿位于菜单栏下方，再按一次确认可切回平铺。
 
 如果工作区处于浮动布局，先用 `Super+Shift+L` 切到「平铺」，这样新窗口也会自动加入分屏。平铺布局下按 `Super+J` 切换左右或上下分割。
 
@@ -60,9 +60,37 @@ Hyprland 切回浮动时会还原窗口的浮动尺寸和位置，微信曾因�
 
 已关闭、手动移到其他工作区、后来被置顶或与无关窗口重新分组的窗口会跳过。移窗记录从切入平铺时开始，Hyprland 重载配置或重启后会清除。
 
+### 工作区布局切换：居中液态玻璃 OSD、顶栏图标与进程内直切
+
+原 `Super+Shift+L` 调用外部脚本 `omarchy-hyprland-workspace-layout-toggle`，需要串行启动 `bash`、`hyprctl`、`jq`、`omarchy-i18n` 和 `omarchy-notification-send`，存在明显延迟，且只在右上角发出一条 `omarchy-action` 蓝色铃铛通知（污染通知中心），切换后顶栏也没有常驻状态指示。
+
+- **进程内直切、平衡分屏与浮动快照恢复**：[config/hypr/silky-shortcuts.lua](../config/hypr/silky-shortcuts.lua) 将 `Super+Shift+L` 改为直接执行 Hyprland 进程内的 `o.silky_workspace_layout_cycle`（保留 `floating → dwindle → scrolling` 三态循环，直接调用 `o.workspace_mode` 并原子更新 `~/.local/state/omarchy/workspace-layouts/<id>.lua`），不再启动外部脚本或发送 D-Bus 通知。切入 `dwindle` 平铺且窗口数 ≥ 3 时，自动执行最大面积优先平衡分裂（`balance_dwindle_workspace`），避免原生螺旋二分把第 5–10 个窗口压成邮票大小（实测 10 窗口下最小窗保持 `358 × 190`，最大/最小面积比约 `2:1`），并在重排期间临时开启 `cursor.no_warps` 防止指针跳走。离开 `floating` 模式前会自动记录该工作区所有浮动窗口的坐标、尺寸与堆叠顺序；切回 `floating`（含「全部恢复浮动」）时精准还原原位而不强行抢夺鼠标焦点。绿灯布局菜单（[silky-folio.lua](../config/hypr/silky-folio.lua)）的切换也复用同一入口。
+- **右上角液态玻璃 OSD**：[SilkyWorkspaceLayoutOSD.qml](../config/macshell/SilkyWorkspaceLayoutOSD.qml) 监听 Hyprland `silky-ws-layout` 自定义事件，复用与音量／亮度 OSD 完全一致的位置（右上角 `x = width - 256 - 22`、`y = barH + 14`）、尺寸（`256 × 67` 全圆角药丸）与 `SilkyGlassMarker`（`kind: 1`）液态玻璃材质；单色纯白图标与文字随切换做微弹缩放和轻滑淡入，下方配有 3 段丝滑滑动光条，不进通知中心，1.2 秒后淡出。
+- **顶栏工作区旁布局图标**：[scripts/install-workspace-layout-ui.py](../scripts/install-workspace-layout-ui.py) 在 MacShell 顶栏工作区数字右侧加入紧凑的布局图标（[SilkyWorkspaceLayoutIcon.qml](../config/macshell/SilkyWorkspaceLayoutIcon.qml)）：处于非默认布局（平铺/滚动）时高亮胶囊提示，左键直接循环切换当前屏幕激活工作区布局，右键弹出液态玻璃菜单可直选三种布局或一键「全部恢复浮动」。
+- **安装、验证与回滚**：
+
+```bash
+python3 ./scripts/install-workspace-layout-ui.py
+python3 ./scripts/install-workspace-layout-ui.py --check
+```
+
+2026-11-23 实机验证（Hyprland 0.57.2，双屏 `eDP-1` + `DP-1`）：`o.silky_workspace_layout_set(8, "dwindle", true)` 与切回 `floating` 端到端耗时约 6–8 ms（含 `hyprctl` 调用），`8.lua` 写入与清理正确，MacShell 重载后 `macbar` 与 `macosd` 正常，`hyprctl configerrors` 为空。回滚时从 `~/.config/quickshell/MacShell/{shell,MacBar}.qml.bak.ws-layout.*` 与 `~/.config/hypr/silky-shortcuts.lua.bak.*` 恢复，再重载 Hyprland 与 MacShell。
+
+### 窗口移入后跟随目标工作区布局
+
+跨屏拖放、概览拖放或用快捷键把窗口移到另一常规工作区时，落位后按目标工作区的布局显示。拖入浮动工作区会浮动，拖入平铺或滚动工作区会加入该布局。全屏窗口退出全屏后适配，置顶窗口继续置顶。
+
+Hyprland 0.57.2 会在拖动平铺窗口时临时浮动，松手时再恢复平铺。[快捷键配置](../config/hypr/silky-shortcuts.lua) 通过 [Silky Gestures](../plugins/silky-gestures/main.cpp) 判断拖动是否结束，然后按当前目标布局调整窗口。
+
+从仓库根目录运行 `bash scripts/install-silky-gestures.sh` 和 `bash scripts/install-shortcuts.sh`，再运行 `hyprctl configerrors` 检查加载结果。
+
+2026-11-24 在双屏会话中用模拟鼠标拖放临时 Foot 窗口，确认 6 → 1 松手后浮动，1 → 6 松手后平铺。通过概览移窗也确认，手动浮动的窗口移到工作区 5 后加入滚动布局，全屏窗口从 6 移到 1 时保持全屏，退出全屏后转为浮动。
+
+回滚时恢复安装前备份的 `~/.config/hypr/silky-shortcuts.lua` 和 `~/.local/lib/silky-omarchy/silky-gestures-<Hyprland版本>.so`，卸载并重新加载该插件，然后运行 `hyprctl reload`。
+
 ### 微信图片查看器与聊天记录窗口的默认尺寸
 
-微信主窗口浮动时，点开图片或视频弹出的「图片和视频」窗口仍会在平铺工作区里和其他窗口分屏；而且微信自己给的尺寸常常偏高，竖长截图能开到 874 逻辑像素高、顶着菜单栏（本机屏幕 1472×920 @ scale 2）。聊天记录窗口（标题 `"群名"的聊天记录(条数)`）同样开得偏大，两侧还留大片空白。[config/hypr/silky-app-windows.lua](../config/hypr/silky-app-windows.lua) 按 `class` `wechat` 匹配这两个窗口，打开时就浮动、居中并给一个适中默认尺寸：查看器 900×620，聊天记录 820×720。两者通过 `o.window` 注册为自带浮动的应用，浮动工作区布局也不会再改它们的尺寸。打开后仍可用 `Super+T` 临时平铺，窗口也可以随意拉伸，微信内部的图片放大不受影响。
+微信主窗口浮动时，点开图片或视频弹出的「图片和视频」窗口仍会在平铺工作区里和其他窗口分屏；而且微信自己给的尺寸常常偏高，竖长截图能开到 874 逻辑像素高、顶着菜单栏（本机屏幕 1472×920 @ scale 2）。聊天记录窗口（标题 `"群名"的聊天记录(条数)`）同样开得偏大，两侧还留大片空白。[config/hypr/silky-app-windows.lua](../config/hypr/silky-app-windows.lua) 使用 `hl.window_rule` 按 `class` `wechat` 与标题精确匹配这两个窗口，打开时就浮动、居中并给一个适中默认尺寸：查看器 900×620，聊天记录 820×720；仅把两个弹窗标题登记到 `o.floating_apps.title`（不再把 `^wechat$` 写入 `o.floating_apps.class`），从而既让弹窗保持自带浮动，又不影响微信主窗口在浮动工作区首帧即以浮动打开。打开后仍可用 `Super+T` 临时平铺，窗口也可以随意拉伸，微信内部的图片放大不受影响。
 
 微信关闭查看器后并不销毁窗口，下一张图片复用同一个窗口（地址不变，也不发 `openwindow` 事件），所以打开时的规则只对规则加载之后新建的查看器生效；同一文件里还挂了 `config.reloaded`，每次 `hyprctl reload` 时把这两类窗口中仍平铺的、或任一维度超过默认尺寸的，切为浮动、缩回默认尺寸并居中，没超的窗口不动，保住手动调小的结果。
 
@@ -75,6 +103,18 @@ Hyprland 切回浮动时会还原窗口的浮动尺寸和位置，微信曾因�
 在浮动工作区模式下，微信（XWayland，`class` `wechat`）收到新消息或后台状态更新时会发送 X11 `_NET_ACTIVE_WINDOW` 激活请求；Omarchy 在 `/usr/share/omarchy/default/hypr/looknfeel.lua` 默认开启了全局 `misc.focus_on_activate = true`，Hyprland 会直接把焦点切给微信并将其抬升到所有浮动窗口最前方（`pinned` 实际为 `false`，但视觉上像莫名其妙置顶）。Omarchy 上游已为 Telegram（`org.telegram.desktop`）单独关闭该行为，未覆盖微信。
 
 [config/hypr/silky-app-windows.lua](../config/hypr/silky-app-windows.lua) 为 `^wechat$` 增加了 `focus_on_activate = false` 规则（`silky-wechat-no-focus-steal`），拦住后台自动抢焦点，不影响鼠标点击、Dock、`Alt+Tab` 等主动切换窗口。
+
+### 微信主窗口关闭后重开保留上次状态
+
+微信 4.x 点击关闭按钮（`×`）隐藏到系统托盘时会销毁 `xdg_toplevel`，再次从托盘或启动器点开时新建主窗口。配合 [touch-scroll.c](../plugins/wechat-wayland/touch-scroll.c) 拦截非用户点击触发的 `set_maximized`，[config/hypr/silky-app-windows.lua](../config/hypr/silky-app-windows.lua) 监听微信主窗口（`class` 为 `wechat` 且标题为 `微信` 或 `WeChat`）的 `window.destroy`、`window.fullscreen` 与 `window.open`，将关闭前的窗口状态（普通窗口 / 最大化 / 全屏，以及普通浮动窗口的位置与尺寸）持久化到 `~/.local/state/silky-omarchy/wechat-main-window.state`；再次打开时自动恢复对应状态与几何尺寸（并按当前显示器可见工作区钳位），不再默认最大化或重置位置。回滚或清除记忆只需删除该状态文件并重载 Hyprland。
+
+### 拔掉外接显示器后工作区与窗口自动回到内屏
+
+多屏模式下，[config/hypr/silky-workspaces.lua](../config/hypr/silky-workspaces.lua)（安装到 `~/.config/hypr/silky-workspaces.lua`，由 `hyprland.lua` 在 Omarchy 默认配置前 `require("hypr.silky-workspaces")`）将工作区 1–5 分配给内屏 `eDP-1`、6–9 分配给外接显示器（优先 `desc:BOE 0x0A52`，并回退到任意已连接的非镜像外接屏）。
+
+- **已确认原因**：拔掉外接显示器时，Hyprland 移除该输出后，原外接屏上有窗口的工作区（如工作区 6）会失去绑定显示器（`monitor: "?"`、`monitorID: null`，Lua API 中 `workspace.monitor == nil`），其上的浮动窗口 `monitor` 为 `-1` 且坐标仍停留在原外接屏的离屏坐标。原实现在 `workspaces.reconcile()` 和 `workspaces.focus()` 中写了 `if workspace and workspace.monitor and ...`，导致 `workspace.monitor == nil` 的孤儿工作区被直接跳过，既不会迁回 `eDP-1`，按 `Super+6` 也无法切回；同时忽略了 `monitor.removed` 回调传入的 `gone` 参数。
+- **修复方式**：`reconcile(added, gone)` 与 `focus(id)` 改为在 `workspace.monitor == nil` 或不匹配目标显示器（含正被移除的 `gone`）时直接执行 `workspace.move` 迁回内屏，并对 9 号以上的孤儿常规工作区做兜底迁移；迁回和钳位时按目标显示器的逻辑尺寸、旋转、`reserved`（顶栏与 Dock 预留区）以及窗口的 `hyprbars` 服务端标题栏高度（通过 `silky_gestures.window_top_inset` 或 `o.silky_titlebar_height` 获取）计算最小 Y 坐标与最大高度，避免带标题栏的浮动窗口（如 Foot）的外框顶边压过顶栏。收到 `monitor.removed` 后额外追加一次 150 ms 单次复核以防合成器 teardown 时序滞后。配合 [`silky-gestures`](03-silky-gestures.md#浮动窗口不能越过菜单栏)（0.8.4+）的合成器级非拖动守护与 `post-update` 钩子，避免多屏切换或系统更新后复发。
+- **验证与回滚**：2026-11-23 在本机（Hyprland 0.57.2，双屏 `eDP-1` + `DP-1` @ `1472x-319`）实机验证：此前被钳位到 `at.y = -296`、30 px `hyprbars` 标题栏越过顶栏（`-319..-296`）的 `foot` 窗口在部署重载后自动归位到 `at.y = -266`（外框顶边 `-296`，紧贴顶栏下沿），人为将 `foot` 推到 `y = -310` 后重载也会立刻拉回，全屏双屏 15 个浮动窗口 0 越界，`hyprctl configerrors` 为空。回滚时从 `~/.config/hypr/silky-workspaces.lua.bak.*`、`silky-shortcuts.lua.bak.*`、`silky-macos.lua.bak.*` 恢复并执行 `hyprctl reload`。
 
 ## 原理
 

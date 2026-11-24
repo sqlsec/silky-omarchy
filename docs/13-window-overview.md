@@ -70,7 +70,7 @@ silkyoverview>>end           抬手（end,cancel：手势被取消）
 - 手指按住时：`p = 起始进度 ± 位移 / distance`，上滑打开工作区总览，下滑打开应用窗口；限制在 0–1
 - 每个窗口是一个窗口捕获（MacShell 自带的 `SafeCapture`，不会在帧未返回时释放捕获，避免 Wayland 连接崩溃），矩形 = `lerp(真实矩形, 网格矩形, p)`。画面保持窗口自身的固定大小，新帧到达时只复制进一张纹理（`ShaderEffectSource`，不做特效处理），再由一个小着色器 [`silkyround.frag`](../config/macshell/overview/silkyround.frag) 按当前大小画出带抗锯齿的圆角——移动、缩放不产生任何额外开销。每次手势开始时批量请求截图，切换工作区后再为当前窗口请求一批截图，停留时不实时推流，原因见下文“流畅度”
 - 应用窗口模式下，当前工作区的其他窗口留在原位，透明度 `1 − p`；该应用在其他工作区的窗口在网格位置从 88% 大小、透明度 0 线性长到 100%
-- 背景保持桌面静态壁纸原有的亮度和裁切。Omarchy 自己绘制背景时读取当前壁纸链接，其余情况下优先使用 awww 或 swww 当前显示的图片。菜单栏与 Dock 的保留区继续显示底层桌面。
+- 背景保持桌面静态壁纸原有的亮度和裁切。Omarchy 自己绘制背景时读取当前壁纸链接，其余情况下优先使用 awww 或 swww 当前显示的图片。总览图层放在 `WlrLayer.Top` 且在 `shell.qml` 中声明在 `MacBar` 与 `MacDock` 之前，壁纸直接铺满全屏：底层延伸到 Dock 或菜单栏保留区的真实窗口不会再从上下边缘透出残影，菜单栏与 Dock 自然画在总览上方，其毛玻璃背景也直接模糊干净的壁纸。
 - 每个缩略图从第一帧起就带一个和 Hyprland 一样的阴影
 - 松手：按手指最后约 90 ms 的速度预判 0.12 秒后的位置，过半就打开，否则关闭；然后以 `max(手指速度, minSpeed)` 的**恒定速度**走到终点
 - 动画进行中再次放上四指：停止动画，以当前 `p` 为起点继续跟手
@@ -94,7 +94,9 @@ silkyoverview>>end           抬手（end,cancel：手势被取消）
 
 - 鼠标悬停窗口：蓝色描边，下方显示窗口标题
 - 点击 / 轻点窗口（或悬停后回车）：聚焦这个窗口并关闭总览，飞回比普通关闭快一些（`pickSpeed`，完全打开时约 0.3 s，从点击到结束约 0.4 s，以前约 0.75 s），被点的窗口在最上层飞回原位；如果它在其他工作区，先切换工作区，总览整体淡出。总览打开时独占键盘焦点，而 Hyprland 在有图层独占键盘时会拒绝聚焦任何窗口：早期版本点击后聚焦命令被丢掉，原来的窗口仍在最上面。现在先关闭（释放键盘），40 ms 后再发聚焦命令
-- 点击空白处或按 Esc：关闭
+- 拖动窗口到其他工作区（工作区总览模式）：按住窗口预览移动超过 8 px 即进入拖拽，窗口置顶跟随指针并在靠近顶部工作区预览条时平滑缩小；悬停在目标工作区卡片上时卡片高亮并轻微放大，松手调用 `hl.dsp.window.move({ workspace = "<id>", follow = false, window = "address:0x<addr>" })` 静默移入目标工作区，同时保留总览打开并立即更新网格与顶部缩略图；松手在空白处、原工作区或按 `Esc` 则取消拖拽回到原位
+- 点击 Dock 或菜单栏图标：因总览在 `WlrLayer.Top` 中位于 `MacBar` 与 `MacDock` 下方，指针事件直接到达 Dock 与菜单栏；按下时提前释放总览的独占键盘焦点，点击后退出总览并正常执行应用激活、右键菜单、菜单栏弹窗或托盘动作
+- 点击空白处（含顶部工作区预览条左右两侧空白）或按 Esc：关闭（拖拽窗口时按 `Esc` 先取消拖拽）
 - 有窗口打开、关闭或移动时重新排布
 
 网格排布：保持各窗口的相对大小（统一缩放比例，最大 0.88），按窗口中心从上到下、从左到右分行，尝试所有行数，取缩放比例最大的那种。
@@ -115,7 +117,7 @@ python3 scripts/install-macshell-overview.py        # 把 SilkyOverview.qml 装�
 qs -c MacShell ipc call macshell reload
 ```
 
-`install-macshell-overview.py` 会把 `shell.qml` 备份为 `shell.qml.bak-overview`，只在 `AboutApp { … }` 那一行后面加一行 `SilkyOverview { id: silkyOverview; hub: sharedHub }`。重复运行会备份并更新 `~/.config/quickshell/MacShell/` 下的 `SilkyOverview.qml` 和 `silkyround.frag.qsb`。`--check` 只检查不修改。回滚时，将对应的 `.bak-overview-<时间>` 文件复制回原文件名，再执行 `qs -c MacShell ipc call macshell reload`。
+`install-macshell-overview.py` 会将 `SilkyOverview { id: silkyOverview; hub: sharedHub }` 安装在 `shell.qml` 中 `MacBar` 之前（并在 `sharedHub` 注册 `overview: silkyOverview`，旧版位于 `AboutApp` 之后时会自动迁移），同时为 `MacDock.qml` 和 `MacBar.qml` 写入点击退出总览的钩子。重复运行会先备份并更新 `~/.config/quickshell/MacShell/` 下的 `SilkyOverview.qml`、`silkyround.frag.qsb` 及被修改的 QML 文件（`.bak-overview-<时间>`）。`--check` 只检查不修改。回滚时，将对应的 `.bak-overview-<时间>` 文件复制回原文件名，再执行 `qs -c MacShell ipc call macshell reload`。
 
 ## 调整
 
@@ -145,7 +147,7 @@ qs -c MacShell ipc call overview end          # 松手
 qs -c MacShell ipc call overview toggle workspace   # 或 app：直接打开 / 关闭
 ```
 
-工作区总览打开后，点击一个有窗口的卡片，再点击空工作区卡片，确认预览高亮和窗口列表同步。切换也可通过 `hyprctl dispatch 'hl.dsp.focus({ workspace = "2" })'` 验证，由 `overview state` 观察 `workspace` 改成目标值且 `p` 仍为 1。动画中 `workspacePosition` 在两个工作区位置之间变化。可用 `qs -c MacShell ipc call overview workspaceSwipe 2 40` 模拟从工作区 1 向 2 滑动 40%，再用 `qs -c MacShell ipc call overview workspaceSwipeEnd` 验证松手滑回原位。实体触控板上，打开后分别四指向左、向右滑，确认仍停在总览，关闭后仍停在选定工作区。
+工作区总览打开后，点击一个有窗口的卡片，再点击空工作区卡片，确认预览高亮和窗口列表同步；同时确认屏幕底边 Dock 后方无底层窗口残影，点击 Dock 或菜单栏图标可正常触发动作并退出总览。拖动窗口到其他工作区可直接在总览中拖拽窗口卡片到顶部目标工作区缩略图验证，也可用 `qs -c MacShell ipc call overview moveWindow <addr> <wsId>` 触发静默移动并确认当前工作区与总览打开状态保持不变；`qs -c MacShell ipc call overview dismiss true` 验证从 Dock / 菜单栏退出总览。切换也可通过 `hyprctl dispatch 'hl.dsp.focus({ workspace = "2" })'` 验证，由 `overview state` 观察 `workspace` 改成目标值且 `p` 仍为 1。动画中 `workspacePosition` 在两个工作区位置之间变化。可用 `qs -c MacShell ipc call overview workspaceSwipe 2 40` 模拟从工作区 1 向 2 滑动 40%，再用 `qs -c MacShell ipc call overview workspaceSwipeEnd` 验证松手滑回原位。实体触控板上，打开后分别四指向左、向右滑，确认仍停在总览，关闭后仍停在选定工作区。
 
 确认插件在发事件：
 
@@ -154,6 +156,8 @@ socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2
 ```
 
 四指上下滑时应看到 `begin`、一串 `update`、`end`。
+
+如果手势结束事件丢失，连续 3 秒收不到位移更新后，总览会按取消手势处理。此时也可直接按 `Esc` 关闭总览。装好并重载后，可从关闭状态运行 `qs -c MacShell ipc call overview begin up` 和 `qs -c MacShell ipc call overview update 150`，省略 `end` 来复现中断。约 3 秒后，用 `qs -c MacShell ipc call overview state` 确认 `mode` 为空，再单击 Dock 和菜单栏。正常手势仍在松手时结束。
 
 已在本机验证（内置的 `sim` 每 7 ms 推一次位移，和真实触控板一样）：`begin` 处理只要约 2 ms（早期 258 ms），6 个窗口在开始时都已有画面；画面在约 5% 行程处出现并从透明淡入；移动过程中帧时间基本稳定在 11 ms（90 Hz），最长约 22 ms（偶尔错过一次刷新，原来有 85–100 ms 的卡顿）。真实快速滑动的日志：259 帧中 246 帧按时。用 `qs -c MacShell ipc call overview debug true` 打开逐事件、逐帧日志（`qs log -n -c MacShell | grep overview`），`qs -c MacShell ipc call overview sim up 700` 模拟一次 700 ms 的滑动。
 

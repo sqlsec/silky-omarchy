@@ -1,0 +1,10 @@
+[Unit]
+Description=Warm up vinput after the initial login workload
+
+[Timer]
+OnActiveSec=5s
+AccuracySec=100ms
+Unit=vinput-daemon.service
+
+[Install]
+WantedBy=timers.target

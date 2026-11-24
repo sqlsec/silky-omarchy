@@ -2,6 +2,13 @@
 # Silky Omarchy Folio launcher.
 set -euo pipefail
 
+# xdg-desktop-portal sets GIO_USE_VFS=local in its own daemon and child apps
+# opened via OpenURI inherit it, hiding UDisks2 unmounted volumes (such as
+# dual-boot Windows partitions) and disabling GVfs network mounts.
+if [[ ${GIO_USE_VFS:-} == local ]]; then
+  unset GIO_USE_VFS
+fi
+
 stock=/usr/bin/folio
 data=${XDG_DATA_HOME:-"$HOME/.local/share"}
 state=${XDG_STATE_HOME:-"$HOME/.local/state"}
@@ -11,13 +18,16 @@ if [[ -r $state/omarchy/current/theme.name ]]; then
   read -r theme < "$state/omarchy/current/theme.name" || true
 fi
 
-if [[ ${1:-} != chooser && ${1:-} != preview && $theme == macos-tahoe-* &&
-      -x $build/folio ]]; then
-  # Check the runtime libraries of the standalone build.
-  if dependencies=$(LC_ALL=C ldd -r -- "$build/folio" 2>&1) &&
+if [[ $theme == macos-tahoe-* && -x $build/folio ]]; then
+  # Check the runtime libraries of the standalone build (ignoring any parent
+  # app's LD_LIBRARY_PATH, e.g. WeChat or Electron browsers).
+  if dependencies=$(env -u LD_LIBRARY_PATH LC_ALL=C ldd -r -- "$build/folio" 2>&1) &&
       [[ $dependencies != *"not found"* && $dependencies != *"undefined symbol"* ]]; then
-    exec "$build/folio" "$@"
+    exec env -u LD_LIBRARY_PATH "$build/folio" "$@"
   fi
   printf 'Silky Folio has incompatible runtime libraries. Using packaged Folio.\n%s\n' "$dependencies" >&2
+fi
+if [[ ${1:-} == --file-manager-service ]]; then
+  shift
 fi
 exec "$stock" "$@"

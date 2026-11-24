@@ -1,141 +1,450 @@
-diff --git i/src/evdev-mt-touchpad.h w/src/evdev-mt-touchpad.h
-index 48375b7..be31897 100644
---- i/src/evdev-mt-touchpad.h
-+++ w/src/evdev-mt-touchpad.h
-@@ -380,6 +380,8 @@ struct tp_dispatch {
- 		struct libinput_timer finger_count_switch_timer;
- 		enum tp_gesture_state state;
- 		struct tp_touch *touches[2];
-+		/* touches whose gesture.initial was recorded when the gesture started */
-+		unsigned int multifinger_initial_count;
- 		usec_t initial_time;
- 		double initial_distance;
- 		double prev_scale;
+diff --git i/src/evdev-mt-touchpad-gestures.c w/src/evdev-mt-touchpad-gestures.c
+index d8b6437..80fc2dc 100644
 --- i/src/evdev-mt-touchpad-gestures.c
 +++ w/src/evdev-mt-touchpad-gestures.c
-@@ -1358,6 +1358,69 @@
- 	tp_gesture_handle_event(tp, GESTURE_EVENT_3FG_DRAG_OR_SWIPE_TIMEOUT, now);
+@@ -293,6 +293,164 @@ tp_gesture_get_direction(struct tp_dispatch *tp, struct tp_touch *touch)
+ 	return phys_get_direction(mm);
  }
  
-+/* Four or more fingers: tell a pinch from a swipe by looking at all of them.
-+ *
-+ * The generic detection below only tracks the top-most and the bottom-most
-+ * touch. With a whole hand pinching, the thumb usually travels much less than
-+ * the fingers: that looked like a resting thumb (the thumb was suppressed and
-+ * the gesture cancelled), or the two tracked touches happened to move in
-+ * neighbouring directions and the pinch became a swipe.
-+ *
-+ * Here the spread of the hand (the mean distance of the touches from their
-+ * common centre) is compared with the distance that centre has travelled.
-+ * A swipe moves the centre and keeps the spread; a pinch changes the spread,
-+ * even when its centre drifts towards the thumb.
-+ *
-+ * Returns 1 for a pinch, 0 for a swipe, -1 if it is too early to tell and
-+ * -2 if the touches cannot be judged this way.
++/* Collect real MT slots participating in a 4- or 5-finger whole-hand gesture.
++ * A resting/anchoring thumb in the bottom software-button stripe or a wide
++ * thumb/pinky pad contact (PALM_TOUCH_SIZE / PALM_PRESSURE / PALM_EDGE) is
++ * part of the hand when >= 2 normal active fingers and 4-5 total real slots
++ * assemble within 350 ms (or are already tracked as a multifinger gesture).
 + */
-+#define MULTIFINGER_MAX_TOUCHES 5
-+#define MULTIFINGER_PINCH_MM 2.5    /* spread change that makes a pinch */
-+#define MULTIFINGER_SWIPE_MM 3.0    /* centre travel that makes a swipe */
-+#define MULTIFINGER_PINCH_RATIO 0.35 /* spread change / centre travel */
-+
-+static int
-+tp_gesture_classify_multifinger(struct tp_dispatch *tp)
++static unsigned int
++tp_gesture_collect_multifinger_touches(const struct tp_dispatch *tp,
++				       struct tp_touch **touches)
 +{
-+	struct tp_touch *touches[MULTIFINGER_MAX_TOUCHES];
-+	struct phys_coords initial[MULTIFINGER_MAX_TOUCHES];
-+	struct phys_coords current[MULTIFINGER_MAX_TOUCHES];
-+	struct phys_coords c0 = { 0.0, 0.0 }, c1 = { 0.0, 0.0 };
-+	double spread0 = 0.0, spread1 = 0.0, change, travel;
-+	unsigned int n, i;
++	unsigned int n = 0, normal_active = 0;
++	usec_t min_time = { 0 }, max_time = { 0 };
 +
-+	n = tp_gesture_get_active_touches(tp, touches, MULTIFINGER_MAX_TOUCHES);
-+	if (n < 4 || n != tp->gesture.multifinger_initial_count)
-+		return -2;
-+
-+	for (i = 0; i < n; i++) {
-+		struct device_coords p0 = touches[i]->gesture.initial;
-+		struct device_coords p1 = touches[i]->point;
-+
-+		initial[i] = evdev_device_unit_delta_to_mm(tp->device, &p0);
-+		current[i] = evdev_device_unit_delta_to_mm(tp->device, &p1);
-+		c0.x += initial[i].x / n;
-+		c0.y += initial[i].y / n;
-+		c1.x += current[i].x / n;
-+		c1.y += current[i].y / n;
-+	}
-+
-+	for (i = 0; i < n; i++) {
-+		spread0 += hypot(initial[i].x - c0.x, initial[i].y - c0.y) / n;
-+		spread1 += hypot(current[i].x - c1.x, current[i].y - c1.y) / n;
-+	}
-+
-+	change = fabs(spread1 - spread0);
-+	travel = hypot(c1.x - c0.x, c1.y - c0.y);
-+
-+	if (change >= MULTIFINGER_PINCH_MM && change >= MULTIFINGER_PINCH_RATIO * travel)
-+		return 1;
-+	if (travel >= MULTIFINGER_SWIPE_MM && change < MULTIFINGER_PINCH_RATIO * travel)
++	if (!tp->gesture.enabled || tp->num_slots < 4 ||
++	    (tp->buttons.is_clickpad && tp->buttons.state))
 +		return 0;
 +
-+	return -1;
++	for (unsigned int i = 0; i < tp->num_slots; i++) {
++		struct tp_touch *t = &tp->touches[i];
++
++		if (t->state != TOUCH_BEGIN && t->state != TOUCH_UPDATE)
++			continue;
++		if (t->palm.state == PALM_TYPING ||
++		    t->palm.state == PALM_TRACKPOINT ||
++		    t->palm.state == PALM_ARBITRATION ||
++		    t->palm.state == PALM_TOOL_PALM)
++			continue;
++		if (!tp_edge_scroll_touch_active(tp, t) ||
++		    !tp_circular_scroll_touch_active(tp, t))
++			continue;
++
++		if (n >= 5)
++			return 0;
++		touches[n++] = t;
++		if (tp_touch_active_for_gesture(tp, t))
++			normal_active++;
++		if (n == 1 || usec_cmp(t->initial_time, min_time) < 0)
++			min_time = t->initial_time;
++		if (n == 1 || usec_cmp(t->initial_time, max_time) > 0)
++			max_time = t->initial_time;
++	}
++
++	if (n < 4 || n > 5 || n > tp->num_slots)
++		return 0;
++	if (normal_active == n)
++		return n;
++	if (normal_active >= 2 &&
++	    (tp->gesture.multifinger_count >= 4 ||
++	     usec_cmp(usec_delta(max_time, min_time), usec_from_millis(350)) < 0))
++		return n;
++	return 0;
++}
++
++/* Compute radial dispersion and opposing (lowest-thumb vs upper-finger-cluster)
++ * span in mm. Both terms are strictly translation-invariant on rigid swipes,
++ * while opposing_mm preserves full vertical contraction on a 5-finger grab
++ * where 4 wide upper fingers would otherwise dilute the centroid spread.
++ */
++static double
++tp_gesture_multifinger_metrics(struct tp_dispatch *tp,
++			       struct device_float_coords *center,
++			       double *radial_out,
++			       double *opposing_out)
++{
++	const unsigned int n = tp->gesture.multifinger_count;
++	const struct tp_touch *thumb = tp->gesture.multifinger_thumb;
++	double radial = 0.0, opposing = 0.0;
++	struct device_float_coords upper = { 0.0, 0.0 };
++	unsigned int upper_n = 0;
++
++	*center = (struct device_float_coords){ 0.0, 0.0 };
++	for (unsigned int i = 0; i < n; i++) {
++		const struct device_coords point = tp->gesture.multifinger_touches[i]->point;
++		center->x += point.x;
++		center->y += point.y;
++		if (tp->gesture.multifinger_touches[i] != thumb) {
++			upper.x += point.x;
++			upper.y += point.y;
++			upper_n++;
++		}
++	}
++	center->x /= n;
++	center->y /= n;
++
++	for (unsigned int i = 0; i < n; i++) {
++		const struct device_coords point = tp->gesture.multifinger_touches[i]->point;
++		const struct device_float_coords delta = { point.x - center->x,
++							   point.y - center->y };
++		const struct phys_coords mm = tp_phys_delta(tp, delta);
++		radial += hypot(mm.x, mm.y);
++	}
++	radial /= n;
++
++	if (thumb && upper_n > 0) {
++		upper.x /= upper_n;
++		upper.y /= upper_n;
++		const struct device_float_coords opp_delta = {
++			upper.x - thumb->point.x,
++			upper.y - thumb->point.y,
++		};
++		const struct phys_coords opp_mm = tp_phys_delta(tp, opp_delta);
++		opposing = hypot(opp_mm.x, opp_mm.y);
++	} else {
++		opposing = radial;
++	}
++
++	if (radial_out)
++		*radial_out = radial;
++	if (opposing_out)
++		*opposing_out = opposing;
++	return 0.5 * radial + 0.5 * opposing;
++}
++
++static double
++tp_gesture_multifinger_spread(struct tp_dispatch *tp, struct device_float_coords *center)
++{
++	return tp_gesture_multifinger_metrics(tp, center, NULL, NULL);
++}
++
++static bool
++tp_gesture_record_multifinger_baseline(struct tp_dispatch *tp,
++				       struct tp_touch *const *touches,
++				       unsigned int ntouches,
++				       double current_scale)
++{
++	struct tp_touch *thumb = touches[0];
++	double radial = 0.0, opposing = 0.0, spread;
++
++	for (unsigned int i = 1; i < ntouches; i++) {
++		if (touches[i]->point.y >= thumb->point.y)
++			thumb = touches[i];
++	}
++	memcpy(tp->gesture.multifinger_touches, touches, ntouches * sizeof(touches[0]));
++	tp->gesture.multifinger_thumb = thumb;
++	tp->gesture.multifinger_count = ntouches;
++	spread = tp_gesture_multifinger_metrics(tp,
++						&tp->gesture.multifinger_initial_center,
++						&radial,
++						&opposing);
++	if (spread <= 0.0) {
++		tp->gesture.multifinger_count = 0;
++		tp->gesture.multifinger_thumb = NULL;
++		return false;
++	}
++	if (current_scale > 0.05 && current_scale != 1.0) {
++		tp->gesture.multifinger_initial_spread = spread / current_scale;
++		tp->gesture.multifinger_initial_radial = radial / current_scale;
++		tp->gesture.multifinger_initial_opposing = opposing / current_scale;
++		tp->gesture.initial_distance = tp->gesture.multifinger_initial_spread;
++		tp->gesture.center = tp->gesture.multifinger_initial_center;
++	} else {
++		tp->gesture.multifinger_initial_spread = spread;
++		tp->gesture.multifinger_initial_radial = radial;
++		tp->gesture.multifinger_initial_opposing = opposing;
++	}
++	return true;
 +}
 +
  static void
- tp_gesture_detect_motion_gestures(struct tp_dispatch *tp, usec_t time)
- {
-@@ -1408,6 +1471,29 @@
+ tp_gesture_get_pinch_info(struct tp_dispatch *tp,
+ 			  double *distance,
+@@ -309,7 +467,10 @@ tp_gesture_get_pinch_info(struct tp_dispatch *tp,
+ 	*distance = normalized_length(normalized);
+ 	*angle = rad2deg(atan2(normalized.y, normalized.x));
+ 
+-	*center = device_average(first->point, second->point);
++	if (tp->gesture.multifinger_count)
++		*distance = tp_gesture_multifinger_spread(tp, center);
++	else
++		*center = device_average(first->point, second->point);
+ }
+ 
+ static inline void
+@@ -319,6 +480,9 @@ tp_gesture_init_pinch(struct tp_dispatch *tp)
+ 				  &tp->gesture.initial_distance,
+ 				  &tp->gesture.angle,
+ 				  &tp->gesture.center);
++	/* Keep the motion that classified the gesture as part of its scale. */
++	if (tp->gesture.multifinger_count)
++		tp->gesture.initial_distance = tp->gesture.multifinger_initial_spread;
+ 	tp->gesture.prev_scale = 1.0;
+ }
+ 
+@@ -1408,6 +1572,41 @@ tp_gesture_detect_motion_gestures(struct tp_dispatch *tp, usec_t time)
  		return;
  	}
  
-+	if (tp->gesture.enabled && tp->gesture.finger_count >= 4) {
-+		switch (tp_gesture_classify_multifinger(tp)) {
-+		case 1:
++	if (tp->gesture.multifinger_count) {
++		struct device_float_coords center;
++		double radial = 0.0, opposing = 0.0;
++		const double spread = tp_gesture_multifinger_metrics(tp, &center, &radial, &opposing);
++		const double spread_change = fabs(spread - tp->gesture.multifinger_initial_spread);
++		const double opposing_change = fabs(opposing - tp->gesture.multifinger_initial_opposing);
++		const double change = fmax(spread_change, 0.72 * opposing_change);
++		const struct phys_coords drift = tp_phys_delta(
++			tp, device_float_delta(center, tp->gesture.multifinger_initial_center));
++		const double travel = hypot(drift.x, drift.y);
++		const bool five_fingers = tp->gesture.multifinger_count == 5;
++		const double pinch_mm = five_fingers ? 1.3 : 1.5;
++		const double pinch_ratio = five_fingers ? 0.22 : 0.34;
++
++		/* Give a drifting pinch room to develop before committing a swipe.
++		 * Five fingers have no desktop swipe binding, so bias towards pinch
++		 * while keeping four-finger horizontal/vertical swipes crisp. */
++		if (change >= pinch_mm && change >= pinch_ratio * travel) {
 +			tp_gesture_handle_event(tp, GESTURE_EVENT_PINCH_START, time);
-+			return;
-+		case 0:
++		} else if ((!five_fingers &&
++			    ((travel >= 4.0 && change < 0.22 * travel) ||
++			     (travel >= 7.0 && change < 0.34 * travel))) ||
++			   (five_fingers && travel >= 9.0 && change < 0.16 * travel)) {
++			tp->gesture.multifinger_count = 0;
++			tp->gesture.multifinger_thumb = NULL;
 +			if (tp->drag_3fg.nfingers == tp->gesture.finger_count)
-+				tp_gesture_handle_event(
-+					tp,
-+					GESTURE_EVENT_3FG_DRAG_OR_SWIPE_START,
-+					time);
-+			else
 +				tp_gesture_handle_event(tp,
-+							GESTURE_EVENT_SWIPE_START,
++							GESTURE_EVENT_3FG_DRAG_OR_SWIPE_START,
 +							time);
-+			return;
-+		case -1:
-+			return;
-+		default:
-+			break;
++			else
++				tp_gesture_handle_event(tp, GESTURE_EVENT_SWIPE_START, time);
 +		}
++		return;
 +	}
 +
  	/* Need more margin for error when there are more fingers */
  	max_move += 2.0 * (tp->gesture.finger_count - 2);
  	min_move += 0.5 * (tp->gesture.finger_count - 2);
-@@ -1572,11 +1658,12 @@
+@@ -1572,11 +1771,24 @@ static void
  tp_gesture_handle_state_none(struct tp_dispatch *tp, usec_t time)
  {
  	struct tp_touch *first, *second;
 -	struct tp_touch *touches[4];
-+	struct tp_touch *touches[MULTIFINGER_MAX_TOUCHES];
- 	unsigned int ntouches;
+-	unsigned int ntouches;
++	struct tp_touch *touches[ARRAY_LENGTH(tp->gesture.multifinger_touches)];
++	struct tp_touch *mf_touches[ARRAY_LENGTH(tp->gesture.multifinger_touches)];
++	unsigned int ntouches, mf_count;
  	unsigned int i;
  
 -	ntouches = tp_gesture_get_active_touches(tp, touches, 4);
-+	ntouches = tp_gesture_get_active_touches(tp, touches, MULTIFINGER_MAX_TOUCHES);
-+	tp->gesture.multifinger_initial_count = 0;
++	ntouches = tp_gesture_get_active_touches(tp, touches, ARRAY_LENGTH(touches));
++	mf_count = tp_gesture_collect_multifinger_touches(tp, mf_touches);
++	tp->gesture.multifinger_count = 0;
++	tp->gesture.multifinger_thumb = NULL;
++	if (mf_count >= 4 && mf_count == tp->gesture.finger_count) {
++		memcpy(touches, mf_touches, mf_count * sizeof(touches[0]));
++		ntouches = mf_count;
++		tp_gesture_record_multifinger_baseline(tp, mf_touches, mf_count, 1.0);
++	}
++
++	/* Keep the original limit on devices without five real contacts. */
++	if (tp->gesture.finger_count > 4 && !tp->gesture.multifinger_count)
++		return;
  
  	first = touches[0];
  	second = touches[1];
-@@ -1629,6 +1716,10 @@
+@@ -1812,6 +2024,16 @@ tp_gesture_handle_state_pinch_start(struct tp_dispatch *tp, usec_t time)
+ 			     1.0,
+ 			     0.0);
+ 
++	if (tp->gesture.multifinger_count && scale != 1.0)
++		gesture_notify_pinch(&tp->device->base,
++				     time,
++				     LIBINPUT_EVENT_GESTURE_PINCH_UPDATE,
++				     tp->gesture.finger_count,
++				     &zero,
++				     &zero,
++				     scale,
++				     0.0);
++
+ 	tp->gesture.prev_scale = scale;
+ 	tp->gesture.state = GESTURE_STATE_PINCH;
+ }
+@@ -2070,7 +2292,8 @@ tp_gesture_post_events(struct tp_dispatch *tp, usec_t time, bool ignore_motion)
+ 	    tp_gesture_thumb_moved(tp))
+ 		tp_thumb_reset(tp);
+ 
+-	if (tp->gesture.finger_count <= 4)
++	if (tp->gesture.finger_count <= 4 ||
++	    (tp->gesture.enabled && tp->gesture.finger_count == 5 && tp->num_slots >= 5))
+ 		tp_gesture_handle_state(tp, time, ignore_motion);
+ }
+ 
+@@ -2233,14 +2456,99 @@ tp_gesture_debounce_finger_changes(struct tp_dispatch *tp)
+ void
+ tp_gesture_update_finger_state(struct tp_dispatch *tp, usec_t time)
+ {
+-	unsigned int active_touches = 0;
++	unsigned int active_touches = 0, mf_count = 0;
++	struct tp_touch *mf_touches[ARRAY_LENGTH(tp->gesture.multifinger_touches)];
++	bool has_new_touch = false;
+ 	struct tp_touch *t;
+ 
+ 	tp_for_each_touch(tp, t) {
++		if (t->state == TOUCH_BEGIN)
++			has_new_touch = true;
+ 		if (tp_touch_active_for_gesture(tp, t))
+ 			active_touches++;
  	}
  
- 	tp->gesture.initial_time = time;
-+	/* every touch, for tp_gesture_classify_multifinger() */
-+	for (i = 0; i < ntouches; i++)
-+		touches[i]->gesture.initial = touches[i]->point;
-+	tp->gesture.multifinger_initial_count = ntouches;
- 	first->gesture.initial = first->point;
- 	second->gesture.initial = second->point;
- 	tp->gesture.touches[0] = first;
++	/* The first lift completes a whole-hand pinch so staggered lifts do not
++	 * become a trailing 3-finger swipe. Clear the guard immediately if all
++	 * contacts lift, a fresh touch begins (rapid tap right after pinch), or
++	 * a lone resting corner contact lingers past 120 ms. */
++	if (tp->gesture.multifinger_lifting) {
++		if (tp->nfingers_down == 0 || has_new_touch ||
++		    (tp->nfingers_down <= 1 &&
++		     usec_cmp(time, usec_add(tp->gesture.multifinger_lift_time,
++					     usec_from_millis(120))) >= 0)) {
++			tp->gesture.multifinger_lifting = false;
++		} else {
++			return;
++		}
++	}
++
++	mf_count = tp_gesture_collect_multifinger_touches(tp, mf_touches);
++	if (mf_count > active_touches)
++		active_touches = mf_count;
++
++	if (tp->gesture.state == GESTURE_STATE_PINCH && tp->gesture.multifinger_count) {
++		bool slot_lifted = tp->nfingers_down < tp->gesture.multifinger_count;
++		for (unsigned int i = 0; i < tp->gesture.multifinger_count && !slot_lifted; i++) {
++			const enum touch_state st = tp->gesture.multifinger_touches[i]->state;
++			slot_lifted = (st != TOUCH_BEGIN && st != TOUCH_UPDATE);
++		}
++		if (slot_lifted) {
++			tp_gesture_stop(tp, time);
++			tp->gesture.multifinger_lifting = tp->nfingers_down > 0;
++			tp->gesture.multifinger_lift_time = time;
++			tp->gesture.multifinger_count = 0;
++			tp->gesture.multifinger_thumb = NULL;
++			tp->gesture.finger_count = 0;
++			tp->gesture.finger_count_pending = 0;
++			libinput_timer_cancel(&tp->gesture.finger_count_switch_timer);
++			return;
++		}
++		/* Seamless 4 -> 5 upgrade if the 5th finger lands shortly after pinch began. */
++		if (tp->gesture.multifinger_count == 4 && mf_count == 5 &&
++		    usec_cmp(time, usec_add(tp->gesture.initial_time,
++					    usec_from_millis(260))) < 0) {
++			const double cur_scale = tp->gesture.prev_scale > 0.05
++						       ? tp->gesture.prev_scale
++						       : 1.0;
++			tp_gesture_record_multifinger_baseline(tp, mf_touches, 5, cur_scale);
++			tp->gesture.finger_count = 5;
++			tp->gesture.finger_count_pending = 0;
++			libinput_timer_cancel(&tp->gesture.finger_count_switch_timer);
++			return;
++		}
++	}
++
++	/* Early 3-finger or 4-finger contacts often start a swipe/hold/3fg-drag
++	 * state while the thumb or pinky is still landing. Rebaseline immediately
++	 * once 4 or 5 real contacts are down within the landing window. */
++	if (mf_count >= 4 && mf_count > tp->gesture.finger_count) {
++		const bool early_3fg =
++			tp->gesture.finger_count == 3 &&
++			usec_cmp(time, usec_add(tp->gesture.initial_time,
++						usec_from_millis(220))) < 0 &&
++			(tp->gesture.state == GESTURE_STATE_3FG_DRAG_OR_SWIPE ||
++			 tp->gesture.state == GESTURE_STATE_3FG_DRAG_OR_SWIPE_START ||
++			 tp->gesture.state == GESTURE_STATE_SWIPE_START ||
++			 tp->gesture.state == GESTURE_STATE_SWIPE ||
++			 tp->gesture.state == GESTURE_STATE_HOLD);
++		const bool early_4fg_to_5fg =
++			tp->gesture.finger_count == 4 && mf_count == 5 &&
++			usec_cmp(time, usec_add(tp->gesture.initial_time,
++						usec_from_millis(180))) < 0 &&
++			(tp->gesture.state == GESTURE_STATE_SWIPE_START ||
++			 tp->gesture.state == GESTURE_STATE_SWIPE ||
++			 tp->gesture.state == GESTURE_STATE_HOLD);
++		if (early_3fg || early_4fg_to_5fg) {
++			libinput_timer_cancel(&tp->gesture.drag_3fg_or_swipe_timer);
++			libinput_timer_cancel(&tp->gesture.finger_count_switch_timer);
++			tp_gesture_cancel(tp, time);
++			tp->gesture.finger_count = mf_count;
++			tp->gesture.finger_count_pending = 0;
++			return;
++		}
++	}
++
+ 	if (active_touches != tp->gesture.finger_count) {
+ 		/* If all fingers are lifted immediately end the gesture */
+ 		if (active_touches == 0) {
+diff --git i/src/evdev-mt-touchpad-thumb.c w/src/evdev-mt-touchpad-thumb.c
+index 876fe80..695b100 100644
+--- i/src/evdev-mt-touchpad-thumb.c
++++ w/src/evdev-mt-touchpad-thumb.c
+@@ -200,9 +200,13 @@ tp_thumb_update_touch(struct tp_dispatch *tp, struct tp_touch *t, usec_t time)
+ 
+ 	/* Once any active touch exceeds the speed threshold, don't
+ 	 * try to detect pinches until all touches lift.
++	 * Keep whole-hand (4-5 finger) gestures eligible: upper fingers often
++	 * move briskly while the thumb anchors the pinch.
+ 	 */
+ 	if (t->speed.exceeded_count >= 10 && tp->thumb.pinch_eligible &&
+-	    tp->gesture.state == GESTURE_STATE_NONE) {
++	    tp->gesture.state == GESTURE_STATE_NONE &&
++	    !(tp->gesture.enabled && tp->nfingers_down >= 4 &&
++	      tp->nfingers_down <= tp->num_slots)) {
+ 		tp->thumb.pinch_eligible = false;
+ 		if (tp->thumb.state == THUMB_STATE_PINCH) {
+ 			struct tp_touch *thumb;
+@@ -301,6 +305,21 @@ tp_thumb_update_multifinger(struct tp_dispatch *tp)
+ 	distance.y = abs(first->point.y - second->point.y);
+ 	mm = evdev_device_unit_delta_to_mm(tp->device, &distance);
+ 
++	/* Whole-hand (4-5 finger) assembly commonly spans 150-300 ms because the
++	 * thumb and pinky land later than the middle fingers. Keep the lowest
++	 * contact eligible for pinch geometry instead of suppressing it. */
++	if (newest && tp->gesture.enabled && tp->nfingers_down >= 4 &&
++	    tp->nfingers_down <= tp->num_slots &&
++	    usec_cmp(usec_delta(newest->initial_time, oldest->initial_time),
++		     usec_from_millis(350)) < 0) {
++		tp->thumb.pinch_eligible = true;
++		if (mm.y > SCROLL_MM_Y)
++			tp_thumb_set_state(tp, first, THUMB_STATE_PINCH);
++		else
++			tp_thumb_lift(tp);
++		return;
++	}
++
+ 	/* Speed-based thumb detection: if an existing finger is moving, and
+ 	 * a new touch arrives, mark it as a thumb if it doesn't qualify as a
+ 	 * 2-finger scroll. Also account for a thumb dropping onto the touchpad
+diff --git i/src/evdev-mt-touchpad.h w/src/evdev-mt-touchpad.h
+index 48375b7..59a623e 100644
+--- i/src/evdev-mt-touchpad.h
++++ w/src/evdev-mt-touchpad.h
+@@ -380,6 +380,15 @@ struct tp_dispatch {
+ 		struct libinput_timer finger_count_switch_timer;
+ 		enum tp_gesture_state state;
+ 		struct tp_touch *touches[2];
++		struct tp_touch *multifinger_touches[5];
++		struct tp_touch *multifinger_thumb;
++		unsigned int multifinger_count;
++		struct device_float_coords multifinger_initial_center;
++		double multifinger_initial_spread;
++		double multifinger_initial_radial;
++		double multifinger_initial_opposing;
++		bool multifinger_lifting;
++		usec_t multifinger_lift_time;
+ 		usec_t initial_time;
+ 		double initial_distance;
+ 		double prev_scale;

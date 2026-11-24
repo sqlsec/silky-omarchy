@@ -5,7 +5,7 @@
 ## 目标
 
 - 两个 Omarchy 主题：`macos-tahoe-dark` 和 `macos-tahoe-light`，配色取自 Apple 系统色板
-- 窗口有 macOS 的质感：细边框、连续曲率圆角、聚焦窗口下方柔和的深阴影、半透明表面背后的玻璃模糊
+- 窗口采用连续曲率圆角和柔和阴影，半透明区域保留背景磨砂
 - 图标换成 MacTahoe：蓝色文件夹、macOS 风格应用图标
 - 文件管理器（Nautilus）换上 Finder 外观：半透明侧边栏、左上角红绿灯、空格键快速预览（sushi）
 - 浮动窗口带 macOS 红绿灯标题栏，可关闭、最小化、最大化和还原
@@ -16,13 +16,21 @@
 | 部分 | 文件 | 说明 |
 | --- | --- | --- |
 | 配色 | `themes/macos-tahoe-*/colors.toml` | Apple 系统色。浅色版终端文字用的是高对比度变体，否则黄色、绿色在白底上看不清 |
-| 窗口外观 | `themes/macos-tahoe-*/hyprland.lua` | 1 px 半透明描边、14 px 圆角（`rounding_power = 2.6` 接近 Apple 的连续曲率）、阴影、3 次模糊；深浅色的模糊亮度都是 `1.0`（深色原为 `0.82`，会让 MacShell 玻璃比 Liquid Glass 深，见 [02](02-macshell.md#改用-hyprland-模糊普通模糊)） |
+| 窗口外观 | `themes/macos-tahoe-*/hyprland.lua` | 无合成器描边、14 px 圆角（`rounding_power = 2.6`）、阴影、3 次模糊；深浅色的模糊亮度都是 `1.0` |
 | 图标 | `themes/macos-tahoe-*/icons.theme` | `Silky-MacTahoe-dark` / `Silky-MacTahoe-light`（继承 MacTahoe，统一侧边栏符号图标） |
 | GTK / Finder | MacTahoe GTK 主题 | 上游预编译的 release，不需要 sassc |
 | 联动 | `hooks/theme-set-silky-macos` | Omarchy 的 theme-set hook |
 | 红绿灯 | `config/hypr/silky-titlebar-guard.lua` + `config/hypr/silky-macos.lua` | 把 Omarchy 浮动窗口标题栏改成圆形红绿灯 |
 
-第三方部分都固定到具体 commit（见 `scripts/install-macos-theme.sh` 开头），保证每次安装的结果一致：
+### 窗口外缘
+
+Tahoe 深浅主题都将 Hyprland 的窗口描边设为 0。若切换到其他主题时也要保留这个效果，可在 `~/.config/hypr/looknfeel.lua` 加上 `hl.config({ general = { border_size = 0 } })`。运行 `hyprctl reload` 和 `hyprctl configerrors`，再用 `hyprctl getoption general:border_size` 检查结果。当前会话已验证包括 Chromium、Foot、Folio、Firefox 和微信在内的打开窗口。应用自身的标题栏、控件边框和窗口阴影照常显示。
+
+[MacShell 调整脚本](../scripts/tune-macshell-window-edges.py)还会移除时钟、依赖安装窗口和独立安装器的 QML 外描边。[Nautilus 的 GTK 样式](../config/gtk-4.0/nautilus-glass.css)移除了侧栏的装饰亮边，保留背景磨砂。重载 MacShell 后重新打开窗口即可查看。回滚时恢复先前的 `looknfeel.lua`、Tahoe 主题、MacShell 或 GTK 备份，并重载对应程序。
+
+### 第三方组件
+
+安装脚本会将第三方组件固定到具体 commit，版本见 `scripts/install-macos-theme.sh`。
 
 - [vinceliuice/MacTahoe-icon-theme](https://github.com/vinceliuice/MacTahoe-icon-theme)
 - [vinceliuice/MacTahoe-gtk-theme](https://github.com/vinceliuice/MacTahoe-gtk-theme)
@@ -88,11 +96,33 @@ Folio 使用 MacTahoe 图标包已有的 Finder 图标，Dock 和 MacShell 应�
 
 Tahoe 主题下，浮动 Folio 的侧栏磨砂直接取窗口下方的画面，并由 Hyprland 裁出圆角。针对侧栏圆角出现的彩色细边，[Folio 窗口规则](../config/hypr/silky-folio.lua)让它使用实时背景并去掉半透明外描边。普通 Folio 窗口在首帧直接以不透明内容呈现，跳过上游为平铺窗口准备的 150 ms 隐藏等待与 100 ms 淡入动画，避免打开瞬间先闪出一整块纯虚化的空白玻璃（文件选择器模式保留原有行为）。更新这份用户配置后运行 `hyprctl reload` 即可作用于已打开的窗口。可把 Folio 叠到深浅反差明显的窗口上，观察左上角和左下角。回滚时从该文件移除 `silky-folio-rounded-glass-edge` 规则并重载。
 
-用鼠标单击或触屏轻点顶部路径文字及旁边的空白，可以编辑并选中当前路径。拖动路径栏仍可移动窗口。用鼠标点击或触屏轻点文件区空白即可取消编辑。触屏滑动仍可滚动文件。按 `Ctrl+L` 也可进入编辑。输入后按回车跳转，按 `Esc` 退出编辑。路径右侧的复制图标用于复制当前目录的完整路径。在分栏视图中，选中子文件夹并在右侧栏展开其内容时，顶部路径栏、窗口标题、路径编辑和复制路径按钮会同步包含该子文件夹；选中文件或切换到列表/网格视图时，路径栏回到所在目录。
+顶部面包屑有随深浅主题变化的圆角底色和细边框，当前文件夹用半粗体标出。每一级都有 30 px 高的点击区，鼠标悬停时独立高亮。点上级目录可直接跳转，点当前目录可编辑并选中完整路径。长路径默认显示当前目录，横向滚动可查看更早的层级。拖动面包屑旁的空白可移动窗口，双击可切换最大化与还原。在 Tahoe 深浅主题下以 Wayland 临时窗口检查了路径栏外观，并用 Qt 离屏测试覆盖留白点击、触屏拖动、触屏取消编辑和窄窗口长路径。用鼠标点击或触屏轻点文件区空白即可取消编辑。触屏滑动仍可滚动文件。按 `Ctrl+L` 也可进入编辑。输入后按回车跳转，按 `Esc` 退出编辑。路径右侧的复制图标用于复制当前目录的完整路径。在分栏视图中，选中子文件夹并在右侧栏展开其内容时，顶部路径栏、窗口标题、路径编辑和复制路径按钮会同步包含该子文件夹；选中文件或切换到列表/网格视图时，路径栏回到所在目录。
 
 分栏、列表和图标视图都支持触屏单指滑动滚动文件，鼠标仍可拖放文件。分栏视图中，触屏单指轻点与鼠标左键一致。单指长按或双指轻点会在先触碰的位置打开右键菜单。手指移动超过系统的拖动阈值后，该次手势不会弹出菜单。 如果启用了 Silky Gestures，用其安装脚本重建插件，使文件区的长按交给 Folio。见 [触控屏移动、缩放浮动窗口](03-silky-gestures.md#触控屏移动缩放浮动窗口)。
 
 回收站视图把顶部空间留给文件列表。在左侧右键点「回收站」即可选择居中显示的「清空」，也可从回收站的文件区打开同一操作。选择后需确认，回收站为空时侧栏菜单中的操作置灰。
+
+侧边栏的「设备」分组现在同时列出通过 GIO/UDisks2 识别到的**未挂载本地数据分区**（例如双系统的 Windows NTFS 分区），下方标注「未挂载」。点击或按回车即通过 UDisks2 异步挂载并直接打开该分区；右键菜单支持「挂载」（已挂载时为「打开」与「卸载/弹出」）。系统分区、EFI 与恢复分区仍自动过滤。当其他应用通过 `xdg-desktop-portal` 的 `OpenURI`（例如浏览器「在文件夹中显示」）启动 Folio 时，子进程会继承 portal 自身设置的 `GIO_USE_VFS=local`，导致 GIO 禁用 GVfs / `GProxyVolumeMonitorUDisks2`，侧边栏的未挂载分区消失且网络挂载不可用；[启动器](../bin/silky-folio)与补丁中的 `main.cpp` 会在启动最早期清除 `GIO_USE_VFS=local`，保证任意入口打开都能正常看到本地未挂载分区。若桌面未运行图形 polkit 认证代理，挂载内置磁盘（`org.freedesktop.udisks2.filesystem-mount-system`）会返回 `Not authorized to perform operation`；安装仓库里的 [UDisks2 polkit 规则](../config/polkit/50-silky-udisks2-mount.rules) 到 `/etc/polkit-1/rules.d/50-silky-udisks2-mount.rules` 即可允许本地活跃的 `wheel` 组用户直接挂载内置分区。
+
+系统文件选择器（`org.freedesktop.impl.portal.FileChooser`）在分栏视图下选中并展开子文件夹（包括空文件夹）后，顶部路径栏同步包含该子文件夹；点击「选择」或「保存」（及 `Ctrl+Enter`）时会直接返回或保存到该子文件夹，不再因为 `backend.path` 仍停留在上一层而少一层路径（多选多个文件夹、取消选中或列表/网格视图保持原有行为）。已通过 `folio_tests` 的 `chooserWindowAnswersFromTheKeyboard`（含空子目录分栏回归用例）和 `chooserAnswersForEachMode` 验证。
+
+侧边栏「设备」分组末尾新增单行入口「网络」（由 [Folio 网络插件](../config/folio/plugins/network/) 安装到 `~/.local/share/folio/plugins/network/`）。默认不展开也不在启动时后台轮询；只有点击「网络」进入右侧视图（或按 `F5` 刷新）时，才按需通过 `avahi-browse` 扫描局域网内广播 SMB、SFTP、WebDAV 或 NFS 服务的设备（如 NAS、Mac 主机），同时读取可选的 `~/.config/folio/network-servers.json`（格式为 `[{"name": "NAS", "url": "smb://10.1.1.5/"}]`）与 `/run/user/$UID/gvfs/` 下已挂载的远程共享。点击 SMB 主机（或在地址栏输入 `smb://主机`）时，Folio 会先通过 GVfs 认证并枚举该主机下的共享文件夹（跳过 `$` 结尾的管理共享），双击具体共享后挂载到本地 GVfs 目录打开；SFTP 等协议直接挂载并打开。登录弹窗支持勾选「记住密码」（默认勾选），通过 GVfs 的 `G_PASSWORD_SAVE_PERMANENTLY` 写入系统钥匙环（`gnome-keyring-daemon` / Secret Service），下次连接同一服务器自动登录；取消勾选则仅在当前会话有效。依赖 `avahi-daemon`、`gvfs`、`gvfs-smb`（以及可选的 `gvfs-nfs`）、`gnome-keyring` 与 `python3`。
+
+右键「解压缩」支持 Windows 常见非 UTF-8 编码（如 GB18030/GBK、Big5、Shift_JIS、EUC-KR）的 ZIP 压缩包。这类压缩包未设置 ZIP 的 UTF-8 标志位（bit 11），直接用 `bsdtar` 解压会在 UTF-8 系统上写出非法 UTF-8 字节的文件名，导致 Qt 的 `QDir::entryList()` 跳过全部条目并误报「没有可解压的内容」。补丁在调用 `bsdtar` 前读取 ZIP 的 Central Directory，仅当发现未设 UTF-8 标志且非合法 UTF-8 的文件名时，通过 glibc `iconv` 按系统区域顺序匹配编码并向 `bsdtar` 传入 `--options hdrcharset=<编码>`，使解压出的中文目录和文件名直接以 UTF-8 落盘；常规 UTF-8/ASCII 压缩包保持原有参数不变。已通过 `folio_tests` 的 `extractLegacyGbkZip` 及全部解压单元测试，并在实机 229 MB 中文 GBK ZIP 压缩包上验证解码结果。
+
+新建文件夹（右键「新建文件夹」或 `Ctrl+Shift+N`）与重命名（`F2` 或右键「重命名」）改为 **macOS Finder 风格的行内原地编辑**，不再弹出模态弹窗：创建「未命名文件夹」后在列表、分栏和图标视图中自动进入行内输入框并全选名称，直接打字即可覆盖，按回车或点击空白处提交，按 `Esc` 取消；对文件重命名时自动只选中扩展名前的主干名称。侧边栏文件夹右键重命名仍保留原有弹窗。已通过 `folio_tests` 的 `newFolderEmitsFolderCreatedForInlineRename` 与主窗口离屏加载验证。
+
+分栏视图在当前列或已展开的子目录列中就地命名新文件夹。创建和保存时保留原来的面包屑、列位置和选中项。此前自动选中新文件夹会展开一列，点击空白清除选中后又会收起，导致整排横移。用 `Ctrl+Shift+N` 或右键「新建文件夹」，输入名称后点击空白或按回车，确认文件夹出现在原列。主动点击新文件夹即可展开下一列。
+
+多选交互同时支持 **`Ctrl+点击`**（与原有 `Alt+点击` 并行）增减单项选中、**`Shift+点击`** 连续范围选、**`Ctrl+Shift+点击`** 追加范围选，并在分栏视图当前列补齐空白处拖拽框选（`Band`，支持按住 `Ctrl`/`Alt` 叠加框选）。
+
+空格预览（`folio preview`）与分栏视图右侧预览窗格（`PreviewPane`）新增 **Office 与表格极速原生预览**，核心现代格式全程在 C++ 后台线程毫秒级解析，不再冷启动 LibreOffice：
+- **表格类（`.xlsx`、`.xlsm`、`.ods`、`.csv`、`.tsv`）**：通过 `libarchive` 与 `QXmlStreamReader` 在 C++ 后台线程毫秒级解析（自动识别共享字符串、Excel 日期序列号与 UTF-8/GB18030 编码的 CSV），使用虚拟化网格视图 `SpreadsheetPreview.qml` 呈现，支持多工作表标签切换、双向平滑滚动（含 `Shift+滚轮` 横向滚动）、自适应中英文列宽以及点击单元格查看全文与一键复制。
+- **现代文档与演示文稿（`.docx`、`.odt`、`.pptx`）**：按下空格立即通过 C++ 解析标题层级、段落、粗斜体、列表与表格并在 `OfficeDocPreview.qml` 纸张视图中瞬开（< 20 ms），不触发任何后台 LibreOffice 子进程。
+- **右侧预览窗格（`PreviewPane`）**：分栏视图中选中 `.docx`/`.odt`/`.pptx`/`.xlsx`/`.ods`/`.csv` 时，后台异步提取精简文档/表格摘要 HTML 并直接显示在右侧预览卡片中，替代空白文件图标。
+- **全局 90 Hz 平滑鼠标滚轮（`SmoothMouseWheelFilter`）**：Wayland 合成器对离散鼠标滚轮会附带很小的 `pixelDelta`（约 15 px）且 `phase == Qt::NoScrollPhase`，导致 Qt Quick 的 `Flickable`/`ListView`/`GridView` 滚动极慢。`main.cpp` 在应用级事件过滤器中拦截非 `Ctrl` 缩放且 `phase == Qt::NoScrollPhase` 的鼠标滚轮事件，按 **210 px/格** 以 90 Hz（11 ms）指数衰减平滑派发（支持 `Shift+滚轮` 横向滚动），一次性覆盖文件列表、分栏各列、图标网格、侧边栏、空格预览与文件选择器；触控板双指滑动自带滚动阶段（`ScrollBegin`/`ScrollUpdate`/`ScrollEnd`），完全原样放行。
+- **旧版二进制格式（`.xls`、`.doc`、`.ppt`、`.rtf`、`.odp`、`.wps`、`.et`、`.dps`）**：`.xls` 后台转为缓存 `.xlsx` 后以原生表格视图展示，其余转为缓存 PDF 后以 Qt PDF 展示（缓存在 `~/.cache/folio/office-preview/`，上限 256 MB），切走文件立即中止进程组，命中缓存后二次预览瞬开。
+- 依赖：`libarchive`（构建与原生解析必需）、`qt6-webengine`（PDF 渲染）与可选的 `libreoffice-fresh` / `libreoffice-still`（仅用于旧版二进制格式转换）。已通过 `folio_tests` 的 `officePreviewClassifiesFormats`、`officePreviewParsesDocxXlsxCsvAndPptx` 与离屏 `folio preview` 冒烟测试。
 
 先通过主题安装脚本安装 MacTahoe 图标包，并启用 `macos-tahoe-dark` 或 `macos-tahoe-light`。从仓库根目录运行：
 
@@ -102,11 +132,13 @@ hyprctl reload
 qs -c MacShell ipc call macshell reload
 ```
 
-安装器以 Folio 0.6.1 的固定源码构建[窗口补丁](../patches/folio-0.6.1-silky.patch)。构建依赖 Git、CMake、C++ 编译器、pkg-config、Qt 6、GLib/GIO 和 zlib。它在 `~/.local/share/silky-omarchy/folio/` 放置构建产物，通过 `~/.local/bin/folio` 和用户级 `folio.desktop` 保留原有 Dock 固定项及文件快捷键。预览、系统文件选择器和其他主题使用软件包提供的 Folio。在 Tahoe 主题下，启动器只检查用户构建所需的共享库及符号。更新内核或系统 Folio 后，Dock、默认目录入口和两种文件管理器快捷键继续使用相同的用户构建和视图设置。定制版仍基于 0.6.1，独立于系统 Folio 更新。用户构建缺失或动态库不兼容时，启动器使用软件包版本。可在升级后用 `gtk-launch folio.desktop /tmp` 打开目录，并检查 `/proc/<Folio PID>/exe` 是否指向用户目录下的构建。已在系统 Folio 0.7.1 和内核 7.3.0-75-omarchy 上验证桌面入口。[Folio 窗口规则](../config/hypr/silky-folio.lua)在 Hyprland 里取消 Folio 的整窗透明度，让应用自己的侧栏透明度生效。
+安装器以 Folio 0.6.1 的固定源码构建[窗口补丁](../patches/folio-0.6.1-silky.patch)。构建依赖 Git、CMake、C++ 编译器、pkg-config、Qt 6、GLib/GIO、`libarchive` 和 zlib。它在 `~/.local/share/silky-omarchy/folio/` 放置构建产物，通过 `~/.local/bin/folio`、用户级 `folio.desktop` 与用户级 D-Bus 服务（`~/.local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.folio.service`、`org.freedesktop.FileManager1.service`）接管文件管理器窗口、浏览器/微信「打开文件夹」、空格预览（`folio preview`）和系统文件选择器（`folio chooser`），保留原有 Dock 固定项及文件快捷键。其他主题仍使用软件包提供的 Folio。在 Tahoe 主题下，启动器只检查用户构建所需的共享库及符号。更新内核或系统 Folio 后，Dock、默认目录入口、系统文件选择器和两种文件管理器快捷键继续使用相同的用户构建和视图设置。定制版仍基于 0.6.1，独立于系统 Folio 更新。用户构建缺失或动态库不兼容时，启动器使用软件包版本。可在升级后用 `gtk-launch folio.desktop /tmp` 打开目录，并检查 `/proc/<Folio PID>/exe` 是否指向用户目录下的构建；也可运行 `busctl --user call org.freedesktop.impl.portal.desktop.folio /org/freedesktop/portal/desktop org.freedesktop.DBus.Peer Ping` 检查文件选择器进程是否指向用户构建。已在系统 Folio 0.7.1 和内核 7.3.0-75-omarchy 上验证桌面入口与文件选择器 D-Bus 激活。[Folio 窗口规则](../config/hypr/silky-folio.lua)在 Hyprland 里取消 Folio 的整窗透明度，让应用自己的侧栏透明度生效。
+
+浏览器、微信等应用通过 `org.freedesktop.FileManager1` 发出的「打开文件夹」和「在文件夹中显示」各自打开一个新窗口。显示文件时，新窗口定位到所在目录，在分栏、列表或图标视图里选中文件并自动滚到可见区域中间。分栏视图也会把文件所在列带进视野。原来的 Folio 窗口保留各自的路径、选中项和浏览历史。首次通过 D-Bus 启动时只打开目标窗口。此外，Linux 版微信（如 `wechat-bin` 4.1.13.29）在未安装 `dde-file-manager` / `nautilus` 时通过 `dbus-send ... org.freedesktop.FileManager1.ShowItems array:string:<路径>` 发起调用，传入的是裸本地路径而非标准 `file://` URI，且文件名含逗号 `,` 时会被 `dbus-send` 拆成多个数组元素；补丁中的 `src/filemanager1.cpp` 会同时解析标准 `file://` URI 与以 `/` 开头的裸绝对路径（并规范化多余斜杠），若多元素数组的首项不存在则尝试按逗号重组并验证目标文件存在，从而修复微信右键「在文件夹中显示」无响应的问题。运行上面的安装脚本后，关闭并重开 Folio（含已驻留的 `folio --file-manager-service` 进程），保留一个测试目录窗口，再从浏览器打开另一个目录，或用 `dbus-send --session --print-reply --dest=org.freedesktop.FileManager1 --type=method_call /org/freedesktop/FileManager1 org.freedesktop.FileManager1.ShowItems array:string:"/tmp/test.txt" string:""` 模拟微信裸路径调用（以及带逗号文件名和标准 `file://` URI）。预期各次调用均打开对应目录的新窗口并选中目标文件。回滚时恢复安装器生成的 Folio 二进制、启动器与 `org.freedesktop.FileManager1.service` 备份，重载用户级 D-Bus 配置并重开 Folio。
 
 MacShell 的[窗口接入脚本](../scripts/tune-folio-macshell.py)让黄灯把窗口缩进 Dock 分隔线和废纸篓之间。点击独立的窗口缩略图即可恢复。见 [窗口最小化](02-macshell.md#窗口最小化)。未运行 MacShell 时，Omarchy 的最小化只适用于浮动工作区。已在 Hyprland 0.57.2、MacShell 0.5.3 和 Folio 0.6.1 的原生 Wayland 会话验证。重开 Folio 后依次点击绿灯两次、黄灯、Dock 缩略图和红灯，预期是进入全屏、退出全屏、最小化、恢复同一窗口和关闭。右键与长按绿灯都应打开菜单，所选半区应避开菜单栏和 Dock 预留区域。四角图标应和拖动到角落的预览一致。全屏时布局图标和黄灯应置灰。在轮廓明显的壁纸上检查右侧空白区域，浮动和全屏时都应为纯色，左侧仍能透出模糊的色彩。若全屏里出现空的 Dock 轮廓，见 [Dock 液态玻璃插件](02-macshell.md#dock-液态玻璃插件原型)。
 
-回滚时恢复安装器打印的 `.bak.folio.*`，若原先没有用户级启动器和桌面入口，移除 `~/.local/bin/folio` 与 `~/.local/share/applications/folio.desktop`。恢复 MacShell 的 `MacDock.qml` 和 `shell.qml` 备份后重载 MacShell，再重新打开 Folio。已最小化的窗口先从 Dock 恢复。移除 Folio 的透明度、最小化叠层和半屏布局配置时，从 `~/.config/hypr/hyprland.lua` 移除 `require("hypr.silky-folio")` 后重载 Hyprland。
+回滚时恢复安装器打印的 `.bak.folio.*`，若原先没有用户级启动器、桌面入口和 D-Bus 服务覆盖，移除 `~/.local/bin/folio`、`~/.local/share/applications/folio.desktop`、`~/.local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.folio.service` 与 `~/.local/share/folio/plugins/network/`，并重载用户级 D-Bus 配置（`dbus-send --session --dest=org.freedesktop.DBus --type=method_call /org/freedesktop/DBus org.freedesktop.DBus.ReloadConfig`）。恢复 MacShell 的 `MacDock.qml` 和 `shell.qml` 备份后重载 MacShell，再重新打开 Folio。已最小化的窗口先从 Dock 恢复。移除 Folio 的透明度、最小化叠层和半屏布局配置时，从 `~/.config/hypr/hyprland.lua` 移除 `require("hypr.silky-folio")` 后重载 Hyprland。
 
 <a id="foot-glass"></a>
 

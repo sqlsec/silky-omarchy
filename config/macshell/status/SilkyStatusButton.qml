@@ -10,9 +10,16 @@ Item {
     required property var palette
     property bool selected: false
     signal clicked()
-    readonly property font speedFont: Qt.font({family: palette.fam, pixelSize: 9, weight: Font.DemiBold})
-    readonly property font temperatureFont: Qt.font({family: palette.fam, pixelSize: 12, weight: Font.DemiBold})
-    width: (mode === "network" ? speeds.implicitWidth : temperature.implicitWidth) + 4
+    // Tabular figures keep the digits from shifting each time the sample changes.
+    readonly property font speedFont: Qt.font({family: palette.fam, pixelSize: 12, weight: Font.DemiBold, features: {"tnum": 1}})
+    readonly property font temperatureFont: Qt.font({family: palette.fam, pixelSize: 12, weight: Font.DemiBold, features: {"tnum": 1}})
+    // About 6 px of visible space on each side, so neighbours sit ~8–9 px apart like Wi-Fi and search.
+    // The arrow and thermometer canvases already carry blank space on their left (~2.75 and ~3.5 px).
+    readonly property real inkPad: 6
+    readonly property real leadIn: mode === "network" ? 2.75 : 3.5
+    // The network reading reserves three digits so the tray does not shift as it changes.
+    readonly property real speedSlot: Math.max(speedArrow.width + speeds.spacing + Math.ceil(speedMetrics.advanceWidth), speeds.implicitWidth)
+    width: Math.ceil((mode === "network" ? speedSlot : temperature.implicitWidth) + inkPad * 2 - leadIn)
     height: 28
 
     Accessible.role: Accessible.Button
@@ -26,53 +33,70 @@ Item {
         color: root.selected || mouse.containsMouse ? root.palette.hover : "transparent"
     }
 
-    TextMetrics { id: speedMetrics; font: root.speedFont; text: "888M/s" }
-    TextMetrics { id: temperatureMetrics; font: root.temperatureFont; text: "888°" }
+    // Reserve three digits and K/s, the widest common reading. Faster rates widen the button only while they last.
+    TextMetrics { id: speedMetrics; font: root.speedFont; text: "888K/s" }
+    TextMetrics { id: temperatureMetrics; font: root.temperatureFont; text: "88°" }  // CPU readings are two digits
 
-    Column {
+    // One line, like the temperature: the busier direction with its arrow. The panel shows both.
+    // It only switches when the other direction is clearly ahead (1.5x and over 1 KB/s), so a near tie
+    // does not flip the arrow on every 1.5 s sample.
+    property string lead: "down"
+    onSampleChanged: {
+        if (!sample)
+            return;
+        const up = Number(sample.up) || 0, down = Number(sample.down) || 0;
+        if (lead === "down" && up > Math.max(down * 1.5, 1024))
+            lead = "up";
+        else if (lead === "up" && down > Math.max(up * 1.5, 1024))
+            lead = "down";
+    }
+    Accessible.description: sample ? "↑ " + Status.rate(sample.up, true) + "  ↓ " + Status.rate(sample.down, true) : ""
+
+    Row {
         id: speeds
-        anchors.centerIn: parent
+        anchors.verticalCenter: parent.verticalCenter
+        // Arrow and digits stay together, right-aligned in the reserved slot; spare room goes to the left.
+        x: root.inkPad - root.leadIn + root.speedSlot - implicitWidth
         visible: root.mode === "network"
-        spacing: -1
-        Repeater {
-            model: ["up", "down"]
-            Row {
-                spacing: 2
-                required property string modelData
-                SilkyStatusIcon {
-                    width: 9
-                    height: 9
-                    anchors.verticalCenter: parent.verticalCenter
-                    kind: parent.modelData
-                    ink: kind === "down" ? (root.palette.dark ? "#83e5f4" : "#006c7f")
-                                         : (root.palette.dark ? "#c5b3ff" : "#6542a4")
-                }
-                Text {
-                    width: Math.ceil(speedMetrics.advanceWidth)
-                    text: root.sample ? Status.rate(root.sample[parent.modelData], true) : "—"
-                    color: root.palette.fg
-                    font: root.speedFont
-                    textFormat: Text.PlainText
-                }
-            }
+        spacing: 1
+        SilkyStatusIcon {
+            id: speedArrow
+            width: 11
+            height: 11
+            anchors.verticalCenter: parent.verticalCenter
+            kind: root.lead
+            // Monochrome like the rest of the bar and as heavy as the DemiBold digits beside it;
+            // the panel keeps the upload and download colours.
+            ink: root.palette.fg
+            weight: 2.4
+        }
+        Text {
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.sample ? Status.rate(root.sample[root.lead], true) : "—"
+            color: root.palette.fg
+            font: root.speedFont
+            textFormat: Text.PlainText
         }
     }
 
     Row {
         id: temperature
-        anchors.centerIn: parent
+        anchors.verticalCenter: parent.verticalCenter
+        x: root.inkPad - root.leadIn
         visible: root.mode === "thermal"
-        spacing: 2
+        // The 16 px canvas already leaves ~3.5 px beside the narrow glyph; that is the gap to the digits.
+        spacing: 0
         SilkyStatusIcon {
             anchors.verticalCenter: parent.verticalCenter
-            width: 14
-            height: 14
+            width: 16
+            height: 16
             kind: "thermal"
-            ink: root.palette.dark ? "#ffbf89" : "#8a4210"
+            weight: 2.0
+            ink: Status.barThermalColor(root.sample ? root.sample.temp : null, root.palette.dark, root.palette.fg)
         }
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            width: Math.ceil(temperatureMetrics.advanceWidth)
+            width: Math.max(Math.ceil(temperatureMetrics.advanceWidth), implicitWidth)
             text: root.sample && root.sample.temp !== null ? Math.round(root.sample.temp) + "°" : "—"
             color: root.palette.fg
             font: root.temperatureFont

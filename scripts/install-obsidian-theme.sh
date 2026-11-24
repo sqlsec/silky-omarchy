@@ -173,6 +173,42 @@ else
   fi
 fi
 
+# Hyprland compositor blur rule for Obsidian's translucent sidebar and solid editor pane.
+hypr_dir="${XDG_CONFIG_HOME:-$HOME/.config}/hypr"
+hypr_rule_src="$repo/config/hypr/silky-obsidian.lua"
+hypr_rule_dst="$hypr_dir/silky-obsidian.lua"
+hypr_main="$hypr_dir/hyprland.lua"
+hypr_req='require("hypr.silky-obsidian")'
+if [[ -f $hypr_main && -f $hypr_rule_src ]]; then
+  if [[ $mode == install ]]; then
+    if [[ -f $hypr_rule_dst ]] && ! cmp -s "$hypr_rule_src" "$hypr_rule_dst"; then
+      cp -p -- "$hypr_rule_dst" "$hypr_rule_dst.bak.$(date +%Y%m%d-%H%M%S)"
+    fi
+    install -m 644 "$hypr_rule_src" "$hypr_rule_dst"
+    if ! grep -Fq "$hypr_req" "$hypr_main"; then
+      cp -p -- "$hypr_main" "$hypr_main.bak.obsidian.$(date +%Y%m%d-%H%M%S)"
+      printf '\n-- Silky Omarchy: real compositor blur behind Obsidian sidebar.\n%s\n' "$hypr_req" >> "$hypr_main"
+    fi
+    echo "ok    $hypr_rule_dst"
+  else
+    rm -f -- "$hypr_rule_dst"
+    if grep -Fq "$hypr_req" "$hypr_main"; then
+      python3 -I - "$hypr_main" "$hypr_req" <<'PY'
+import sys
+path, req = sys.argv[1], sys.argv[2]
+lines = open(path).read().splitlines(True)
+out = []
+for line in lines:
+    if line.strip() == req or line.strip() == "-- Silky Omarchy: real compositor blur behind Obsidian sidebar.":
+        continue
+    out.append(line)
+open(path, "w").writelines(out)
+PY
+    fi
+    echo "removed $hypr_rule_dst"
+  fi
+fi
+
 if [[ $mode == install ]]; then
   cat <<'EOF'
 

@@ -144,12 +144,13 @@ if "id: nearbyTile" not in bar_text:
 # Near tiles are built at once so the panel opens as fast as before; a built tile is kept for good; once the
 # open animation has settled, the rest are built in the background (incubated across frames). A kept tile's
 # binding no longer reads contentY, so scrolling stops re-evaluating ~100 bindings per frame.
-bar_text = replace_once(
-    bar_text,
-    """                                                        active: tileTop + cell.height >= appsFlick.contentY - cell.height * 2
+if "// Silky Tahoe Apps v2" not in bar_text:
+    bar_text = replace_once(
+        bar_text,
+        """                                                        active: tileTop + cell.height >= appsFlick.contentY - cell.height * 2
                                                                 && tileTop <= appsFlick.contentY + appsFlick.height + cell.height * 2
 """,
-    """                                                        property bool kept: false
+        """                                                        property bool kept: false
                                                         active: kept || appsPanel.warm
                                                                 || (tileTop + cell.height >= appsFlick.contentY - cell.height * 2
                                                                     && tileTop <= appsFlick.contentY + appsFlick.height + cell.height * 2)
@@ -159,11 +160,11 @@ bar_text = replace_once(
                                                                       && tileTop > appsFlick.contentY + appsFlick.height + cell.height
                                                         onLoaded: kept = true
 """,
-)
-bar_text = replace_once(
-    bar_text,
-    "                        readonly property bool entering: t < 0.997 && !root.reduceMotion\n",
-    """                        readonly property bool entering: t < 0.997 && !root.reduceMotion
+    )
+    bar_text = replace_once(
+        bar_text,
+        "                        readonly property bool entering: t < 0.997 && !root.reduceMotion\n",
+        """                        readonly property bool entering: t < 0.997 && !root.reduceMotion
                         // set once, after the first open has settled: from then on every tile exists (see nearbyTile)
                         property bool warm: false
                         Timer {
@@ -172,14 +173,14 @@ bar_text = replace_once(
                             onTriggered: appsPanel.warm = true
                         }
 """,
-)
-# Keep every app icon decoded in Qt's pixmap cache (~5 MB), so a tile shows its icon in the frame it is built,
-# including after a search rebuilds the grid. Decoded once in the background; costs nothing afterwards.
-bar_text = replace_once(
-    bar_text,
-    """                        NumberAnimation { id: revealAnim; target: appsFlick; property: "contentY"; duration: root.reduceMotion ? 0 : 180; easing.type: Easing.OutCubic }
+    )
+    # Keep every app icon decoded in Qt's pixmap cache (~5 MB), so a tile shows its icon in the frame it is built,
+    # including after a search rebuilds the grid. Decoded once in the background; costs nothing afterwards.
+    bar_text = replace_once(
+        bar_text,
+        """                        NumberAnimation { id: revealAnim; target: appsFlick; property: "contentY"; duration: root.reduceMotion ? 0 : 180; easing.type: Easing.OutCubic }
 """,
-    """                        NumberAnimation { id: revealAnim; target: appsFlick; property: "contentY"; duration: root.reduceMotion ? 0 : 180; easing.type: Easing.OutCubic }
+        """                        NumberAnimation { id: revealAnim; target: appsFlick; property: "contentY"; duration: root.reduceMotion ? 0 : 180; easing.type: Easing.OutCubic }
                         Item {
                             visible: false
                             Repeater {
@@ -193,7 +194,7 @@ bar_text = replace_once(
                             }
                         }
 """,
-)
+    )
 
 for path, result in ((shell, shell_text), (dock, dock_text), (bar, bar_text)):
     if result != path.read_text():

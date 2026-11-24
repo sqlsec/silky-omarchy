@@ -1,0 +1,245 @@
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -418,9 +418,9 @@
+ focused monitor. Whatever is lit is what will be captured.
+ 
+ Press `S` before drawing to select a scrolling region; once drawn, the page
+-inside it goes live and the scroll controls appear in place. A small **Scroll
+-capture** button under an image already open in the editor turns that region
+-into a scrolling capture. Explicit `region`, `windows`, `fullscreen`, and
++inside it goes live and the scroll controls appear in place. While editing a
++live capture, press `Shift+S` to scroll-capture the current region.
++Explicit `region`, `windows`, `fullscreen`, and
+ `scroll` command-line targets remain available for scripts and keybindings.
+ While scrolling, use the on-screen Done and Cancel buttons, or `Enter` and
+ `Esc` when the overlay has keyboard focus. Move the pointer back over the
+@@ -454,6 +454,7 @@
+ | `V` | Select/move/resize layers; carrying one past the source grows the canvas; drag empty canvas for a marquee; multi-select outlines each layer without treating the canvas as one layer; wheel scales the selected layer |
+ | `A` | Arrow; press again to cycle Standard, Pointy, Curved, and Double styles |
+ | `S` | Spotlight/loupe; press again to cycle ellipse, rectangle, rounded |
++| `Shift+S` | Start scroll capture from the current live region |
+ | `L` | Straight line |
+ | `F` | Freehand pen; medium `3/6` smoothing by default, while `0/6` preserves the raw pointer path |
+ | `H` | Highlighter; Snap mode uses a mouse-following I-beam at the nearby text height, then locks the drag straight to that row. Press `H` again (or click the active toolbar button) for Normal freehand mode, where wheel or `Alt`+wheel changes thickness; Snap keeps detected-row height automatic and wheel sets only its off-text fallback |
+diff --git a/src/editor.cpp b/src/editor.cpp
+--- a/src/editor.cpp
++++ b/src/editor.cpp
+@@ -4920,6 +4920,17 @@
+       return;
+     }
+     QWidget::keyPressEvent(event);
++    return;
++  }
++
++  if (event->key() == Qt::Key_S && event->modifiers() == Qt::ShiftModifier) {
++    if (!event->isAutoRepeat() && !dragging_ && !panning_ && !textEditing() &&
++        hasLiveScreen() && !selection_.isEmpty()) {
++      const QRect region = selection_.toRect();
++      returnToSelect();
++      startScrollCapture(region);
++    }
++    event->accept();
+     return;
+   }
+ 
+@@ -5461,8 +5472,6 @@
+       break;
+     }
+   }
+-  if (const QRectF pill = scrollPillRect(); pill.contains(point))
+-    add(pill.adjusted(-3, -3, 3, 3));
+ 
+   const QRectF sourceFrame = sourceFrameWidgetRect();
+   const qreal scale = std::max<qreal>(editScale(), 0.001);
+@@ -6100,15 +6109,6 @@
+     return;
+   cursor_ = event->position();
+   endNudgeRun();
+-  if (phase_ == Phase::Edit && scrollPillRect().contains(cursor_)) {
+-    if (textEditing())
+-      acceptText();
+-    const QRect region = selection_.toRect();
+-    returnToSelect();
+-    setScrollMode(true);
+-    startScrollCapture(region);
+-    return;
+-  }
+   if (phase_ == Phase::Select) {
+     trackRecentsHover();
+     if (recentsOpen_) {
+@@ -7006,11 +7006,6 @@
+     applyCursor(Qt::BlankCursor);
+     return;
+   }
+-  if (scrollPillRect().contains(cursor_)) {
+-    clearHighlighterPreview();
+-    applyCursor(Qt::PointingHandCursor);
+-    return;
+-  }
+   if ((colorPaletteOpen_ && colorPaletteRect().contains(cursor_)) ||
+       (customColorPickerOpen_ && customColorPanelRect().contains(cursor_)) ||
+       (shapeMenuOpen_ && shapeMenuRect().contains(cursor_))) {
+@@ -7349,27 +7344,6 @@
+   setStatus(QCoreApplication::translate("Omasnap", "Drag to select an area"));
+   updatePointerCursor();
+   update();
+-}
+-
+-QRectF CaptureEditor::scrollPillRect() const {
+-  if (phase_ != Phase::Edit || !hasLiveScreen() || dragging_ ||
+-      capturePending_ || busy_)
+-    return {};
+-  const QRectF image = editImageRect();
+-  if (image.isEmpty())
+-    return {};
+-  const QFont font = chromeFont(11, true);
+-  const qreal width =
+-      QFontMetricsF(font).horizontalAdvance(
+-          QCoreApplication::translate("Omasnap", "SCROLL CAPTURE")) +
+-      28;
+-  constexpr qreal height = 22.0;
+-  // Just under the image, clear of the crop handles; inside the viewport if
+-  // the image reaches the bottom band.
+-  qreal y = image.bottom() + 14;
+-  if (y + height > this->height() - 60)
+-    y = image.bottom() - height - 10;
+-  return QRectF(image.center().x() - width / 2.0, y, width, height);
+ }
+ 
+ void CaptureEditor::loadRecents() {
+@@ -8405,19 +8379,6 @@
+                            kTextSizeNames.at(static_cast<std::size_t>(index))));
+     }
+   }
+-  if (const QRectF pill = scrollPillRect(); !pill.isNull()) {
+-    // A way into scroll capture from a region already drawn: the scroll
+-    // overlay opens with this frame in place.
+-    const bool hot = pill.contains(cursor_);
+-    const QFont pillFont = chromeFont(11, true);
+-    painter.setFont(pillFont);
+-    painter.setPen(QPen(chromeAlpha(chromeTheme().foreground, hot ? 90 : 40), 1));
+-    painter.setBrush(hot ? chromeTheme().buttonHover : chromeTheme().button);
+-    painter.drawRoundedRect(pill, 11, 11);
+-    painter.setPen(chromeAlpha(chromeTheme().foreground, hot ? 255 : 200));
+-    painter.drawText(pill, Qt::AlignCenter,
+-                     QCoreApplication::translate("Omasnap", "SCROLL CAPTURE"));
+-  }
+   const bool statusAtTop = keepsRegionPosition() && toolbarTop() > height() - 80;
+   drawStatusPill(painter, rect(), status_, statusAtTop);
+   // A windowed editor has no clear margin for the overlay's key column; the
+@@ -8494,9 +8455,15 @@
+ 
+ void CaptureEditor::paintEvent(QPaintEvent *event) {
+   const bool showGuide = shortcutGuideAllowed();
+-  if (showGuide)
+-    shortcutGuide_->setEntries(phase_ == Phase::Edit ? editorHotkeyEntries()
+-                                                   : captureHotkeyEntries());
++  if (showGuide) {
++    auto hotkeys = phase_ == Phase::Edit ? editorHotkeyEntries()
++                                        : captureHotkeyEntries();
++    if (phase_ == Phase::Edit && hasLiveScreen())
++      hotkeys.insert(hotkeys.size() - 1,
++                     {QStringLiteral("Shift+S"),
++                      QCoreApplication::translate("Omasnap", "Scrolling region")});
++    shortcutGuide_->setEntries(hotkeys);
++  }
+   QRect obstruction;
+   if (showGuide && phase_ == Phase::Edit && keepsRegionPosition()) {
+     const qreal scale = toolbarScale(width());
+diff --git a/src/editor.hpp b/src/editor.hpp
+--- a/src/editor.hpp
++++ b/src/editor.hpp
+@@ -364,9 +364,6 @@
+   /// Whether the scroll panel is up. Test accessor.
+   [[nodiscard]] bool scrollPanelActiveForTest() const {
+     return scrollPanel_ != nullptr;
+-  }
+-  [[nodiscard]] QRectF scrollPillRectForTest() const {
+-    return scrollPillRect();
+   }
+   /// Blocks until the shelf has been listed; false when it is empty.
+   bool waitForRecents();
+@@ -614,11 +611,8 @@
+   /// Leaves the select phase with a drawn region: edit it, or scroll it.
+   void commitRegion(const QRectF &region, const QString &editStatus);
+   /// Whether there is a live screen behind this capture to re-select from
+-  /// (not a file, clipboard image or stitched result).
++  /// (as opposed to a file or clipboard image).
+   [[nodiscard]] bool hasLiveScreen() const;
+-  /// Small pill under the image in the edit phase offering scroll capture of
+-  /// the drawn region; null when not offered.
+-  [[nodiscard]] QRectF scrollPillRect() const;
+   /// The shelf of earlier captures along the right edge of the select
+   /// overlay: a stack of small cards that fans out under the pointer, each
+   /// reopening its capture in place of taking a new one.
+diff --git a/src/scroll-capture.cpp b/src/scroll-capture.cpp
+--- a/src/scroll-capture.cpp
++++ b/src/scroll-capture.cpp
+@@ -1378,6 +1378,7 @@
+   }
+   // These shortcuts supplement the buttons whenever the overlay has focus.
+   if ((phase_ == Phase::Selected || phase_ == Phase::Capturing) &&
++      event->modifiers() == Qt::NoModifier && !event->isAutoRepeat() &&
+       (event->key() == Qt::Key_S || event->key() == Qt::Key_A)) {
+     switchMode(event->key() == Qt::Key_A ? Mode::Auto : Mode::Manual);
+     return;
+diff --git a/tests/editor-smoke.cpp b/tests/editor-smoke.cpp
+--- a/tests/editor-smoke.cpp
++++ b/tests/editor-smoke.cpp
+@@ -11535,7 +11535,7 @@
+ 
+ /** Smart capture has no mode switcher: the former top strip is ordinary
+  *  selection space and Space does not change capture behavior. Scroll capture
+- *  remains reachable through S/--scroll and the editor's explicit button. */
++ *  remains reachable through S/--scroll and Shift+S in the editor. */
+ bool runCaptureControlsSmoke(QApplication &application, QString &error) {
+   CaptureData capture;
+   capture.monitor.name = QStringLiteral("TEST");
+@@ -11571,6 +11571,24 @@
+         "The removed top switcher still intercepted region selection");
+     return false;
+   }
++  // The former floating button could sit on top of the toolbar. Clicking
++  // its old bounds must leave the scroll panel closed.
++  const QRectF image = editor.editImageRectForTest();
++  const qreal oldPillY = image.bottom() + 36 > editor.height() - 60
++                             ? image.bottom() - 21 : image.bottom() + 25;
++  QTest::mouseClick(&editor, Qt::LeftButton, Qt::NoModifier,
++                    QPointF(image.center().x(), oldPillY).toPoint());
++  application.processEvents();
++  if (editor.scrollPanelActiveForTest() || !editor.editingForTest()) {
++    error = QStringLiteral("Clicking the old scroll button area left editing");
++    return false;
++  }
++  QTest::keyClick(&editor, Qt::Key_S, Qt::ShiftModifier);
++  application.processEvents();
++  if (!editor.scrollPanelActiveForTest() || !editor.scrollModeForTest()) {
++    error = QStringLiteral("Shift+S did not open the selected scrolling region");
++    return false;
++  }
+   editor.close();
+ 
+   // Drawing in explicit scroll mode brings the panel up in place; dismissing
+@@ -11640,19 +11658,13 @@
+       error = QStringLiteral("V in the editor closed or left it");
+       return false;
+     }
+-    const QRectF scrollPill = scrollEditor.scrollPillRectForTest();
+-    if (scrollPill.isNull()) {
+-      error = QStringLiteral("Stitched edit did not offer scroll capture");
+-      return false;
+-    }
+-    QTest::mouseClick(&scrollEditor, Qt::LeftButton, Qt::NoModifier,
+-                      scrollPill.center().toPoint());
++    QTest::keyClick(&scrollEditor, Qt::Key_S, Qt::ShiftModifier);
+     application.processEvents();
+     if (!scrollEditor.selectingForTest() ||
+         !scrollEditor.scrollModeForTest() ||
+         !scrollEditor.scrollPanelActiveForTest()) {
+       error = QStringLiteral(
+-          "Scroll capture button did not reopen the region in the panel");
++          "Shift+S did not reopen the region in the scroll panel");
+       return false;
+     }
+     scrollEditor.close();
