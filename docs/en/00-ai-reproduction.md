@@ -47,6 +47,7 @@ python3 scripts/install-login-transition.py   # 07: early wallpaper for MacShell
 ./scripts/install-menu-glass.sh               # 11: Omarchy menu glass + light/dark
 ./scripts/install-obsidian-theme.sh           # 15: Obsidian theme + typing-fade plugin
 ./scripts/install-desktop-priority.sh         # 16: desktop priority (needs sudo)
+./scripts/install-occlusion-plugin.sh         # 16: completely covered windows stop redrawing (Hyprland plugin)
 ```
 
 Merge the global configuration snippets in 01 by hand. The optional WeChat update uses its own installer.
@@ -194,6 +195,7 @@ Merge the global configuration snippets in 01 by hand. The optional WeChat updat
 - **Files**: `bin/silky-desktop-priority`, `config/silky/desktop-priority.conf` (→ `/etc/silky/`), `config/systemd/system/silky-desktop-priority.service`, `scripts/install-desktop-priority.sh` (`--uninstall` rolls back), `docs/en/16-desktop-priority.md`
 - **Keywords**: `sched_setattr` (aarch64 274 / x86_64 314), `SCHED_FLAG_UTIL_CLAMP_MIN`, `CAP_SYS_NICE`, `/sys/class/devfreq/*gpu*/min_freq`, `power_supply/*/online`
 - **Pitfalls**: nice is per thread, so walk `/proc/<pid>/task`. Skip threads that are not `SCHED_OTHER` or whose nice is not 0 (Mesa's `disk$` cache threads are `SCHED_BATCH`). Split `/proc/…/stat` after the last `)`: thread names such as `[pango] fontcon` contain spaces, so counting columns with awk goes wrong. Hyprland lives in greetd's `session-N.scope`, the same cgroup as Chromium launched straight from the session, so the scope's `CPUWeight` is the wrong lever. aquamarine already has a high-priority EGL context. Don't use realtime scheduling
+- **Covered windows**: `plugins/silky-occlusion/main.cpp` walks the windows in draw order at `RENDER_PRE`, accumulates the opaque regions above, takes the pending `m_current.callbacks` of completely covered windows, and answers them when the window shows again, on the 1 s keepalive, or on unload. Nothing is held during a capture, with a special workspace open, with a fullscreen window, during a workspace slide, or for windows tagged `silky-live`. Files: `config/hypr/silky-occlusion.lua`, `scripts/install-occlusion-plugin.sh` (`--remove` rolls back). Pitfalls: Hyprland 0.57 still sends frame callbacks to covered surfaces via `discard()` → `presentFeedback()`; no function hooks on aarch64; a test client's shm buffer does not count as opaque, so set an opaque region
 - **Verify**: `/usr/local/bin/silky-desktop-priority --config /etc/silky/desktop-priority.conf --status`, `ps -L -o tid,ni,cls,comm -p "$(pgrep -x Hyprland)"`; preview without root with `--dry-run`
 
 ## 17 Closed-lid sleep USB wakeup guard

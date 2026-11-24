@@ -26,7 +26,7 @@ To see every interface and interaction change grouped by where you feel it (menu
 | 13 | Window overview | ✅ | Four fingers up on the touchpad or touch screen shows every window of the workspace, four fingers down every window of the current app; linear, follows the fingers, interruptible and reversible (plugin + MacShell component) |
 | 14 | [Logitech mouse](docs/en/14-omalogi.md) | ✅ | Standalone Omalogi window with a Chinese UI, G604 button diagrams, onboard profiles, a manual key picker, Super+K system shortcuts, and an ARM source build |
 | 15 | [Obsidian](docs/en/15-obsidian.md) | ✅ | macOS 27 theme: glass menus and floating sidebars, follows light / dark, Finder blue folders and per-extension file icons, gliding caret and typing fade-in (input methods included), Terminal-window code blocks |
-| 16 | [Desktop priority](docs/en/16-desktop-priority.md) | ✅ | Hyprland, MacShell, Xwayland and input-method threads get the CPU first (negative nice + uclamp clock floor), and the GPU stays at 550 MHz or more on AC; animations and the pointer stay smooth under full background load |
+| 16 | [Desktop priority](docs/en/16-desktop-priority.md) | ✅ | Hyprland, MacShell, Xwayland and input-method threads get the CPU first (negative nice + uclamp clock floor), and the GPU stays at 550 MHz or more on AC; animations and the pointer stay smooth under full background load; completely covered windows stop redrawing |
 
 ## Quick start
 
@@ -71,6 +71,7 @@ python3 scripts/install-login-transition.py  # Optional: MacShell login wallpape
 ./scripts/install-omalogi.sh
 ./scripts/install-obsidian-theme.sh
 ./scripts/install-desktop-priority.sh   # needs sudo
+./scripts/install-occlusion-plugin.sh   # completely covered windows stop redrawing (Hyprland plugin)
 ./scripts/install-sleep-usb-wakeup.sh   # needs sudo; prevent Qualcomm dwc3-qcom USB wakeups during closed-lid sleep
 ```
 

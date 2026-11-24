@@ -47,6 +47,7 @@ python3 scripts/install-login-transition.py   # 07：使用 MacShell 登录界�
 ./scripts/install-menu-glass.sh               # 11：Omarchy 菜单玻璃 + 深浅色
 ./scripts/install-obsidian-theme.sh           # 15：Obsidian 主题 + 打字淡入插件
 ./scripts/install-desktop-priority.sh         # 16：桌面优先调度（需要 sudo）
+./scripts/install-occlusion-plugin.sh         # 16：被完全遮挡的窗口暂停重绘（Hyprland 插件）
 ```
 
 01 的全局配置片段手动合并。可选的微信适配更新使用独立脚本。
@@ -194,6 +195,7 @@ python3 scripts/install-login-transition.py   # 07：使用 MacShell 登录界�
 - **文件**：`bin/silky-desktop-priority`、`config/silky/desktop-priority.conf`（→ `/etc/silky/`）、`config/systemd/system/silky-desktop-priority.service`、`scripts/install-desktop-priority.sh`（`--uninstall` 回滚）、`docs/16-desktop-priority.md`
 - **关键词**：`sched_setattr`（aarch64 274 / x86_64 314）、`SCHED_FLAG_UTIL_CLAMP_MIN`、`CAP_SYS_NICE`、`/sys/class/devfreq/*gpu*/min_freq`、`power_supply/*/online`
 - **坑**：nice 按线程生效，要遍历 `/proc/<pid>/task`；跳过非 `SCHED_OTHER` 和 nice 不为 0 的线程（Mesa `disk$` 缓存线程是 `SCHED_BATCH`）；读 `/proc/…/stat` 要从最后一个 `)` 之后切字段，`[pango] fontcon` 这类线程名带空格，用 awk 数列会错位；Hyprland 在 greetd 的 `session-N.scope` 里，和直接从会话拉起的 Chromium 同一个 cgroup，所以不能用 scope 的 `CPUWeight`；aquamarine 已拿到高优先级 EGL 上下文；不要用实时调度
+- **遮挡暂停**：`plugins/silky-occlusion/main.cpp` 在 `RENDER_PRE` 按绘制顺序累计上方窗口的不透明区域，取走被完全遮挡窗口的 `m_current.callbacks`，露出、keepalive（1 s）或卸载时回应；截图进行中、特殊工作区、全屏、工作区滑动和 `silky-live` 标签不暂停。文件：`config/hypr/silky-occlusion.lua`、`scripts/install-occlusion-plugin.sh`（`--remove` 回滚）；坑：Hyprland 0.57 对被遮挡表面仍经 `discard()` → `presentFeedback()` 发帧回调；aarch64 不用函数钩子；测试客户端的 shm 缓冲区不算不透明，要设 opaque region
 - **验证**：`/usr/local/bin/silky-desktop-priority --config /etc/silky/desktop-priority.conf --status`、`ps -L -o tid,ni,cls,comm -p "$(pgrep -x Hyprland)"`；无 root 预览用 `--dry-run`
 
 ## 17 合盖睡眠防 USB 控制器误唤醒

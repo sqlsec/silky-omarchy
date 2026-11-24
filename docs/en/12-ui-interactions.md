@@ -84,6 +84,7 @@ Dock app context menus share the Dock’s Liquid Glass, including its refraction
 - Only the focused Folio keeps the glass sidebar; unfocused Folio windows show a solid sidebar, so dragging other windows over many Folio windows no longer re-blurs each of them ([04](04-macos-theme.md#finder-style-folio))
 - No more two menu bars / two Docks after a crash; the menu bar, Dock and wheel direction survive a reboot ([02](02-macshell.md))
 - Window animations, the menu bar, the Dock and the pointer stay smooth while background programs max out the CPU: Hyprland, MacShell and the input method are scheduled first, and on AC the GPU no longer starts from its lowest clock ([16](16-desktop-priority.md))
+- Windows completely covered by other windows stop redrawing (one frame a second remains) and update live again as soon as any part shows; windows under glass or translucent windows keep updating ([16](16-desktop-priority.md#completely-covered-windows-stop-redrawing))
 
 ## Windows
 

@@ -26,7 +26,7 @@
 | 13 | 窗口总览 | ✅ | 触控板或触控屏四指上滑显示当前工作区所有窗口、四指下滑显示当前应用所有窗口；线性跟手、可打断回退（插件 + MacShell 组件） |
 | 14 | [罗技鼠标](docs/14-omalogi.md) | ✅ | Omalogi 简体中文独立窗口，支持 G604 正面与侧键标注、板载配置、手动组合键和 Super+K 系统快捷键，支持 ARM 源码构建 |
 | 15 | [Obsidian](docs/15-obsidian.md) | ✅ | macOS 27 风格主题：玻璃菜单与浮动侧栏、跟随日间 / 夜间、Finder 蓝色文件夹与按后缀区分的文件图标、光标滑动与打字淡入（含输入法上屏）、终端窗口样式的代码块 |
-| 16 | [桌面优先调度](docs/16-desktop-priority.md) | ✅ | Hyprland、MacShell、Xwayland、输入法线程优先拿到 CPU（负 nice + uclamp 升频下限），接电时 GPU 最低 550 MHz；后台满载时动画和指针不掉帧 |
+| 16 | [桌面优先调度](docs/16-desktop-priority.md) | ✅ | Hyprland、MacShell、Xwayland、输入法线程优先拿到 CPU（负 nice + uclamp 升频下限），接电时 GPU 最低 550 MHz；后台满载时动画和指针不掉帧；被完全遮挡的窗口暂停重绘 |
 
 ## 快速开始
 
@@ -71,6 +71,7 @@ python3 scripts/install-login-transition.py  # 可选：MacShell 登录后的壁
 ./scripts/install-omalogi.sh
 ./scripts/install-obsidian-theme.sh
 ./scripts/install-desktop-priority.sh   # 需要 sudo
+./scripts/install-occlusion-plugin.sh   # 被完全遮挡的窗口暂停重绘（Hyprland 插件）
 ./scripts/install-sleep-usb-wakeup.sh   # 需要 sudo，高通 Snapdragon X 合盖防 USB 误唤醒
 ```
 
