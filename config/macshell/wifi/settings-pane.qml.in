@@ -1,0 +1,619 @@
+        // Silky WiFi pane begin
+        // ── Wi-Fi ── (model: SilkyWifi.qml through the Menu Bar; see docs/02-macshell.md#wi-fi-面板与设置页)
+        Component {
+            id: paneWifi
+            Column {
+                id: wifiPane
+                spacing: 10
+                readonly property var bar: root.bar
+                readonly property var wf: bar ? bar.wifiModel : null
+                readonly property bool on: bar !== null && bar.wifiOn
+                readonly property var cur: wf ? wf.current : null
+                property string sheet: ""            // "" | details | password | hidden | forget
+                property var sheetNet: null
+                property var menuNet: null           // network whose ⋯ menu is open
+                property real menuX: 0
+                property real menuY: 0
+                property string ethInfo: ""
+                property bool holdsInfo: false
+                readonly property bool wantsInfo: sheet === "details"
+                onWantsInfoChanged: {
+                    if (!wf) return;
+                    if (wantsInfo && !holdsInfo) { holdsInfo = true; wf.acquireInfo(); }
+                    else if (!wantsInfo && holdsInfo) { holdsInfo = false; wf.releaseInfo(); }
+                }
+                Component.onCompleted: { if (bar) bar.scanWifi(); ethProc.running = true; }
+                Component.onDestruction: if (holdsInfo && wf) wf.releaseInfo()
+                Timer {
+                    interval: 4000; repeat: true; running: prefsWindow.visible
+                    onTriggered: { if (!ethProc.running) ethProc.running = true; if (wifiPane.bar && wifiPane.sheet === "") wifiPane.bar.scanWifi(false); }
+                }
+                Process {
+                    id: ethProc
+                    command: ["sh", "-c", "nmcli -t -f DEVICE,TYPE,STATE,CONNECTION dev 2>/dev/null | awk -F: '$2==\"ethernet\"' | head -1 | while IFS=: read -r d t st c; do ip=$(ip -4 -o addr show \"$d\" 2>/dev/null | awk '{print $4}' | head -1); sp=$(cat /sys/class/net/$d/speed 2>/dev/null); printf '%s\t%s\t%s\t%s\t%s' \"$d\" \"$st\" \"$c\" \"$ip\" \"$sp\"; done"]
+                    stdout: StdioCollector { onStreamFinished: wifiPane.ethInfo = text.trim() }
+                }
+                readonly property var eth: { var f = ethInfo.split("\t"); return f.length >= 2 ? { dev: f[0], up: f[1].indexOf("connected") === 0, con: f[2] || "", ip: f[3] || "", speed: f[4] || "" } : null; }
+
+                function join(n) {
+                    if (!bar || !n || bar.wifiBusy !== "") return;
+                    if (n.inUse) return;
+                    if (n.secure && !n.saved) { sheetNet = n; sheet = "password"; return; }
+                    bar.connectWifi(n.ssid, "");
+                }
+                function openMenu(n, item) {
+                    var p = item.mapToItem(frame, item.width, item.height + 4);
+                    menuX = p.x; menuY = p.y; menuNet = n;
+                }
+                function statusText(n) {
+                    if (!bar || !n) return "";
+                    if (bar.wifiBusy === n.ssid) return I18n.tr("Connecting…");
+                    if (bar.wifiError !== "" && bar.wifiErrorSsid === n.ssid) return bar.wifiError;
+                    return "";
+                }
+                function infoRows(i) {
+                    if (!i || !i.connected) return [];
+                    var out = [];
+                    function add(k, v) { if (v !== undefined && v !== null && v !== "") out.push({ k: I18n.tr(k), v: String(v) }); }
+                    add("IP Address", i.ip);
+                    add("Router", i.router);
+                    add("MAC Address", i.mac);
+                    add("Security", i.security === "" ? I18n.tr("None") : (i.security + (i.securityKind ? " " + I18n.tr(i.securityKind === "enterprise" ? "Enterprise" : "Personal") : "")));
+                    add("BSSID", i.bssid);
+                    add("Channel", wf ? wf.channelText(i) : "");
+                    add("Country Code", i.country);
+                    add("RSSI", i.rssi !== undefined ? i.rssi + " dBm" : "");
+                    add("Noise", i.noise !== undefined ? i.noise + " dBm" : "");
+                    add("Tx Rate", i.txRate !== undefined ? i.txRate + " Mbps" : "");
+                    add("PHY Mode", i.phy);
+                    add("MCS Index", i.mcs);
+                    add("NSS", i.nss);
+                    return out;
+                }
+
+                // Ethernet first: it's what you're actually online through when it's plugged in
+                SCard {
+                    t: pal
+                    visible: wifiPane.eth !== null
+                    SRow {
+                        t: pal; title: I18n.tr("Ethernet")
+                        subtitle: !wifiPane.eth ? "" : (wifiPane.eth.up
+                                  ? I18n.tr("Connected") + (wifiPane.eth.ip !== "" ? " · " + wifiPane.eth.ip : "") + (parseInt(wifiPane.eth.speed) > 0 ? " · " + wifiPane.eth.speed + I18n.tr(" Mb/s") : "")
+                                  : I18n.tr("Cable unplugged"))
+                        Row {
+                            spacing: 8
+                            WGlyph { width: 18; height: 18; kind: "ethernet"; color: pal.text; anchors.verticalCenter: parent.verticalCenter }
+                            Rectangle { width: 10; height: 10; radius: 5; anchors.verticalCenter: parent.verticalCenter; color: wifiPane.eth && wifiPane.eth.up ? "#30D158" : pal.text3 }
+                        }
+                    }
+                }
+
+                // header card: Wi-Fi switch, then the network in use
+                SCard {
+                    t: pal
+                    Item {
+                        width: parent.width
+                        height: Math.max(68, wifiHead.height + 28)
+                        Rectangle {
+                            x: 14; y: 14
+                            width: 34; height: 34; radius: 9
+                            gradient: Gradient {
+                                GradientStop { position: 0.0; color: "#3D9BFF" }
+                                GradientStop { position: 1.0; color: "#0A6CFF" }
+                            }
+                            WGlyph { anchors.centerIn: parent; width: 20; height: 20; kind: "wifi"; color: "white" }
+                        }
+                        Column {
+                            id: wifiHead
+                            x: 60; y: 14
+                            width: parent.width - x - 80
+                            spacing: 3
+                            Text {
+                                text: I18n.tr("Wi-Fi")
+                                color: pal.text
+                                font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                            }
+                            Text {
+                                width: parent.width
+                                wrapMode: Text.WordWrap
+                                text: I18n.tr("Set up Wi-Fi to wirelessly connect this computer to the internet. Turn on Wi-Fi, then choose a network to join.")
+                                color: pal.text2
+                                font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 12
+                            }
+                        }
+                        SSwitch {
+                            t: pal
+                            anchors.right: parent.right; anchors.rightMargin: 14
+                            y: 18
+                            checked: wifiPane.on
+                            onToggled: v => { if (wifiPane.bar && wifiPane.bar.wifiOn !== v) wifiPane.bar.toggleWifi(); }
+                        }
+                    }
+                    Rectangle { visible: curRow.visible; x: 14; width: parent.width - 28; height: 1; color: pal.sep }
+                    Item {
+                        id: curRow
+                        visible: wifiPane.on && wifiPane.cur !== null
+                        width: parent.width
+                        height: visible ? curCol.height + 24 : 0
+                        Column {
+                            id: curCol
+                            x: 14; y: 12
+                            width: parent.width - x - curRight.width - 28
+                            spacing: 3
+                            Text {
+                                width: parent.width; elide: Text.ElideRight
+                                text: wifiPane.cur ? wifiPane.cur.ssid : ""
+                                color: pal.text
+                                font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                            }
+                            Row {
+                                spacing: 6
+                                Rectangle { width: 8; height: 8; radius: 4; color: "#30D158"; anchors.verticalCenter: parent.verticalCenter }
+                                Text {
+                                    text: I18n.tr("Connected")
+                                    color: pal.text2
+                                    font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 12
+                                }
+                            }
+                            Row {
+                                visible: wifiPane.cur !== null && wifiPane.cur.level !== "ok"
+                                spacing: 6
+                                Canvas {
+                                    width: 11; height: 10
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    onPaint: {
+                                        var g = getContext("2d"); g.reset();
+                                        g.fillStyle = "#FFCC00";
+                                        g.beginPath(); g.moveTo(5.5, 0.4); g.lineTo(10.8, 9.6); g.lineTo(0.2, 9.6); g.closePath(); g.fill();
+                                        g.fillStyle = "#1D1D1F";
+                                        g.fillRect(5, 3.4, 1, 3.4); g.fillRect(5, 7.6, 1, 1);
+                                    }
+                                }
+                                Text {
+                                    text: wifiPane.cur && wifiPane.cur.level === "open" ? I18n.tr("Insecure Network") : I18n.tr("Weak Security")
+                                    color: pal.text2
+                                    font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 12
+                                }
+                            }
+                        }
+                        Row {
+                            id: curRight
+                            anchors.right: parent.right; anchors.rightMargin: 14
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 12
+                            WGlyph { visible: wifiPane.cur !== null && wifiPane.cur.secure; width: 14; height: 14; kind: "lock"; color: pal.text; anchors.verticalCenter: parent.verticalCenter }
+                            WGlyph { width: 17; height: 17; kind: "wifi"; level: wifiPane.cur && wifiPane.bar ? wifiPane.bar.sigLevel(wifiPane.cur.signal) : 3; color: pal.text; anchors.verticalCenter: parent.verticalCenter }
+                            SButton {
+                                t: pal
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: I18n.tr("Details…")
+                                onClicked: { wifiPane.sheetNet = wifiPane.cur; wifiPane.sheet = "details"; }
+                            }
+                        }
+                    }
+                }
+
+                // a network row (Known Networks and Other Networks)
+                Component {
+                    id: wifiRowComp
+                    Item {
+                        id: wr
+                        readonly property var n: parent ? parent.modelData : null
+                        readonly property bool other: parent ? parent.other : false
+                        readonly property string status: wifiPane.statusText(n)
+                        readonly property bool failed: n !== null && wifiPane.bar !== null && wifiPane.bar.wifiBusy !== n.ssid && status !== ""
+                        property bool revealed: false
+                        width: parent ? parent.width : 0
+                        height: Math.max(44, wrText.height + 20)
+                        HoverHandler { id: wrHover }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: wr.revealed = !wr.revealed
+                            onDoubleClicked: wifiPane.join(wr.n)
+                        }
+                        Rectangle { visible: wr.parent && wr.parent.y > 0.5; x: 40; width: parent.width - 40; height: 1; color: pal.sep }
+                        Text {
+                            visible: wr.n !== null && wr.n.inUse
+                            x: 16; anchors.verticalCenter: parent.verticalCenter
+                            text: "✓"
+                            color: pal.text
+                            font.family: root.fontForWeight(Font.DemiBold, pal.fam); font.pixelSize: 14
+                        }
+                        Column {
+                            id: wrText
+                            x: 40; anchors.verticalCenter: parent.verticalCenter
+                            width: Math.max(0, wrRight.x - x - 10)
+                            spacing: 2
+                            Text {
+                                width: parent.width; elide: Text.ElideRight
+                                text: wr.n ? wr.n.ssid : ""
+                                color: pal.text
+                                font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                            }
+                            Text {
+                                visible: wr.status !== ""
+                                width: parent.width
+                                wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight
+                                text: wr.status
+                                color: wr.failed ? pal.danger : pal.text2
+                                font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 12
+                            }
+                        }
+                        Row {
+                            id: wrRight
+                            anchors.right: parent.right; anchors.rightMargin: 14
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 12
+                            SButton {
+                                t: pal
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: wr.other && wr.n !== null && wifiPane.bar !== null && wifiPane.bar.wifiBusy === "" && (wrHover.hovered || wr.revealed)
+                                text: I18n.tr("Connect")
+                                onClicked: { wr.revealed = false; wifiPane.join(wr.n); }
+                            }
+                            WGlyph { visible: wr.n !== null && wr.n.secure && wr.n.signal >= 0; width: 14; height: 14; kind: "lock"; color: pal.text; anchors.verticalCenter: parent.verticalCenter }
+                            WGlyph {
+                                visible: wr.n !== null && wr.n.signal >= 0
+                                width: 17; height: 17; kind: "wifi"
+                                level: wr.n && wifiPane.bar ? wifiPane.bar.sigLevel(wr.n.signal) : 3
+                                color: pal.text; anchors.verticalCenter: parent.verticalCenter
+                            }
+                            Item {      // ⋯
+                                visible: !wr.other
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 22; height: 22
+                                Rectangle {
+                                    anchors.fill: parent; radius: width / 2
+                                    color: dotsMa.pressed ? pal.hover : "transparent"
+                                    border.width: 1.2; border.color: dotsMa.containsMouse ? pal.text : pal.text2
+                                }
+                                Row {
+                                    anchors.centerIn: parent
+                                    spacing: 2.2
+                                    Repeater {
+                                        model: 3
+                                        Rectangle { width: 2.6; height: 2.6; radius: 1.3; color: dotsMa.containsMouse ? pal.text : pal.text2 }
+                                    }
+                                }
+                                MouseArea {
+                                    id: dotsMa
+                                    anchors.fill: parent; anchors.margins: -6
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: wifiPane.openMenu(wr.n, parent)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                SLabel { t: pal; header: true; text: I18n.tr("Known Networks"); visible: wifiPane.on && wifiPane.wf !== null && wifiPane.wf.knownAll.length > 0 }
+                SCard {
+                    t: pal
+                    visible: wifiPane.on && wifiPane.wf !== null && wifiPane.wf.knownAll.length > 0
+                    Repeater {
+                        model: wifiPane.wf ? wifiPane.wf.knownAll : []
+                        delegate: Loader {
+                            required property var modelData
+                            readonly property bool other: false
+                            width: parent ? parent.width : 0
+                            sourceComponent: wifiRowComp
+                        }
+                    }
+                }
+
+                Item {
+                    visible: wifiPane.on
+                    width: parent.width; height: 26
+                    SLabel {
+                        t: pal; header: true
+                        width: implicitWidth
+                        anchors.bottom: parent.bottom
+                        text: I18n.tr("Other Networks")
+                    }
+                    SBtSpinner {
+                        t: pal
+                        visible: wifiPane.bar !== null && wifiPane.bar.wifiScanning
+                        anchors.right: parent.right; anchors.rightMargin: 16
+                        anchors.bottom: parent.bottom; anchors.bottomMargin: 1
+                    }
+                }
+                SCard {
+                    t: pal
+                    visible: wifiPane.on
+                    Repeater {
+                        model: wifiPane.wf ? wifiPane.wf.others : []
+                        delegate: Loader {
+                            required property var modelData
+                            readonly property bool other: true
+                            width: parent ? parent.width : 0
+                            sourceComponent: wifiRowComp
+                        }
+                    }
+                    SRow {
+                        t: pal
+                        visible: wifiPane.wf !== null && wifiPane.wf.others.length === 0
+                        title: !wifiPane.bar ? "" : wifiPane.bar.wifiScanning ? I18n.tr("Searching…")
+                             : wifiPane.bar.wifiScanFailed ? wifiPane.bar.wifiScanError : I18n.tr("No other networks found")
+                        SButton {
+                            t: pal
+                            visible: wifiPane.bar !== null && !wifiPane.bar.wifiScanning
+                            text: I18n.tr("Scan Again")
+                            onClicked: wifiPane.bar.scanWifi("refresh")
+                        }
+                    }
+                }
+                Item {
+                    visible: wifiPane.on
+                    width: parent.width; height: 26
+                    SButton {
+                        t: pal
+                        anchors.right: parent.right
+                        text: I18n.tr("Other…")
+                        onClicked: { wifiPane.sheetNet = null; wifiPane.sheet = "hidden"; }
+                    }
+                }
+                SLabel { t: pal; text: wifiPane.wf ? wifiPane.wf.actionError : ""; visible: wifiPane.wf !== null && wifiPane.wf.actionError !== ""; color: pal.danger }
+
+                // ── ⋯ menu of a known network ──
+                Item {
+                    id: wifiMenu
+                    parent: frame
+                    anchors.fill: parent
+                    z: 950
+                    visible: wifiPane.menuNet !== null
+                    readonly property var n: wifiPane.menuNet
+                    readonly property var items: {
+                        if (!n) return [];
+                        var out = [];
+                        if (n.inUse) out.push({ id: "disconnect", label: I18n.tr("Disconnect") });
+                        else if (n.signal >= 0) out.push({ id: "connect", label: I18n.tr("Connect") });
+                        if (n.uuid) out.push({ id: "details", label: I18n.tr("Details…") });
+                        out.push({ id: "autojoin", label: I18n.tr("Auto-Join"), check: n.autoconnect });
+                        out.push({ id: "sep" });
+                        out.push({ id: "forget", label: I18n.tr("Forget This Network…") });
+                        return out;
+                    }
+                    function run(id) {
+                        var net = n;
+                        wifiPane.menuNet = null;
+                        if (!net || !wifiPane.bar) return;
+                        if (id === "disconnect") wifiPane.bar.disconnectWifi();
+                        else if (id === "connect") wifiPane.join(net);
+                        else if (id === "details") { wifiPane.sheetNet = net; wifiPane.sheet = "details"; }
+                        else if (id === "autojoin") wifiPane.wf.setAutoJoin(net.uuid, !net.autoconnect);
+                        else if (id === "forget") { wifiPane.sheetNet = net; wifiPane.sheet = "forget"; }
+                    }
+                    MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onPressed: wifiPane.menuNet = null }
+                    Keys.onEscapePressed: wifiPane.menuNet = null
+                    onVisibleChanged: if (visible) forceActiveFocus()
+                    Rectangle {
+                        x: Math.min(wifiPane.menuX - width, parent.width - width - 10)
+                        y: Math.min(wifiPane.menuY, parent.height - height - 10)
+                        width: 200
+                        height: menuCol.height + 10
+                        radius: 10
+                        color: pal.card
+                        border.width: 1; border.color: pal.cardBorder
+                        Column {
+                            id: menuCol
+                            x: 5; y: 5
+                            width: parent.width - 10
+                            Repeater {
+                                model: wifiMenu.items
+                                delegate: Item {
+                                    required property var modelData
+                                    width: menuCol.width
+                                    height: modelData.id === "sep" ? 9 : 26
+                                    Rectangle { visible: modelData.id === "sep"; anchors.verticalCenter: parent.verticalCenter; x: 6; width: parent.width - 12; height: 1; color: pal.sep }
+                                    Rectangle { visible: modelData.id !== "sep" && miMa.containsMouse; anchors.fill: parent; radius: 6; color: pal.accent }
+                                    Text {
+                                        visible: modelData.check === true
+                                        x: 8; anchors.verticalCenter: parent.verticalCenter
+                                        text: "✓"
+                                        color: miMa.containsMouse ? "white" : pal.text
+                                        font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 12
+                                    }
+                                    Text {
+                                        visible: modelData.id !== "sep"
+                                        x: 24; anchors.verticalCenter: parent.verticalCenter
+                                        text: modelData.label || ""
+                                        color: miMa.containsMouse ? "white" : pal.text
+                                        font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                                    }
+                                    MouseArea {
+                                        id: miMa
+                                        anchors.fill: parent
+                                        enabled: modelData.id !== "sep"
+                                        hoverEnabled: true
+                                        onClicked: wifiMenu.run(modelData.id)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // @include network-details.qml.in
+                // ── sheets: password, hidden network, forget ──
+                Item {
+                    id: wifiSheet
+                    parent: frame
+                    anchors.fill: parent
+                    z: 900
+                    readonly property string kind: wifiPane.sheet
+                    readonly property var n: wifiPane.sheetNet
+                    visible: kind !== "" && kind !== "details"
+                    onKindChanged: {
+                        if (kind === "" || kind === "details") return;
+                        pwIn.text = ""; ssidIn.text = ""; pwShow.checked = false;
+                        if (kind === "password") pwIn.forceActiveFocus();
+                        else if (kind === "hidden") ssidIn.forceActiveFocus();
+                        else forceActiveFocus();
+                    }
+                    function close() { wifiPane.sheet = ""; }
+                    function accept() {
+                        var b = wifiPane.bar;
+                        if (!b) return close();
+                        if (kind === "password") {
+                            if (pwIn.text === "") return;
+                            b.connectWifi(n.ssid, pwIn.text);
+                        } else if (kind === "hidden") {
+                            if (ssidIn.text.trim() === "") return;
+                            b.connectWifi(ssidIn.text.trim(), pwIn.text, true);
+                        } else if (kind === "forget") {
+                            if (n && n.inUse) b.disconnectWifi();
+                            wifiPane.wf.forget(n.uuid);
+                        }
+                        close();
+                    }
+                    Keys.onEscapePressed: close()
+                    Keys.onReturnPressed: accept()
+                    Keys.onEnterPressed: accept()
+
+                    MouseArea { anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.AllButtons }
+                    Rectangle { anchors.fill: parent; radius: frame.cornerRadius; color: Qt.rgba(0, 0, 0, pal.dark ? 0.45 : 0.25) }
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: 360
+                        height: sheetCol.height + 40
+                        radius: 16
+                        color: pal.card
+                        border.width: 1; border.color: pal.cardBorder
+                        Column {
+                            id: sheetCol
+                            x: 20; y: 20
+                            width: parent.width - 40
+                            spacing: 14
+
+                            Row {
+                                spacing: 12
+                                Rectangle {
+                                    width: 44; height: 44; radius: 22
+                                    color: wifiSheet.n && wifiSheet.n.inUse ? pal.accent : (pal.dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.07))
+                                    WGlyph { anchors.centerIn: parent; width: 24; height: 24; kind: "wifi"; color: wifiSheet.n && wifiSheet.n.inUse ? "white" : pal.text }
+                                }
+                                Column {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: sheetCol.width - 56
+                                    spacing: 2
+                                    Text {
+                                        width: parent.width; wrapMode: Text.WordWrap
+                                        text: wifiSheet.kind === "hidden" ? I18n.tr("Find and join a Wi-Fi network.")
+                                            : wifiSheet.kind === "password" ? I18n.tr("The Wi-Fi network “%1” requires a password.").arg(wifiSheet.n ? wifiSheet.n.ssid : "")
+                                            : I18n.tr("Forget Wi-Fi network “%1”?").arg(wifiSheet.n ? wifiSheet.n.ssid : "")
+                                        color: pal.text
+                                        font.family: root.fontForWeight(Font.DemiBold, pal.fam); font.pixelSize: 14; font.weight: Font.DemiBold
+                                    }
+                                    Text {
+                                        width: parent.width; wrapMode: Text.WordWrap
+                                        visible: text !== ""
+                                        text: wifiSheet.kind === "forget" ? I18n.tr("This computer will no longer join this network automatically.")
+                                            : wifiSheet.kind === "hidden" ? I18n.tr("Enter the name of the network and its password, if it has one.") : ""
+                                        color: pal.text2
+                                        font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 12
+                                    }
+                                }
+                            }
+
+                            // hidden network name
+                            Rectangle {
+                                visible: wifiSheet.kind === "hidden"
+                                width: parent.width; height: 30; radius: 7
+                                color: pal.field
+                                border.width: 1; border.color: ssidIn.activeFocus ? pal.accent : pal.cardBorder
+                                TextInput {
+                                    id: ssidIn
+                                    anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10
+                                    verticalAlignment: TextInput.AlignVCenter
+                                    clip: true; selectByMouse: true; maximumLength: 32
+                                    color: pal.text; selectionColor: pal.accent
+                                    font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                                    Keys.onEscapePressed: wifiSheet.close()
+                                    Keys.onTabPressed: pwIn.forceActiveFocus()
+                                    onAccepted: wifiSheet.accept()
+                                }
+                                Text {
+                                    visible: ssidIn.text === ""
+                                    x: 10; anchors.verticalCenter: parent.verticalCenter
+                                    text: I18n.tr("Network Name")
+                                    color: pal.text3
+                                    font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                                }
+                            }
+                            // password
+                            Rectangle {
+                                visible: wifiSheet.kind === "password" || wifiSheet.kind === "hidden"
+                                width: parent.width; height: 30; radius: 7
+                                color: pal.field
+                                border.width: 1; border.color: pwIn.activeFocus ? pal.accent : pal.cardBorder
+                                TextInput {
+                                    id: pwIn
+                                    anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10
+                                    verticalAlignment: TextInput.AlignVCenter
+                                    clip: true; selectByMouse: true
+                                    echoMode: pwShow.checked ? TextInput.Normal : TextInput.Password
+                                    color: pal.text; selectionColor: pal.accent
+                                    font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                                    Keys.onEscapePressed: wifiSheet.close()
+                                    onAccepted: wifiSheet.accept()
+                                }
+                                Text {
+                                    visible: pwIn.text === ""
+                                    x: 10; anchors.verticalCenter: parent.verticalCenter
+                                    text: wifiSheet.kind === "hidden" ? I18n.tr("Password (optional)") : I18n.tr("Password")
+                                    color: pal.text3
+                                    font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                                }
+                            }
+                            Row {
+                                id: pwShow
+                                property bool checked: false
+                                visible: wifiSheet.kind === "password" || wifiSheet.kind === "hidden"
+                                spacing: 6
+                                Rectangle {
+                                    width: 14; height: 14; radius: 4
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    color: pwShow.checked ? pal.accent : "transparent"
+                                    border.width: pwShow.checked ? 0 : 1; border.color: pal.text3
+                                    Text { anchors.centerIn: parent; visible: pwShow.checked; text: "✓"; color: "white"; font.pixelSize: 10 }
+                                }
+                                Text {
+                                    text: I18n.tr("Show password")
+                                    color: pal.text
+                                    font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 12
+                                }
+                                TapHandler { onTapped: pwShow.checked = !pwShow.checked }
+                            }
+
+                            // buttons
+                            Item {
+                                width: parent.width; height: 26
+                                Row {
+                                    anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 8
+                                    SButton {
+                                        t: pal
+                                        text: I18n.tr("Cancel")
+                                        onClicked: wifiSheet.close()
+                                    }
+                                    Rectangle {     // default button (accent)
+                                        width: okLbl.implicitWidth + 26; height: 24; radius: 10
+                                        color: okMa.pressed ? Qt.darker(pal.accent, 1.15) : pal.accent
+                                        Text {
+                                            id: okLbl
+                                            anchors.centerIn: parent
+                                            text: wifiSheet.kind === "forget" ? I18n.tr("Forget") : I18n.tr("Join")
+                                            color: "white"
+                                            font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                                        }
+                                        MouseArea { id: okMa; anchors.fill: parent; onClicked: wifiSheet.accept() }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Silky WiFi pane end

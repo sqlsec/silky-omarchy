@@ -1,0 +1,14 @@
+[Unit]
+Description=Silky Qualcomm ath12k 5 GHz scan wedge auto-recovery
+Documentation=https://github.com/omacom/omarchy
+After=systemd-journald.service NetworkManager.service
+ConditionPathExists=/sys/bus/pci/drivers/ath12k_wifi7_pci
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/silky-ath12k-recovery --watch
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

@@ -1805,6 +1805,24 @@ index 2d7d4c8..42b17e8 100644
                                      rotation: img.wob
                                      transformOrigin: Item.Bottom
                                      shadowEnabled: true
+@@ -5623,5 +5798,6 @@ Scope {
+                 TextMetrics {
+                     id: menuTm
+                     font.pixelSize: Math.max(9, Math.round(13 * root.labelK))
+-                    font.family: root.fontForWeight(Font.Normal, root.fontFamily)
++                    font.family: root.fontForWeight(Font.DemiBold, root.fontFamily)
++                    font.weight: Font.DemiBold
+                 }
+                 function measureMenu() {
+@@ -6885,5 +7061,6 @@ Scope {
+                                          : (mi.off ? (menu.dark ? Qt.rgba(1, 1, 1, 0.30) : Qt.rgba(0, 0, 0, 0.28))
+                                                    : (menu.dark ? Qt.rgba(1, 1, 1, 0.92) : Qt.rgba(0, 0, 0, 0.86)))
+                                     font.pixelSize: Math.max(9, Math.round(13 * menu.k))
+-                                    font.family: root.fontForWeight(Font.Normal, root.fontFamily)
++                                    font.family: root.fontForWeight(Font.DemiBold, root.fontFamily)
++                                    font.weight: Font.DemiBold
+                                 }
+                                 MouseArea {
 diff --git i/MacShell/TouchWindowMove.qml w/MacShell/TouchWindowMove.qml
 new file mode 100644
 index 0000000..a063fbe

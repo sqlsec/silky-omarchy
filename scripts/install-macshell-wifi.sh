@@ -29,6 +29,8 @@ done
 
 if patch --dry-run --batch --silent --fuzz=0 --forward -p1 -d "$stage" < "$patch_file" >/dev/null 2>&1; then
   patch --batch --silent --fuzz=0 --forward -p1 -d "$stage" < "$patch_file"
+elif grep -q 'Silky WiFi model begin' "$stage/MacBar.qml" && grep -q 'assets/silky-wifi-scan.py' "$stage/MacBar.qml"; then
+  : # scripts/tune-wifi.py rebuilt the list and Settings page on top of this patch, so it is applied
 elif ! patch --dry-run --batch --silent --fuzz=0 --reverse -p1 -d "$stage" < "$patch_file" >/dev/null 2>&1; then
   printf 'MacShell Wi-Fi code differs from the supported baseline in %s. Review %s; no files changed.\n' "$shell_dir" "$patch_file" >&2
   exit 1

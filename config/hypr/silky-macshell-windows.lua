@@ -10,6 +10,34 @@ hl.window_rule({
   no_blur = true,
 })
 
+-- Firefox maps detached extension windows with a generic title first, so
+-- Omarchy's floating workspace can give Passbolt the standard app size.
+local function fit_passbolt_popup(window)
+  if window.class ~= "firefox" or not window.title:match("^Extension: %(Passbolt [^)]*%) %- Passbolt — Mozilla Firefox$") then
+    return
+  end
+
+  if not window.floating then
+    hl.dispatch(hl.dsp.window.float({ action = "on", window = window }))
+  end
+  if window.size.x ~= 380 or window.size.y > 400 then
+    hl.dispatch(hl.dsp.window.resize({
+      x = 380,
+      y = math.min(window.size.y, 400),
+      relative = false,
+      window = window,
+    }))
+  end
+end
+
+hl.on("window.open", fit_passbolt_popup)
+hl.on("window.title", fit_passbolt_popup)
+hl.on("config.reloaded", function()
+  for _, window in ipairs(hl.get_windows({ class = "firefox" })) do
+    fit_passbolt_popup(window)
+  end
+end)
+
 -- Silky Omarchy: MacShell's own windows (About This Mac, Settings, Clock, Installer: class org.quickshell).
 --
 -- * float on their own account: Omarchy's floating-workspace mode then leaves them alone. Otherwise it resizes every

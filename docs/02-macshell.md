@@ -95,7 +95,7 @@ hyprctl monitors
 
 顶栏、控制中心和「系统设置 → 无线局域网」共用扫描逻辑。打开入口时，若列表尚空会先立即读取 NetworkManager 缓存（约 50–100 ms）显示已连接和周边网络，再在后台按需刷新：距离上次扫描 30 秒内直接复用缓存，超过 30 秒或点击「再次扫描」时通过 D-Bus `RequestScan` 触发扫描并轮询 `LastScan`（最长等待 22 秒，覆盖 WCN7850 三频全扫约 16 秒的耗时；若被 NetworkManager 节流则直接返回最新缓存）。列表已有内容时，后台扫描仅在「网络」标题右侧轻量显示「正在搜索…」，不插入空行也不阻塞点击；仅在列表为空或扫描超时时显示居中提示，超时会保留已有列表并提示「无线局域网扫描未完成，请重试」。顶栏状态轮询和面板的列表轮询只读缓存，连接期间会暂停新的列表扫描。设置页会显示连接进度和失败提示。
 
-2026 年 11 月 22 日的本机故障中，wpa_supplicant 先记录到接入点信标丢失，随后 Qualcomm WCN7850 的 `ath12k_wifi7_pci` 报告发送队列清理失败，NetworkManager 也记录了 `ssid-not-found`。MacShell 原先在发出异步扫描请求后立即读取缓存，导致界面可能过早显示「未找到网络」。补丁修复面板这一行为。驱动、固件和接入点哪一方触发了底层故障仍待复现确认。
+2026 年 11 月 22 日的本机故障中，wpa_supplicant 先记录到接入点信标丢失，随后 Qualcomm WCN7850 的 `ath12k_wifi7_pci` 报告发送队列清理失败，NetworkManager 也记录了 `ssid-not-found`。MacShell 原先在发出异步扫描请求后立即读取缓存，导致界面可能过早显示「未找到网络」。本补丁修复面板这一行为；后续确认的 WCN7850 扫描随机 MAC 冲撞、`received scan start failure event` 25 秒卡死及 5 GHz 射频消失的系统级预防与自动恢复见 [18 · 5 GHz Wi-Fi 连接卡死与列表消失修复](18-ath12k-5ghz-wifi.md)。
 
 在仓库根目录运行，依赖 Bash、Python 3、NetworkManager 的 `nmcli`、systemd 的 `busctl` 和 GNU `patch`。在本机 MacShell 0.5.3 上验证。其他版本可先运行预检。
 
@@ -114,6 +114,23 @@ nmcli -f IN-USE,SIGNAL,FREQ device wifi list --rescan yes
 回滚时先移除 `~/.config/omarchy/hooks/post-update.d/silky-macshell-wifi.hook`，将安装时输出的 `~/.local/state/macshell/silky-backup-wifi.*` 中的 `MacBar.qml`、`MacDock.qml` 和 `lang/zh-CN.js` 恢复到对应位置，再移除首次安装新增的 `assets/silky-wifi-scan.py`，并执行 `qs -c MacShell ipc call macshell reload`。更新后使用匹配当时版本的备份。
 
 ## 控制中心
+
+### WiFi 和蓝牙按钮：图标开关，其余打开列表
+
+**效果**：控制中心左上角的两个宽按钮改成 macOS 的分区操作。只有点圆形图标才开关 WiFi 或蓝牙；点名称、副标题、空白处或右侧的 `›` 都会在控制中心里打开网络列表或设备列表，不再顺手把无线关掉。`›` 常驻显示，字形、字号、颜色和 22 px 右侧缩进与「显示器」「声音」两行一致。指针停在图标上时图标出现浅色圆形高亮、按下时回弹，整块按钮的悬停底色和按下缩放只在图标以外的区域出现。原来的标题「无线局域网」统一显示为 `WiFi`（各语言相同），蓝牙标题不变。
+
+单格尺寸的 WiFi / 蓝牙按钮只有图标，仍然整块点击即开关。触屏轻点按同样的区域划分处理。控制中心按钮目前没有键盘焦点，因此没有对应的键盘操作。
+
+**安装**：[`scripts/tune-control-center-network-tiles.py`](../scripts/tune-control-center-network-tiles.py) 由 `install-macshell-optimizations.sh` 自动调用，在暂存的 `MacBar.qml` 上给 `CCButton` 加 `splitIcon` 模式，并为 WiFi、蓝牙两个按钮打开。脚本可重复执行，已应用时直接跳过。只更新已安装的 MacShell 时：
+
+```bash
+python3 scripts/tune-control-center-network-tiles.py ~/.config/quickshell/MacShell/MacBar.qml
+qs ipc -c MacShell call macshell reload
+```
+
+**验证**：Hyprland 0.57、MacShell 0.5.3 实机验证：重载后日志没有新的 QML 报错。深色和浅色外观下截图确认标题为 `WiFi`，两枚 `›` 与「显示器」「声音」的箭头对齐。图标单独开关、点按钮其余区域打开列表需要手动验证：打开控制中心，点 WiFi 名称应进入网络列表且 `nmcli radio wifi` 仍为 `enabled`；点蓝牙圆形图标应切换 `bluetoothctl show` 的 `Powered`，再点一次恢复。
+
+**回滚**：从 `~/.local/state/macshell/MacBar.qml.bak.nettiles-*` 或 `install-macshell-optimizations.sh` 生成的 `silky-backup-*` 目录恢复 `~/.config/quickshell/MacShell/MacBar.qml`，从安装脚本里删掉 `tune-control-center-network-tiles.py` 一行，再执行 `qs ipc -c MacShell call macshell reload`。
 
 ### 蓝牙面板与设置页
 
@@ -156,6 +173,83 @@ python3 scripts/tune-bluetooth.py --install
 真实设备的配对、连接、断开、忽略和改名，以及电量显示，需要手动验证。打开「设置 → 蓝牙」，让设备进入配对模式后点「连接」，对应行依次显示「正在配对…」和「正在连接…」，成功后移到「我的设备」。键盘配对应弹出输入或键入配对码的面板。
 
 **回滚**：从 `~/.local/state/silky-omarchy/bluetooth-backup-*`（或安装脚本的 `silky-backup-*`）恢复 `MacBar.qml`、`MacDock.qml`、`lang/zh-CN.js`，删掉 `~/.config/quickshell/MacShell/SilkyBluetooth.qml`、`SilkyBtIcon.qml` 和 `assets/silky-bt-helper.py`，从 `install-macshell-optimizations.sh` 删掉 `tune-bluetooth.py` 一行和新增的 `managed_files` 条目，再执行 `qs -c MacShell ipc call macshell reload`。
+
+### Wi-Fi 面板与设置页
+
+**效果**：菜单栏和控制中心的 Wi-Fi 列表、「设置 → Wi-Fi」按 macOS 的分组和样式重做。
+
+- 菜单栏列表分为「已知网络」和「其他网络」。已知网络的每一行前有圆形徽标，正在使用的网络徽标为强调色，右侧显示锁。其他网络折叠在「其他网络 ›」一行后面，点开后展开；附近没有已知网络时自动展开。后台扫描时，这一行右侧显示「正在搜索…」。
+- 当前网络使用 WEP、WPA1（TKIP）或没有加密时，开关下方会出现「低安全性的网络… ⚠」或「不安全的网络… ⚠」，点击打开「设置 → Wi-Fi」。
+- 右键点击菜单栏的 Wi-Fi 图标（相当于 macOS 的 Option-click），会额外显示接口名称和硬件地址，并在当前网络下列出 IP 地址、路由器、MAC 地址、安全性、BSSID、频道（如 `149 (5 GHz, 40 MHz)`）、国家/地区代码、RSSI、噪声、Tx 速率、PHY 模式、MCS 索引和 NSS，每 2 秒刷新一次。左键点击仍打开普通列表，从控制中心打开的列表也不显示这些信息。这里不提供 `Alt` 点击：菜单栏没有键盘焦点，Wayland 的指针事件里也不带修饰键，MacShell 看不到 `Alt`；改由 Hyprland 记录按键状态的方案实测不稳定，已经撤掉。
+- 连接失败的原因显示在对应网络下，不再显示在列表底部。
+- 设置页顶部是带蓝色图标、说明和开关的卡片，下方是正在使用的网络，显示「已连接」，必要时显示黄色的「低安全性」或「不安全的网络」，右侧是锁、信号和「详细信息…」。
+- 「详细信息…」会打开带侧栏的网络设置窗口，与 macOS 相同，改动暂存在窗口里，点「好」时一起应用，点「取消」放弃：
+  - 网络本身（侧栏顶部的网络名称）：自动加入、私有 Wi-Fi 地址（系统默认、关闭、固定、轮换），以及连接时的 IP、路由器、BSSID、频道、RSSI 等链路信息。
+  - TCP/IP：「配置 IPv4」可选使用 DHCP、手动或关闭。选手动后可以填写 IP 地址、子网掩码和路由器；使用 DHCP 时显示租期剩余时间、「DHCP 续租」按钮和 DHCP 客户端 ID。「配置 IPv6」可选自动、仅本地链接或关闭，并显示 IPv6 地址。
+  - DNS：DNS 服务器和搜索域，用 `+` / `−` 增删。没有手动服务器时，灰色列出 DHCP 提供的服务器；手动添加的服务器会取代 DHCP 提供的服务器。
+  - 代理：自动代理配置（PAC 地址）、网页代理（HTTP）、安全网页代理（HTTPS）、SOCKS 代理，以及忽略代理的主机与域。
+  - 硬件：MAC 地址、硬件地址和 MTU（标准 1500 或自定）。
+  - 底部有「忽略此网络…」、「取消」和「好」。改动 IP、DNS、私有地址或 MTU 后，网络会重新连接一次。出错时，原因显示在按钮左侧，窗口保持打开。
+- 「已知网络」列出所有已保存的网络，不在附近的也会列出，但不显示信号。正在使用的网络前有 `✓`，每行右侧的 `⋯` 菜单提供连接或断开连接、详细信息…（每个已知网络都有）、自动加入（带勾选）和忽略此网络…。
+- 「其他网络」标题右侧在扫描时显示转圈。悬停在某一行上会出现「连接」按钮，触屏轻点一行也会显示，双击一行直接加入。加入加密网络时弹出密码面板，可以勾选「显示密码」。底部的「其他…」用于加入隐藏网络：输入网络名称，有密码时再输入密码。
+- 忽略网络前会先确认，确认后删除这个 NetworkManager 配置；如果正在使用，会先断开。
+
+这次修掉两个问题。一是已知网络原先按配置名称判断，本机配置名为 `hidden-2021`、SSID 为 `2021`，所以这个正在使用的网络一直不算已知网络，现在改按 SSID 匹配。二是原设置页里未保存的加密网络点「加入…」时调用了不存在的 `wifiJoin`，只会关掉窗口，现在改为弹出密码面板。Wi-Fi 标题按 macOS 26 的写法统一为「Wi-Fi」和「Wi-Fi 设置…」。
+
+**安装**：[`scripts/tune-wifi.py`](../scripts/tune-wifi.py) 由 `install-macshell-optimizations.sh` 自动调用，它依赖两样东西：已安装的 [Wi-Fi 扫描补丁](#无线局域网扫描与断线恢复)（`install-macshell-wifi.sh`），以及[蓝牙设置页](#蓝牙面板与设置页)提供的 `SBtSpinner`。没有扫描补丁时，安装脚本会跳过这一步并给出提示。脚本做以下几件事：
+
+- 把 [`config/macshell/wifi/`](../config/macshell/wifi/) 里的 `SilkyWifi.qml` 复制到 `~/.config/quickshell/MacShell/`，把 `silky-wifi-info.py`、`silky-wifi-conn.py` 和扩展后的 [`silky-wifi-scan.py`](../config/macshell/silky-wifi-scan.py) 复制到 `assets/`。扫描助手新增的 `K:` 行给出每个已保存配置的 UUID、名称、自动加入状态和 SSID，旧解析器会忽略这些行。
+- 在 `MacBar.qml` 中加入 `SilkyWifi` 对象，改为通过它解析扫描结果，给 `connectWifi` 增加 `hidden` 参数并记录出错的网络，给 Wi-Fi 图标加上右键，再用 `wifi-list.qml.in` 替换列表。
+- 在 `MacDock.qml` 中插入 `settings-components.qml.in` 里的 `SField`、`SChoice`、`SCheck` 三个控件，用 `settings-pane.qml.in`（其中引入 `network-details.qml.in`）替换 Wi-Fi 设置页，并补充中文词条。
+
+插入的段落带有 `Silky WiFi … begin/end` 标记，重复执行会更新到仓库中的版本。`install-macshell-wifi.sh` 能识别这些标记，`omarchy update` 后的钩子不会把它们当成冲突。只更新已安装的 MacShell 时：
+
+```bash
+python3 scripts/tune-wifi.py --check
+python3 scripts/tune-wifi.py --install
+```
+
+`--install` 会先把要改动的文件备份到 `~/.local/state/silky-omarchy/wifi-backup-*`，再执行 `macshell reload`。首次装上网络设置窗口后，如果日志报 `SField is not a type`，说明运行中的实例没有在重载时识别新的内联组件，需要重新登录，或先运行 `qs kill -c MacShell` 再运行 `macshell-start`。依赖 NetworkManager（`nmcli`、`busctl`）、`iw`，以及装有 Python 3 的 `/usr/bin/python3`。
+
+**实现与兼容性**：
+
+- 扫描仍然由原来的 `silky-wifi-scan.py` 完成，节奏不变：打开时读取缓存，超过 30 秒才请求新的扫描。`SilkyWifi.parseScan()` 负责分组和判断安全级别：没有加密为 open，WEP 或不含 WPA3 的 WPA1 / TKIP 为 weak，其余为 ok。
+- 详细信息由 `silky-wifi-info.py` 读取：`iw dev … link`、`iw dev … info`、`survey dump` 和 `iw reg get`，加上 NetworkManager 的地址、网关和 `PermHwAddress`。每次约 80 ms，只在 Option-click 列表或详细信息面板打开时每 2 秒读取一次。驱动不报告的字段会省略，例如部分网卡不提供噪声。
+- 自动加入对应 `connection.autoconnect`，忽略网络对应 `nmcli connection delete`，加入隐藏网络使用 `nmcli dev wifi connect … hidden yes`。
+- 网络设置窗口通过 `silky-wifi-conn.py get / set / renew` 读写：
+  - `get` 读取 NetworkManager 配置中的 `ipv4.*`、`ipv6.method`、DNS、`802-11-wireless.cloned-mac-address` 和 `mtu`，以及设备的实时地址和 DHCP 租期。
+  - `set` 先校验 IP 地址、掩码、DNS 和端口，再执行一次 `nmcli connection modify`。NetworkManager 拒绝时配置保持不变，并把原因返回给窗口。配置正在使用时，接着执行 `nmcli connection up` 让改动生效。
+  - 「DHCP 续租」就是重新连接一次，以便重新申请租约。
+- IPv6 DNS 服务器只在「配置 IPv6」为自动时写入；IPv6 为仅本地链接或关闭时，NetworkManager 不接受 IPv6 DNS，窗口会提示。
+- 代理不按网络区分，写入整个桌面共用的 `org.gnome.system.proxy`：GTK / GIO 程序、Chromium 系浏览器，以及勾选「使用系统代理设置」的 Firefox 会读取它。三种代理完全相同时，会保持 `use-same-proxy`。代理软件（例如本机 7897 端口的那个）可能会改写这些值。NetworkManager 自带的 `proxy.*` 需要 PacRunner，本机没有安装，所以不使用。
+- 没有 macOS 的 WINS 和 802.1X 页：本机不使用 WINS，企业级认证也不在这次范围内。
+- 已知限制：
+  - 没有 macOS 的「个人热点」分组，因为 NetworkManager 无法分辨某个接入点是不是你自己设备开的热点。
+  - 没有「启用 Wi-Fi 日志 / 创建诊断报告 / 打开无线诊断」这类菜单项，本机没有对应功能。
+  - 「询问是否加入网络」等设置项也没有加入。
+- Hyprland 没有给不带修饰键的右键绑定动作，所以右键点击能传到 MacShell。
+
+**验证**：2026-11-25 在 Hyprland 0.57、MacShell 0.5.3、NetworkManager、Qualcomm WCN7850（`ath12k`）上实机验证：
+
+- 新的 QML 先在独立引擎里编译通过，重载后日志里没有与 Wi-Fi 相关的警告。
+- `tune-wifi.py` 和 `tune-bluetooth.py` 重复执行均不改动文件，`install-macshell-wifi.sh --check` 通过。
+- 截图确认了设置页（当前网络「低安全性」、已知网络 `⋯`、其他网络）和 Option-click 菜单，Option-click 菜单是在代码里模拟打开的。网络设置窗口的五个页面也都截了图，显示的是实际值：DHCP、`192.168.250.135 / 255.255.255.0 / 192.168.250.254`、租期剩余时间、IPv6 本地链接地址、两个 DHCP 提供的 DNS 服务器、本机 `127.0.0.1:7897` 的三种代理和 PAC 地址、MTU。截图用的是 `grim -T`，按窗口抓取，不会抢走焦点。
+- 应用路径在一个临时的、未连接的配置上测试：一次写入手动 IPv4、IPv4 / IPv6 DNS、搜索域、固定私有地址、MTU 1400 和自动加入，用 `get` 读回全部一致；改回 DHCP 后也正确恢复。「IPv6 仅本地链接 + IPv6 DNS」这一组合按预期被拒绝，配置没有改动。测试后已删除这个配置。
+
+以下操作会改动当前的网络连接，需要手动验证：
+
+- 真实的右键点击：已在本机实机确认，右键打开带接口、硬件地址和链路详情的菜单。
+- 在正在使用的网络上点「好」应用改动、「DHCP 续租」，以及修改代理后浏览器的表现。
+- 加入加密网络、隐藏网络，输错密码时的提示。
+- 切换自动加入后，`nmcli -g connection.autoconnect connection show <名称>` 应随之改变。
+- 忽略网络后，`nmcli connection show` 中应不再出现该配置。
+
+**回滚**：
+
+1. 从 `~/.local/state/silky-omarchy/wifi-backup-*`（或安装脚本生成的 `silky-backup-*`）恢复 `MacBar.qml`、`MacDock.qml`、`lang/zh-CN.js` 和 `assets/silky-wifi-scan.py`。
+2. 删除 `~/.config/quickshell/MacShell/SilkyWifi.qml`、`assets/silky-wifi-info.py` 和 `assets/silky-wifi-conn.py`。需要恢复代理时，用 `gsettings set org.gnome.system.proxy …` 改回原值。
+3. 从 `install-macshell-optimizations.sh` 中删除 `tune-wifi.py` 这一段和新增的 `managed_files` 条目，再撤销 `install-macshell-wifi.sh` 中对 `Silky WiFi model begin` 的识别。
+4. 执行 `qs -c MacShell ipc call macshell reload`。
 
 ## 快速连点系统菜单
 
@@ -236,11 +330,11 @@ python3 scripts/install-macshell-status.py --check
 python3 scripts/install-macshell-status.py
 ```
 
-网速和温度每 1.5 秒采样，面板显示最近约 1 分钟的趋势。顶栏网速只占一行，与温度同为 12 px `DemiBold`：显示当前较忙的方向和对应箭头（如 `↓ 26K/s`），面板里仍同时显示上传和下载，读屏描述也包含两个方向。另一个方向要明显超过（1.5 倍且大于 1 KB/s）才切换，接近持平时箭头不会每次采样都翻转。按钮按 `↓888K/s` 预留宽度，箭头紧贴数字、整体右对齐，空余落在箭头左侧，读数变化时托盘不会移动；超过 100 MB/s 时才临时变宽。同时请求等宽数字（`tnum`），但本机缺少 `Open Runde`，回退的苹方不支持该特性。此前是上下两行 10 px 的上传与下载，高约 22 px，比其他图标高出一截。箭头和数字都跟随顶栏文字颜色，箭头笔画加粗到与 `DemiBold` 数字相当，上传与下载的青、紫配色只留在面板里。温度计图标从 14 px 加到 16 px，笔画加粗并填实液泡，与 Wi-Fi、搜索等实心图标一样重，和数字之间约 3.5 px，温度按两位数预留宽度。网速、温度两个按钮按字形实际可见范围两侧各留约 6 px，扣除箭头和温度计画布自带的空白，与相邻图标的间距和 Wi-Fi、搜索之间一致（约 8–9 px）。切换规则在 [`SilkyStatusButton.qml`](../config/macshell/status/SilkyStatusButton.qml) 的 `lead`。点击网速可查看应用流量排行和本机 IPv4 / IPv6，点击地址可复制。应用排行使用当前用户可见、采样时仍存在的 TCP 套接字，UDP 和 QUIC 不计入。代理转发的流量可能显示在代理进程名下。
+网速和温度每 1.5 秒采样，面板显示最近约 1 分钟的趋势。顶栏网速只占一行，与温度同为 12 px `DemiBold`：显示当前较忙的方向和对应箭头（如 `↓ 26K/s`），面板里仍同时显示上传和下载，读屏描述也包含两个方向。另一个方向要明显超过（1.5 倍且大于 1 KB/s）才切换，接近持平时箭头不会每次采样都翻转。按钮按 `↓888K/s` 预留宽度，箭头紧贴数字、整体右对齐，空余落在箭头左侧，读数变化时托盘不会移动；超过 100 MB/s 时才临时变宽。同时请求等宽数字（`tnum`），但本机缺少 `Open Runde`，回退的苹方不支持该特性。此前是上下两行 10 px 的上传与下载，高约 22 px，比其他图标高出一截。菜单栏下载箭头沿用网络面板的青色，上传箭头沿用紫色，并随深浅背景切换。速率数字继续随菜单栏取色。温度计图标从 14 px 加到 16 px，笔画加粗并填实液泡，与 Wi-Fi、搜索等实心图标一样重，和数字之间约 3.5 px，温度按两位数预留宽度。网速、温度两个按钮按字形实际可见范围两侧各留约 6 px，扣除箭头和温度计画布自带的空白，与相邻图标的间距和 Wi-Fi、搜索之间一致（约 8–9 px）。切换规则在 [`SilkyStatusButton.qml`](../config/macshell/status/SilkyStatusButton.qml) 的 `lead`。点击网速可查看应用流量排行和本机 IPv4 / IPv6，点击地址可复制。应用排行使用当前用户可见、采样时仍存在的 TCP 套接字，UDP 和 QUIC 不计入。代理转发的流量可能显示在代理进程名下。
 
 点击温度可查看实时 CPU 占用最高的 10 个进程，以及显卡、固态硬盘、无线网卡和风扇等硬件概览。硬件概览下方显示整机 CPU、内存和系统盘（`/`）的占用率。进程占用按相邻两次采样的 CPU 时间增量计算，100% 表示占满一个逻辑核心。点击电池图标可查看供电来源、功率、电压、电量、容量、循环次数和健康度，内容随硬件暴露的字段变化。MacShell 运行时每 3 秒采样一次，面板中部的「整机功耗」曲线保留最近约 5 分钟，关闭面板后继续采样。只有电池供电时才能测到整机功耗：此时电池放电功率就是整机的耗电。接上电源后，Yoga Slim 7x（Snapdragon X，`qcom-battmgr`）既不报告适配器输入功率（USB-C 端口 `voltage_now` 为 0，`2.00 A` 只是 PD 协商值），也不报告整机负载（不充电时电池 `power_now` 为 0），所以接电源期间曲线留空，「供电来源」里的「整机功耗」显示「接电源时不可读」。充电或放电功率改为数值，放在「电池」分组的「充电功率 / 放电功率 / 电池功率」一行。健康度是电池计量芯片给出的满充容量 `energy_full` 除以设计容量 `energy_full_design`。芯片会不定期重新校准满充容量，健康度可能一次跳几个百分点；长期开着充电上限时校准更少、跳得更明显。为了能回看变化，顶栏每 10 分钟检查一次，每天和满充容量变化时向 `~/.local/state/silky/battery-health.csv` 追加一行（时间、型号、满充/设计容量、健康度、循环次数）。Yoga Slim 7 14Q8X9 可在电池面板拖动滑条设置 55%–100% 的充电上限，点「应用」后通过系统授权写入并校验内核回读。右键电池图标可以切换系统提供的电源模式，所选模式由 Omarchy 按外接电源和电池供电分别记忆。左键打开的「电源与电池」面板在「充电上限」下方也有「电源模式」卡片：省电、平衡、高性能三段分段控件，当前模式落在凸起的滑块上，点一下即切换（与右键面板调用同一个 `omarchy-powerprofiles-set autodetect`，同样按供电来源记忆），切换中标题旁显示「正在应用…」，失败时卡片内提示。原先「供电来源」分组里只读的「电源模式」一行随之隐藏，系统不提供可选模式时才保留。右键面板底部还有「显示电量百分比」开关，关掉后电池里只显示电量条，不显示数字；它就是 MacShell 设置里的 `showBatteryPercent`，会保存到 `~/.config/macbar/settings.json`。
 
-托盘图标统一成和菜单栏其他图标一样的单色线条（随右侧壁纸亮度切换）：按托盘项的 id 或标题换成 `SilkyStatusIcon` 里手绘的图标，目前覆盖 Antigravity（拱形 A 轮廓线条）、Chrome、ChatGPT、Clippy、Netcatty、Remmina、Clash Verge、网易云音乐和微信（id `wechat`，两个叠在一起的对话气泡）。其他应用保持原图标；需要提醒（`NeedsAttention`）时也显示原图标。查托盘 id：`busctl --user get-property <服务> /StatusNotifierItem org.kde.StatusNotifierItem Id`。装完后执行 `qs -c MacShell ipc call macshell reload` 让 MacShell 重新加载。
+托盘图标统一成和菜单栏其他图标一样的单色线条（随右侧壁纸亮度切换）：按托盘项的 id 或标题换成 `SilkyStatusIcon` 里手绘的图标，目前覆盖 Antigravity（拱形 A 轮廓线条）、Chrome、ChatGPT、Clippy、Netcatty、Remmina、Clash Verge、网易云音乐和微信（id `wechat`，两个叠在一起的对话气泡）。其他未定制的应用沿用原图标。查托盘 id：`busctl --user get-property <服务> /StatusNotifierItem org.kde.StatusNotifierItem Id`。装完后执行 `qs -c MacShell ipc call macshell reload` 让 MacShell 重新加载。
 
 这三个监控面板（以及右键电池的电源模式面板）与控制中心保持同一套动效和材质：宽度收窄到 `356 px`（与通知中心小组件一致；右键电源模式为 `272 px`），打开时以 `OutBack`（520 ms，overshoot 1.5）从顶部 94% 弹性放大到 100% 并伴随失焦变清晰，关闭时以 `OutCubic`（150 ms）快速收起并锁存关闭前的面板内容与水平锚点；面板通过 `PopGlassCtx` 的 `silkyKind: 2` 复用控制中心同款 `silky-dock-glass` 液态玻璃（圆角 26 px），合成器接管时隐藏外层 `MenuBorder` 与不透明底色遮罩，内部信息卡片也去掉描边，仅以柔和半透明底色分层。回退时在 `silky-dock-glass` 未接管的情况下仍自动显示原有底色与 `MenuBorder`。
 
@@ -260,7 +354,7 @@ python3 scripts/install-macshell-status.py
 | 系统 | CPU、内存、磁盘进度条（按负载四段着色） | 三个圆环和用量（按负载四段着色） | 再加最近 5 分钟 CPU 曲线、运行时间、负载 | `/proc`、`statvfs("/")` |
 | AI 用量 | Claude、Codex、Antigravity 各一行：左侧图标，右侧上排名称、下排并列 `5h` 与 `周` 两个剩余百分比和迷你进度条（各自按剩余额度四段着色；当周额度为 `0%` 时 `5h` 数值与进度条自动置灰弱化） | 三栏，结构相同：图标和名称、主数字、说明、两行明细 | 再加每小时 tokens（Claude、Codex 叠加）和 Codex 5 小时 / 本周额度条与重置时间 | 见下文「AI 用量」 |
 
-通知和小组件各自是一张独立的玻璃卡片。每次打开面板都从列表顶部显示。有通知时，「全部清除」居中放在通知列表和小组件之间，随列表滚动。勿扰入口在控制中心的专注模式。卡片沿用控制中心的模糊、折射和细亮边，接近 Wi‑Fi 面板的通透度。卡片只额外叠一层轻着色，深色外观为 10%，浅色外观为 16%，便于辨认文字。天气卡上半部叠一层淡淡的天色，中、大尺寸把天气描述和最高、最低温合成一行。
+通知和小组件各自是一张独立的玻璃卡片。每次打开面板都从列表顶部显示。有通知时，「全部清除」居中放在通知列表和小组件之间，随列表滚动，并与「还有 N 个应用的通知」统一采用 26 px 圆角液态玻璃胶囊。勿扰入口在控制中心的专注模式。卡片沿用控制中心的模糊、折射和细亮边；小组件卡片保留轻薄着色（深色 10%、浅色 16%），而承载密集文字的通知卡片与操作胶囊叠加更沉稳的纵向渐变阅读衬底（深色 42%–48%、浅色 46%–54%，右上角实时横幅同步叠加 40%–46% / 44%–52%），压在亮色网页或高饱和图标上方时依然清晰可读。天气卡上半部叠一层淡淡的天色，中、大尺寸把天气描述和最高、最低温合成一行。
 
 股票颜色默认中文界面红涨绿跌、英文界面绿涨红跌，可在右键菜单里切换。走势图在交易时段画当天分时线，虚线为昨收；取不到分时数据时改画近一月日线。关注列表最多 12 项，每项可以是：
 
@@ -279,13 +373,15 @@ python3 scripts/install-macshell-status.py
 
 通知很多时，通知区和小组件之间原来是两个各自滚动、边缘硬切的区域，衔接生硬。现在：
 
-- **按应用堆叠**（同 macOS）：同一应用的通知叠成一摞，只显示最新一条，下面露出一到两层「纸边」（不额外放置右下角下拉箭头按钮）。点击堆叠中的卡片默认先展开这一摞；展开后上方出现应用名、「收起」和「✕」（清除这个应用的全部通知）。点击单条通知或已展开的通知正文时卡片会轻微收缩，随后执行应用提供的默认动作并移除这一条。点击卡片的关闭按钮、应用的「✕」或「全部清除」时，对应卡片会羽化消失。没有默认动作时，优先切到匹配的应用窗口，也可通过匹配的桌面入口启动应用。开启减少动态效果时，点击和清除均立即执行。
+- **按应用堆叠**（同 macOS）：同一应用的通知叠成一摞，只显示最新一条，下面按近宽远窄的透视比例露出 1–2 层玻璃叠边（`5.5 px` / `10.5 px`，不额外放置右下角下拉箭头按钮）。点击堆叠中的卡片默认先展开这一摞；展开后上方出现带应用小图标的应用名胶囊、「收起」和矢量关闭图标胶囊（清除这个应用的全部通知）。点击单条通知或已展开的通知正文时卡片会轻微收缩，随后执行应用提供的默认动作并移除这一条。点击卡片的关闭按钮、应用的关闭按钮或「全部清除」时，对应卡片会羽化消失。没有默认动作时，优先切到匹配的应用窗口，也可通过匹配的桌面入口启动应用。开启减少动态效果时，点击和清除均立即执行。
 - **只显示最近 3 个应用**：更早的应用收进「还有 N 个应用的通知」，点开后可「收起」。关闭面板时恢复折叠。
 - **一个滚动区**：通知和小组件一起滚动，内容区在当前屏幕的 Dock 上方结束。还有内容时，底边会渐隐。滚到末尾可完整看到最后一个小组件和「编辑小组件」。「没有通知」在小组件滚上来时隐藏。
 
 实现：通知列表按 `notifPop.silkyPlan` 分组，用 `silkyY()` 计算带动画的位置。通知和 `SilkyWidgetDeck` 共用 `Flickable`，可用高度根据当前屏幕的 Dock 高度和底部边距计算。普通模糊模式下，silky-dock-glass 0.5.2 起将玻璃裁切在滚动区内，让部分露出的卡片也保留模糊和折射，并和内容一起在底部渐隐。较早版本及 MacShell 自带液态玻璃按卡片可见比例淡出。
 
 展开 / 收起时不再重影。最初的版本里，被折叠的卡片和最新那张叠在同一位置、按同样节奏淡入淡出，而且每张卡片的目标位置取自邻居「正在动画中」的高度，目标一直在变、动画反复重启，于是多张半透明卡片叠在一起。现在：布局只用每张卡片的最终高度（`silkyFinalH`，含应用标题和纸边的最终值），每张卡片只朝一个固定目标滑动一次；折叠卡片的不透明度是过渡进度的三次方，滑出最新那张之后才显现，收起时在滑回之前就消失；每个应用最新那张始终画在它的折叠卡片上面；应用标题、纸边、「还有 N 个应用」按钮和小组件区都以同样的 420 ms 曲线移动。清除动画只给视口内受影响的卡片加羽化遮罩，结束后列表和小组件平滑补位。
+
+堆叠玻璃叠边由着色器 [`silky-notification-stack.frag`](../config/macshell/widgets/silky-notification-stack.frag)（用 `qsb` 编译为 `.frag.qsb`）在像素级做圆角矩形布尔减法绘制：只渲染露在主卡片和上一层叠边外部的底边与左右圆角下弧（第一层缩进 `10.5 px`、露出 `5.5 px`，第二层缩进 `20 px`、总露出 `10.5 px`），绝不穿透半透明的主卡片玻璃，也不在两层之间产生双边框穿帮；叠边采用与主卡片等效遮光率匹配的半透明基调（在深色与纯白背景上都能自然衔接主卡片明度），并在接缝处叠加细微接触遮蔽、底弧内缘 1 px 连续镜面细光（向左右两侧弯入上卡阴影时平滑渐隐，消除拐角亮斑）、外缘发丝轮廓（纯白背景上保持清晰边界）与悬停微探出反馈（不改变布局高度），跟随 `notifPopGlass.ctx.dark` 切换深浅配色。
 
 用示例通知检查（不发真实通知，只加到列表里，`undemo` 只删除带 `[Silky demo]` 标记的条目）：
 
@@ -308,13 +404,25 @@ qs -c MacShell ipc call silkynotif undemo
 
 在通知中心点击微信正文时，MacShell 会先尝试调用微信提供的默认动作（兼容已失效或不含 `actions` 的通知对象，避免 `TypeError` 中断跳转）。微信缩到托盘时，如果默认动作没有显示窗口，MacShell 会从托盘恢复微信；找到微信主窗口后由 Hyprland 聚焦并置顶（`alter_zorder` `top`），避免浮动布局下被其他窗口遮挡。通知如果没有会话动作，会打开微信主窗口。原先的窗口查找在微信缩到托盘后找不到主窗口，普通激活请求也会受到防抢焦点规则限制。 托盘恢复使用 [Quickshell 的托盘激活接口](https://quickshell.org/docs/v0.3.2/types/Quickshell.Services.SystemTray/SystemTrayItem/)。
 
-通知中心打开时，已有横幅立即收起，通知记录留在列表里。此时到达的所有通知（含紧急通知）直接进入列表。关上面板后，新通知恢复按平时的设置显示横幅。多个显示器共用通知中心状态，其他屏幕上的菜单不会提前恢复横幅。通知卡片（含横幅与通知中心列表）左侧的应用图标改为相对整张卡片垂直居中（`NotifBody` 图标容器由固定 `y: 15` 改为 `anchors.verticalCenter: parent.verticalCenter`），多行通知不再偏在顶部。
+通知中心打开时，已有横幅立即收起，通知记录留在列表里。此时到达的所有通知（含紧急通知）直接进入列表。关上面板后，新通知恢复按平时的设置显示横幅。多个显示器共用通知中心状态，其他屏幕上的菜单不会提前恢复横幅。通知卡片（含横幅与通知中心列表）左侧的应用图标与右侧文字区均相对卡片垂直居中；当应用名与通知标题相同时自动收起重复眉栏，眉栏（`12 px DemiBold`）、主标题（`14 px Bold`）、正文（`13 px Medium`）与右上角时间（`12 px Medium`）拉开清晰色阶，正文行宽延伸至卡片右缘留白处（仅首行避让右上角时间或关闭按钮）。
 
 从仓库根目录运行 `python3 scripts/macshell_notification_center.py --install`。脚本备份并更新 `~/.config/quickshell/MacShell/MacBar.qml`，随后重载 MacShell。它将维护脚本安装到 `~/.local/libexec/silky-macshell-notifications`，启用同名 systemd 用户路径单元和服务。系统更新或 MacShell 自身更新覆盖文件时，路径单元会重新应用修复。用户服务启动时也会检查。可用 `--check` 检查新版本的结构是否兼容，安装脚本遇到未知结构时会保留原文件并报错。
 
 MacShell 0.5.3 上可关闭微信主窗口使其缩回托盘，然后点击微信通知测试。打开通知中心前发送一条测试通知，打开后再发一条紧急通知，确认两条各出现一次。关闭面板后再发通知，确认横幅恢复。查看更新后自动恢复的记录可运行 `journalctl --user -u silky-macshell-notifications.service`。
 
 回滚时，先运行 `systemctl --user disable --now silky-macshell-notifications.path silky-macshell-notifications.service`。如果首次安装后没有其他 MacBar 修改，恢复首次安装时打印的 `~/.local/state/macshell/MacBar.qml.bak.notifications-*`，再运行 `qs -c MacShell ipc call macshell reload`。有后续改动时，先将备份与当前文件对照，只撤销需要回滚的通知中心改动。
+
+### 微信托盘唤醒
+
+MacShell 0.5.3 的菜单栏中，左键点击微信托盘图标，或右键选择「显示」，都会将微信主窗口切到前台。已存在的窗口由 Hyprland 聚焦并提升；最小化到 Dock 的窗口沿用 Dock 的恢复流程；关闭到托盘后先发送微信原有动作，再等待主窗口出现。这台机器上的原生 Wayland 微信 4.1.13.29 在主窗口仍存在时，单独发送托盘激活或「显示」未能切换焦点。
+
+安装和回滚沿用上面的 [通知中心修复](#微信通知跳转与横幅)。验证时先切到另一窗口，再分别从菜单栏左键点击微信和右键选择「显示」。之后将微信关闭到托盘，再重复验证。本机通过模拟鼠标点击验证了主窗口已打开和已关闭到托盘时的两个入口，也验证了从 Dock 最小化后可用托盘左键恢复。
+
+### 托盘左键操作
+
+托盘左键默认打开应用。MacShell 优先聚焦或恢复与托盘身份匹配的现有窗口，聚焦时临时关闭 Hyprland 光标跳转，让鼠标留在当前托盘图标上（Dock 栏点击切换或恢复窗口同样通过 [tune-dock-focus-cursor.py](../scripts/tune-dock-focus-cursor.py) 保持光标停留在图标上）；点击托盘图标时会显示与 Wi-Fi 等状态按钮一致的圆角底板按压与短时高亮反馈；窗口收起时，执行顶级菜单中明确的「打开」或「显示」动作，也可使用匹配的桌面启动项。只有菜单可用时，仍可从菜单操作。右键直接打开原菜单。LocalSend 无须单独配置。Clash Verge 的「仪表盘」和 Chrome、ChatGPT 共用的托盘 ID 沿用专门的识别规则。Claude 的单色星芒随背景深浅切换。
+
+从仓库根目录运行 `python3 scripts/macshell_notification_center.py --install` 应用点击行为，再运行 `python3 scripts/install-macshell-status.py` 安装状态图标和网络配色，最后运行 `qs -c MacShell ipc call macshell reload`。在 MacShell 0.5.3 的 Wayland 会话上，用 LocalSend 分别验证窗口已打开和仅在托盘时的左键操作，再右键检查原菜单。点击行为沿用[通知中心修复](#微信通知跳转与横幅)的备份和回滚流程。外观可从先前版本重新安装状态组件后重载。
 
 ### 通知横幅入场清晰度
 
@@ -351,7 +459,7 @@ qs -c MacShell ipc call macshell reload
 
 ### 屏幕使用时间怎么算
 
-数据进程每 5 秒通过 Hyprland 套接字读一次当前聚焦窗口的 `class`，把这段时间记到该应用和当前小时上。以下时间不计：连续 2 分钟没有键鼠操作（Quickshell `IdleMonitor`，视频播放器等发出的空闲抑制视为在用）、锁屏（`hyprlock` / `swaylock` / `gtklock` 在运行）、休眠。记录按天保存在 `~/.local/state/silky/screen-time/YYYY-MM-DD.json`，每分钟写一次，保留 30 天。应用名和图标按 `class` 匹配桌面入口（`DesktopEntries.heuristicLookup`），匹配不到时显示 `class`。只从安装后开始统计，MacShell 没运行时也不统计。
+数据进程每 5 秒通过 Hyprland 套接字读一次当前聚焦窗口的 `class`，把这段时间记到该应用和当前小时上。以下时间不计：连续 2 分钟没有键鼠操作（Quickshell `IdleMonitor`，视频播放器等发出的空闲抑制视为在用）、锁屏（`hyprlock` / `swaylock` / `gtklock` 在运行）、休眠。记录按天保存在 `~/.local/state/silky/screen-time/YYYY-MM-DD.json`，每分钟写一次，保留 30 天。应用名和图标按 `class` 匹配桌面入口（`DesktopEntries.heuristicLookup`），匹配不到时显示 `class`。只从安装后开始统计，MacShell 没运行时也不统计。大卡片下总时长和「比昨天」改用整行宽度，`small` / `medium` 下配合 `Text.HorizontalFit` 自适应缩小字号，避免中文「X 小时 Y 分」在 150 px 宽度下被省略号截断而漏掉「分」（已在离屏预览中验证三种尺寸）。
 
 ### AI 用量
 
@@ -540,6 +648,12 @@ Hyprland 插件接管 Dock 时，应用右键菜单和 Dock 共用实时折射�
 
 从仓库根目录运行 `./scripts/install-dock-glass-plugin.sh` 后重载 MacShell。右键点击 Dock 应用，在窗口和壁纸的交界处检查菜单能否显示背后的折射和模糊，并点击菜单外部确认收起。要单独回滚菜单，恢复安装前备份中的 `MacDock.qml` 和 `DockGlassPanel.qml`，再重载 MacShell。
 
+### Dock 右键菜单文字加粗
+
+Dock 图标右键菜单项在深浅色玻璃底板上原本使用常规字重（`Font.Normal`），中文字体和细字号叠加后显得偏细。现已将 `MacDock.qml`（收进 [`patches/macshell-0.5.2-silky.patch`](../patches/macshell-0.5.2-silky.patch)）中菜单项文本及宽度测量器 `menuTm` 统一调整为 `Font.DemiBold`（`font.family: root.fontForWeight(Font.DemiBold, root.fontFamily)` 与 `font.weight: Font.DemiBold`），使西文与中文回退字体均以半粗体渲染，并按加粗后的实际宽度计算菜单宽度避免文字截断。
+
+应用补丁或重跑 `./scripts/install-macshell-optimizations.sh` 后，Quickshell 会自动热重载（也可从日志 `~/.local/state/macshell/MacShell.log` 确认 `Configuration Loaded`）。右键点击 Dock 上任意应用或「文件」图标，检查菜单文字是否清晰加粗且无省略截断。回滚时将 `MacDock.qml` 中 `menuTm` 与菜单项 `Text` 的 `Font.DemiBold` 改回 `Font.Normal` 并移除 `font.weight` 行即可。
+
 ### 菜单和面板沿用控制中心的玻璃
 
 菜单和面板的默认折射、色散及边缘高光与控制中心气泡一致，面内多保留少量模糊和着色，让设置项和通知文字在复杂背景上易读。合成器接管菜单、Wi‑Fi、蓝牙、音量和通知中心的底板时，这些弹层只显示合成器的细亮边，下拉菜单也会隐藏原有的深色罩层。安装通知小组件后，通知中心使用控制中心材质的独立卡片。
@@ -654,6 +768,16 @@ pgrep -af '^qs -c MacShell'
 hyprctl getoption input:natural_scroll
 ```
 
+## 屏幕录制先选屏幕或区域
+
+控制中心的「录制屏幕」、苹果菜单的「Start Screen Recording」和 IPC 入口原来一点就录当前聚焦的整块屏幕。现在会先出现 `slurp` 选择层：单击某块显示器录整屏，拖出矩形录该区域，`Esc` 或右键取消，不会开始录制。控制中心会先收起，避免挡在选择层下面。录制中再点按钮或菜单栏里的「Stop」结束，文件仍保存到 `~/Videos/Screen-Recording-时间.mp4`。
+
+- 实现：[`scripts/tune-screen-recording-picker.py`](../scripts/tune-screen-recording-picker.py)，由 `install-macshell-optimizations.sh` 改写 `MacBar.qml`。整屏用 `wf-recorder -o`，区域用 `wf-recorder -g`。依赖 `slurp` 与 `wf-recorder`（MacShell 安装器已列出）。`slurp -o` 会先读完标准输入里的预设选框，而 Quickshell 的子进程标准输入不会关闭，所以要用 `</dev/null` 启动，否则选择层一直不出现，按钮看起来没反应。
+- 限制：区域按左上角所在的显示器裁切，跨屏拖选只录该屏内的部分；宽高按逻辑像素取偶数，小于 16 px 的选择被忽略。需要声音、摄像头或 GPU 编码时用 Omarchy 自带的 `Alt+Print` 录屏菜单。
+- 单独应用：备份 `~/.config/quickshell/MacShell/MacBar.qml` 后运行 `python3 scripts/tune-screen-recording-picker.py ~/.config/quickshell/MacShell/MacBar.qml`，再执行 `qs ipc -c MacShell call macshell reload`。
+- 验证：MacShell 0.5.3、Hyprland Wayland，内屏 `eDP-1` 与外接 `DP-1` 均为 2× 缩放。隔离测试中 `wf-recorder -g "100,100 600x400"` 输出 1200×800，外接屏负坐标区域输出 1600×1000，`-o eDP-1` 输出 2944×1840；重载后无 QML 错误。选择层的单击、拖选和取消待实机点击确认。
+- 回滚：恢复备份的 `MacBar.qml`（单独应用时在 `~/.local/state/macshell/silky-backup-recpick-*`），从安装脚本删去该 tuner 行，然后重载 MacShell。
+
 ## 截图要按两次、还会再弹出一次
 
 Omarchy 把 `PRINT` 绑定到 omasnap，MacShell 的 `macshell.lua` 又把同一个键绑定到自己的区域截图。按一次键两个截图界面同时启动、互相取消：第一次看起来没反应，接着又弹出另一个截图界面。
@@ -728,6 +852,30 @@ patch="$PWD/patches/omasnap-1.26.2-zh-scroll-shortcut.patch"
 ```
 
 按 `PrtSc` 圈选后，选区底边显示常规工具栏。离屏测试覆盖点击原按钮位置及用 `Shift+S` 打开当前区域的滚动面板。在 Hyprland 0.57.2 的 2 倍缩放会话中，也用模拟键盘输入验证了已安装版本进入滚动面板。回滚时恢复 `~/.local/bin/omasnap.pre-scroll-shortcut` 到 `~/.local/bin/omasnap`，并用 `git -C "$src" apply -R "$patch"` 撤销源码补丁。
+
+## 截图圈选松手后画面变虚
+
+在 2 倍缩放屏上用触控板圈选，松手进入标注界面的一瞬间，选区内的文字会突然变软。指针坐标带小数（如 `100.37` 逻辑像素），选区边缘落在两个物理像素之间。编辑界面按向外取整裁出多一列或一行的原图，再平滑缩回显示尺寸，并画在半像素位置上，整块选区因此被重新插值。保存和复制的结果不受影响，只是屏幕上看起来糊了一下。
+
+现在圈选时把选区四边吸附到截图源的物理像素网格（2 倍缩放下为 0.5 逻辑像素一格），从拖动开始就生效，松手后选区内像素按 1:1 显示。`R` 恢复上次区域等其他进入编辑的区域路径也走同一套吸附。
+
+[选区像素对齐补丁](../patches/omasnap-1.26.2-zh-selection-snap.patch)适用于已打上前面各补丁的 Omasnap 1.26.2 中文源码（`6150151`），构建依赖同上。本机没有安装 `ninja` 或 Qt Linguist 时，可以把 `ninja` 与 `qt6-tools` 软件包解包到临时目录，构建时用 `-DCMAKE_MAKE_PROGRAM` 和 `-DLRELEASE` 指向它们。从 Silky Omarchy 仓库根目录运行，下一次截图时生效。
+
+```bash
+src="$HOME/.local/src/omasnap-zh"
+patch="$PWD/patches/omasnap-1.26.2-zh-selection-snap.patch"
+(
+  set -e
+  if ! git -C "$src" apply -R --check "$patch" 2>/dev/null; then
+    git -C "$src" apply "$patch"
+  fi
+  "$src/bin/test"
+  cp -an "$HOME/.local/bin/omasnap" "$HOME/.local/bin/omasnap.pre-selection-snap"
+  install -m 755 "$src/build/omasnap" "$HOME/.local/bin/omasnap"
+)
+```
+
+验证：按 `PrtSc` 用触控板慢慢圈选一段小字号文字后松手，选区内文字应和松手前一样清晰，没有一闪变软。离屏测试新增了 2 倍缩放下的小数坐标拖选，确认四边都落在物理像素上，原有全部测试通过。实机效果待在 Hyprland 2 倍缩放会话中目测确认。限制：编辑界面里拖动裁切手柄仍跟随指针的小数位置，裁切后的预览在 2 倍缩放下可能仍有轻微插值。回滚时恢复 `~/.local/bin/omasnap.pre-selection-snap` 到 `~/.local/bin/omasnap`，并用 `git -C "$src" apply -R "$patch"` 撤销源码补丁。
 
 ## 独立截图贴图
 
@@ -816,6 +964,12 @@ o.window("^(org\\.quickshell)$", { float = true, center = true, border_size = 0 
 验证方法：用 `wf-recorder` 以 60 fps 录下打开过程，逐帧查看边缘。
 
 注意：规则只对新创建的窗口生效，修改后需要重启 MacShell 一次。
+
+## Firefox 的 Passbolt 弹窗尺寸
+
+在浮动工作区，从网页表单打开 Passbolt 时，Firefox 会先用通用标题创建独立窗口。Omarchy 此时会套用普通应用窗口的尺寸，导致登录表单右侧和底部出现大片空白。[窗口配置](../config/hypr/silky-macshell-windows.lua)等到 Firefox 报出 Passbolt 的专用标题，再按扩展请求的尺寸将弹窗收至 380 × 400 逻辑像素。
+
+从仓库根目录运行 `./scripts/install-macshell-optimizations.sh`，再运行 `hyprctl reload`。在 Hyprland 0.57.2 的 Wayland 会话中，用 Firefox 160.0.1、Passbolt 5.18.0 和 200% 屏幕缩放从网页表单复测，弹窗从 942 × 626 缩到 380 × 400。进入未解锁的 Passbolt 表单即可检查窗口尺寸。回滚时从安装器的 `~/.local/state/macshell/silky-backup-*/settings/` 恢复 `silky-macshell-windows.lua`，再重载 Hyprland。
 
 ## 打开窗口时壁纸闪现
 
@@ -930,6 +1084,26 @@ Omarchy 移除 Nautilus 并将目录默认应用切换为 Folio 后，旧的 Doc
 
 只修复这三个设置时可运行 `python3 scripts/migrate-macshell-files.py`。更新后执行 `hyprctl reload` 和 `qs -c MacShell ipc call macshell reload`。点击 Dock 中文件图标应打开 Folio，再点击应激活已有窗口。也可用 `Super+Shift+F` 验证快捷键。若已重新安装 Nautilus 并要恢复旧设置，将脚本打印的 `.bak.folio.*` 文件复制回原位，再重载 Hyprland 和 MacShell。
 
+### 点 Dock 图标看不到窗口或先切到别的窗口
+
+两种情况会让 Dock 点击落空。
+
+- **微信点了不出来**：浮动工作区上，对已浮动的窗口按 `Super+O`，Omarchy 的弹出脚本会切换浮动状态，把窗口变成平铺，固定也随之失效。Hyprland 总把平铺窗口画在浮动窗口下面，Dock 聚焦了微信，但它被其他窗口盖住。现在 Dock 聚焦前调用 [`o.silky_reveal_window`](../config/hypr/silky-shortcuts.lua)：浮动工作区上的平铺窗口被浮动窗口遮挡时，重新浮动到菜单栏下方，恢复 `omarchy-mode-floated` 标签并去掉残留的 `pop` 标签。没被遮挡的平铺窗口保持原样。`Super+O` 也换成 `o.silky_toggle_pop`：已浮动的窗口只固定并置顶；取消固定时，只有平铺工作区才把它放回平铺。
+- **Claude 先打开浏览器窗口**：Claude Desktop 等 Electron 应用会把自己的桌面文件写进 `CHROME_DESKTOP`。从它打开的链接启动 Chromium 时，Chromium 继承这个变量，并拿它当 Wayland `app_id`，结果所有 Chromium 窗口都显示成 `com.anthropic.Claude`，Dock 也把它们算作 Claude 的窗口。原先 Dock 在应用不在前台时取列表里的第一个窗口，往往是浏览器，要连点几次才轮到 Claude。现在 Dock 记录焦点顺序，切回应用时先打开最近用过的窗口，没有记录时按 Hyprland 的 `focusHistoryID` 选择。应用已在前台时，再点仍按顺序轮换窗口。
+
+安装与使用：在仓库根目录运行 `./scripts/install-shortcuts.sh` 安装 Lua 部分，运行 `./scripts/install-macshell-optimizations.sh` 更新 Dock。只更新 Dock 时，运行 `python3 scripts/tune-dock-window-pick.py`（备份写到 `~/.local/state/macshell/MacDock.qml.bak.window-pick-*`），它要在 [`tune-dock-focus-cursor.py`](../scripts/tune-dock-focus-cursor.py) 之后执行。[`tune-folio-macshell.py`](../scripts/tune-folio-macshell.py) 把已改写为 `activateToplevel(... recentWindow(wins))` 的轮换行视为已接入，因此先后运行两者都不会再报 `Unsupported MacShell window activation` 并中断 `install-folio-macos.sh`。MacShell 会自动热重载，Lua 部分需要 `hyprctl reload`。浏览器继承变量的问题在启动包装里修复：用 `CHROME_DESKTOP=chromium.desktop` 启动 Chromium（本机是 `~/.local/bin/chromium-font-private`，Chrome 对应 `google-chrome.desktop`）。修复前已经在运行的 Chromium 进程仍沿用 Claude 的类名，要完全退出 Chromium 再打开才生效。
+
+验证：
+
+```bash
+hyprctl configerrors
+hyprctl clients -j | jq -r '.[] | select(.class == "com.anthropic.Claude") | .title'
+```
+
+第二条命令只应列出 Claude 自己的窗口，不应有以 `- Chromium` 结尾的标题。从 Claude 打开一个链接，新的浏览器窗口应归到 Chromium 图标下。实机上，对微信执行 `hyprctl eval 'o.silky_reveal_window("0x<地址>")'` 后，它恢复为浮动窗口并显示在最上层；用临时配置目录启动 Chromium 时，即使带着 `CHROME_DESKTOP=com.anthropic.Claude.desktop`，类名仍是 `chromium`。实际点 Dock 图标切换微信和 Claude 需要在桌面上操作确认。
+
+回滚：恢复 `~/.config/hypr/silky-shortcuts.lua.bak.*` 并执行 `hyprctl reload`，把 `MacDock.qml.bak.window-pick-*` 复制回 `~/.config/quickshell/MacShell/MacDock.qml`，再从浏览器包装中删掉两处 `CHROME_DESKTOP=`。
+
 ## 焦点切换时玻璃背景跟着刷新
 
 [`tune-glass-stacking.py`](../scripts/tune-glass-stacking.py)：玻璃背后窗口的“指纹”原来只看位置和大小，点击切换浮动窗口的前后顺序时，玻璃里还是旧的叠放顺序。现在把焦点顺序（`focusHistoryID`）也算进去，切换焦点时立即刷新；窗口改标题（终端、浏览器标签页、播放器）依然不会唤醒 60 Hz 刷新。
@@ -974,6 +1148,28 @@ qs ipc -c MacShell call macshell reload
 python3 scripts/tune-dock-trash.py ~/.config/quickshell/MacShell/MacDock.qml
 qs ipc -c MacShell call macshell reload
 ```
+
+### 触控板手势动画与触控屏教程
+
+MacShell 原有的「触控板」设置页只列出四个基础开关与滑块，缺少手势示意，也没有覆盖本机适配的触控屏操作。更新后，设置窗口在「触控板」页面复刻了 macOS 系统设置的双卡片实时联动预览与三段式分类，并在左侧输入分组（`键盘` / `鼠标` / `触控板` 下方）新增独立的「触控屏」页面：
+
+- **双卡片 1:1 联动动画舞台**（[`SilkyGestureStage.qml`](../config/macshell/trackpad/SilkyGestureStage.qml)）：左侧深色卡片绘制触控板或 16:10 触控显示屏轮廓、蓝色指尖触点、轻点波纹、0.4 秒长按进度环与手掌防误触区；右侧圆角遮罩卡片绘制微缩桌面、菜单栏、彩色 Dock 与窗口，由同一时间相位驱动 1:1 演示轻点、双指/右下角辅助点按、三指拖移贴边吸附、双指自然滚动（方向与幅度随当前开关和滑块实时变化）、双指缩放、页面轻扫、工作区切换与首尾阻尼回弹、调度中心五窗线性散开、App Exposé 应用窗口聚焦、四指/五指捏合打开应用程序面板，以及触控屏的顶部拖动避让菜单栏、四角缩放、长按 0.4 秒拾起移动和松手惯性滑行轻触刹停。设置窗口隐藏或开启「减弱动态效果」时自动停止逐帧刷新，空闲零开销。
+- **触控板三段式配置**（[`TrackpadPanes.qml.inc`](../config/macshell/trackpad/TrackpadPanes.qml.inc)）：分为「光标与点按」「滚动与缩放」「更多手势」。除原有的轻点来点按、自然滚动、键入时忽略触控板、滚动速度外，新增真实生效的「辅助点按」（双指点按或轻点 `clickfinger_behavior = true` / 点按右下角 `false`）、「三指拖移」（`drag_3fg = 1/0`）、「轻点并拖移」（`tap_and_drag`）、「轻扫切换空间」（四指 / 三指 / 关闭，与三指拖移自动互斥避免手势竞争）、「调度中心」（四指向上轻扫 / 关闭）、「App Exposé」（四指向下轻扫 / 关闭）与「应用程序」捏合开关。选项保存在 `~/.config/macbar/settings.json`，修改后经 `hyprctl eval` 即时生效，并在 `hyprctl reload` 后自动重放。
+- **触控屏开关与手势教程**（[`SilkyTouchscreenController.qml`](../config/macshell/trackpad/SilkyTouchscreenController.qml)）：自动通过 `omarchy-hw-touchscreen` 与 `hyprctl devices -j` 识别已连接的触控屏硬件，顶栏卡片开关直接调用 `omarchy device touchscreen on|off` 同步硬件启停状态（未连接触控屏时置灰开关并保留外接触控显示器手势教程）；下方按「窗口与点按」「滚动与浏览」「工作区与多任务」三组展示全部触控屏手势，其中调度中心、App Exposé 与应用程序捏合开关与触控板页双向同步。悬停或点击（含触屏轻点）任意行即可切换或重播上方动画（[`SilkyGestureRow.qml`](../config/macshell/trackpad/SilkyGestureRow.qml)、[`SilkyGestureBadge.qml`](../config/macshell/trackpad/SilkyGestureBadge.qml)）。
+
+从仓库根目录运行完整安装脚本 `./scripts/install-macshell-optimizations.sh`，或单独运行幂等安装器（自动备份到 `~/.local/state/silky-omarchy/trackpad-backup-<时间>/` 并热重载 MacShell，无需重新登录）：
+
+```bash
+python3 scripts/tune-trackpad-settings.py --check
+python3 scripts/tune-trackpad-settings.py --install
+```
+
+验证：
+
+- 运行 `qs -c MacShell ipc call settings pane trackpad`（支持 `:0`、`:1`、`:2` 子标签后缀，如 `trackpad:2` 直达「更多手势」）和 `qs -c MacShell ipc call settings pane touchscreen`，确认左侧导航自动滚至底部显示对齐的「触控屏」图标，各分段悬停切换流畅，且运行中的 MacShell 标准输出显示 `INFO: Configuration Loaded`、`hyprctl configerrors` 无报错。
+- 实机已在 MacShell 0.5.3、Hyprland 0.57.2（2× 缩放）会话中验证全部 6 个分段标签页的渲染、侧栏定位、幂等重跑与配置无错；实体触控板/触控屏逐项切换开关后的手感可在桌面交互中按需复核。
+
+回滚时，将 `~/.local/state/silky-omarchy/trackpad-backup-<时间>/` 下的 `MacDock.qml`、`MacBar.qml`、`lang/zh-CN.js` 与 `SilkyOverview.qml` 复制回 `~/.config/quickshell/MacShell/`，删除同目录下的 `SilkyGestureStage.qml`、`SilkyTouchscreenController.qml`、`SilkyGestureBadge.qml` 和 `SilkyGestureRow.qml`，再执行 `qs -c MacShell ipc call macshell reload` 与 `hyprctl reload`。
 
 ## 窗口最小化
 

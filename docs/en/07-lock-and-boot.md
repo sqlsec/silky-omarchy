@@ -9,18 +9,21 @@
 
 ## Every way the screen gets locked
 
-Omarchy's lock is not just one shortcut. There are four entry points, and all of them need changing:
+Omarchy's lock is not just one shortcut. There are five entry points, all unified onto MacLock without competing for the session lock:
 
 | Entry point | Before | Now |
 | --- | --- | --- |
-| Super+L | MacShell already binds MacLock | Unchanged |
+| Super+L | MacShell already binds MacLock | Unchanged (`lock-via-ipc.sh` serialized with `flock`) |
 | Super+Ctrl+L, "Lock" in the Omarchy menu | `omarchy-system-lock` | `silky-lock` |
 | 5 minutes idle | The Omarchy shell's `omarchy.idle` service calls `omarchy-system-lock` | A cloned `silky.idle` service calls `silky-lock` |
-| Lid close / before sleep | User service `omarchy-sleep-lock.service` | User service `silky-sleep-lock.service`; the original is masked |
+| Lid close switch (`switch:on:Lid Switch`, etc.) | `omarchy-system-lid-close` (calls `omarchy-system-lock` → `omarchy.lock`) | `silky-lid-close` (calls `silky-lock` when no external monitor is attached, then reconciles clamshell state) |
+| Lid close / before sleep (`PrepareForSleep`) | User service `omarchy-sleep-lock.service` (plus MacShell's extra `hypridle`) | Only user service `silky-sleep-lock.service`; the original is masked and the redundant `hypridle` hook is disabled |
 
-[`bin/silky-lock`](../../bin/silky-lock) locks through MacLock's IPC (`lock-via-ipc.sh`) and does the side jobs `omarchy-system-lock` used to: switch back to the default keyboard layout, lock 1Password, and stop the screensaver. Newer Omarchy releases (`omarchy-screensaver` 1.3.1+) run a standalone `/usr/lib/omarchy-screensaver/omarchy-screensaver` process instead of the legacy `ttfx` terminal window; without terminating it, the screensaver stays alive underneath MacLock and reappears after unlock. `silky-lock` now terminates that process (waiting briefly before `SIGKILL`) and restores `cursor:invisible false`, while keeping the legacy `ttfx` / `org.omarchy.screensaver` cleanup as a fallback. `silky-lock --is-locked` lets the idle service check whether the screen is already locked; `silky-lock --sleep` returns only once MacLock reports it is locked (`qs -c MacLock ipc call lockscreen state` returns `busy`).
+[`bin/silky-lock`](../../bin/silky-lock) locks through MacLock's IPC (`lock-via-ipc.sh`), serializes concurrent lock calls with `flock` on `${XDG_RUNTIME_DIR:-/tmp}/silky-maclock.lock`, and does the side jobs `omarchy-system-lock` used to: switch back to the default keyboard layout, lock 1Password, and stop the screensaver. Newer Omarchy releases (`omarchy-screensaver` 1.3.1+) run a standalone `/usr/lib/omarchy-screensaver/omarchy-screensaver` process instead of the legacy `ttfx` terminal window; without terminating it, the screensaver stays alive underneath MacLock and reappears after unlock. `silky-lock` now terminates that process (waiting briefly before `SIGKILL`) and restores `cursor:invisible false`, while keeping the legacy `ttfx` / `org.omarchy.screensaver` cleanup as a fallback. `silky-lock --is-locked` lets the idle service check whether the screen is already locked; `silky-lock --sleep` returns only once MacLock reports it is locked (`qs -c MacLock ipc call lockscreen state` returns `busy`).
 
-[`bin/silky-sleep-lock`](../../bin/silky-sleep-lock) holds a logind delay inhibitor. On `PrepareForSleep` it locks with MacLock, then exits as soon as the screen is locked so the inhibitor is released and the system can sleep; systemd restarts it to take the inhibitor again for the next sleep.
+[`bin/silky-lid-close`](../../bin/silky-lid-close) replaces Omarchy's default `omarchy-system-lid-close` (rebinding `switch:on:Lid Switch`, `Apple SMC power/lid events`, and `cros_ec_buttons` via [`config/hypr/bindings-lock.lua`](../../config/hypr/bindings-lock.lua)). Previously, closing the lid triggered three lockers at once: `omarchy-system-lid-close` armed `omarchy.lock` behind a 500 ms stabilize timer, MacShell's `hypridle` ran `lock-via-ipc.sh`, and `silky-sleep-lock.service` ran `lock-via-ipc.sh` again. With `misc:allow_session_lock_restore = true`, competing clients stole `ext-session-lock-v1` from each other and triggered `MacLock`'s `lost the session lock: quitting` exit; when this raced with kernel process freezing, the last locker died without unlocking and wake showed Hyprland's `lockdead.png` (`the lockscreen app died :(`). [`scripts/install-maclock.sh`](../../scripts/install-maclock.sh) also wraps `lock-via-ipc.sh` with `flock`, comments out the `enable-sleep-lock.sh` autostart line in `~/.config/hypr/macshell.lua`, and stops a redundant `hypridle` instance when `hypridle.conf` defines no `listener` blocks.
+
+[`bin/silky-sleep-lock`](../../bin/silky-sleep-lock) holds a logind delay inhibitor. On `PrepareForSleep` it locks with MacLock, then exits as soon as the screen is locked so the inhibitor is released and the system can sleep; systemd restarts it to take the inhibitor again for the next sleep. Before taking a new inhibitor, it polls `org.freedesktop.login1.Manager.PreparingForSleep` until it returns `b false` (preventing `Failed to inhibit: The operation inhibition has been requested for is already running` exit-1 failures right after resume), and the unit sets `StartLimitIntervalSec=0`.
 
 ### Idle service and display off
 

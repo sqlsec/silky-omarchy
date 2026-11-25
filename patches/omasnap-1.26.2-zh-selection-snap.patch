@@ -1,0 +1,140 @@
+diff --git a/src/editor.cpp b/src/editor.cpp
+index 1009308..db1ce9f 100644
+--- a/src/editor.cpp
++++ b/src/editor.cpp
+@@ -2227,13 +2227,41 @@ QRectF CaptureEditor::normalizedSelection(const QPointF &first,
+     const qreal w = std::min({std::max(std::abs(dx), std::abs(dy) * ratio),
+                               maxWidth, maxHeight * ratio});
+     const qreal h = w / ratio;
+-    return QRectF(a, QPointF(a.x() + (dx < 0 ? -w : w),
+-                             a.y() + (dy < 0 ? -h : h)))
+-        .normalized();
++    return snapSelectionToSource(
++        QRectF(a, QPointF(a.x() + (dx < 0 ? -w : w),
++                          a.y() + (dy < 0 ? -h : h)))
++            .normalized());
+   }
+   const QPointF b(std::clamp(second.x(), bounds.left(), bounds.right()),
+                   std::clamp(second.y(), bounds.top(), bounds.bottom()));
+-  return QRectF(a, b).normalized();
++  return snapSelectionToSource(QRectF(a, b).normalized());
++}
++
++// Pointer positions arrive in fractional logical pixels (a touchpad on a 2x
++// output reports e.g. 100.37). An unsnapped edge makes the edit view crop one
++// extra native pixel, smooth-scale it back down and draw it off the device
++// grid, so the whole region visibly softens the moment the drag is released.
++qreal CaptureEditor::snapSourceX(qreal x) const {
++  if (capture_.source.isNull() || capture_.previewSize.width() <= 0)
++    return x;
++  const qreal scale =
++      capture_.source.width() / static_cast<qreal>(capture_.previewSize.width());
++  return scale > 0 ? std::round(x * scale) / scale : x;
++}
++
++qreal CaptureEditor::snapSourceY(qreal y) const {
++  if (capture_.source.isNull() || capture_.previewSize.height() <= 0)
++    return y;
++  const qreal scale = capture_.source.height() /
++                      static_cast<qreal>(capture_.previewSize.height());
++  return scale > 0 ? std::round(y * scale) / scale : y;
++}
++
++QRectF CaptureEditor::snapSelectionToSource(const QRectF &rect) const {
++  if (rect.isNull())
++    return rect;
++  return QRectF(QPointF(snapSourceX(rect.left()), snapSourceY(rect.top())),
++                QPointF(snapSourceX(rect.right()), snapSourceY(rect.bottom())));
+ }
+ 
+ QString CaptureEditor::regionAspectLabel() const {
+@@ -7172,6 +7200,7 @@ void CaptureEditor::commitRegion(const QRectF &region,
+     startScrollCapture(region.toRect());
+     return;
+   }
++  selection_ = snapSelectionToSource(region);
+   editedMode_ = CaptureMode::Region;
+   enterSelectedCapture(editStatus);
+ }
+diff --git a/src/editor.hpp b/src/editor.hpp
+index fa97dd8..2a32269 100644
+--- a/src/editor.hpp
++++ b/src/editor.hpp
+@@ -486,6 +486,11 @@ private:
+   [[nodiscard]] int hoveredSpotlightAt(const QPointF &position) const;
+   [[nodiscard]] QRectF normalizedSelection(const QPointF &first,
+                                            const QPointF &second) const;
++  /// Rounds a logical coordinate onto the capture's native pixel grid, so a
++  /// region always crops whole source pixels and shows them 1:1.
++  [[nodiscard]] qreal snapSourceX(qreal x) const;
++  [[nodiscard]] qreal snapSourceY(qreal y) const;
++  [[nodiscard]] QRectF snapSelectionToSource(const QRectF &rect) const;
+   /// Top edge of the toolbar row: pinned under the key guide when
+   /// windowed, hugging the canvas on the overlay. Popovers anchor to it.
+   [[nodiscard]] QRectF colorPaletteRect() const;
+diff --git a/tests/editor-smoke.cpp b/tests/editor-smoke.cpp
+index 04ecf0d..8589e79 100644
+--- a/tests/editor-smoke.cpp
++++ b/tests/editor-smoke.cpp
+@@ -88,6 +88,50 @@ template <typename Editor>
+ QImage flushedSnapshot(Editor &editor, const QString &) {
+   return editor.renderCurrentOutput();
+ }
++/** Fractional pointer drags on a 2x capture land on whole native pixels. */
++bool runFractionalSelectionSnapCheck(QString &error) {
++  CaptureData capture;
++  capture.monitor.geometry = QRect(0, 0, 400, 300);
++  capture.monitor.pixelSize = QSize(800, 600);
++  capture.monitor.scale = 2.0;
++  capture.source = QImage(800, 600, QImage::Format_ARGB32_Premultiplied);
++  for (int y = 0; y < capture.source.height(); ++y)
++    for (int x = 0; x < capture.source.width(); ++x)
++      capture.source.setPixelColor(x, y, (x + y) % 2 ? Qt::white : Qt::black);
++  capture.previewSize = QSize(400, 300);
++
++  CaptureEditor editor(capture);
++  editor.resize(400, 300);
++  editor.show();
++  QApplication::processEvents();
++  const auto send = [&](QEvent::Type type, QPointF position,
++                        Qt::MouseButtons buttons) {
++    QMouseEvent event(type, position, editor.mapToGlobal(position),
++                      Qt::LeftButton, buttons, Qt::NoModifier);
++    QApplication::sendEvent(&editor, &event);
++  };
++  send(QEvent::MouseButtonPress, {50.37, 40.81}, Qt::LeftButton);
++  send(QEvent::MouseMove, {150.13, 120.62}, Qt::LeftButton);
++  send(QEvent::MouseMove, {250.29, 200.18}, Qt::LeftButton);
++  send(QEvent::MouseButtonRelease, {250.29, 200.18}, Qt::NoButton);
++  QApplication::processEvents();
++
++  const QRectF selection = editor.currentSelection();
++  for (const qreal edge : {selection.left(), selection.top(), selection.right(),
++                           selection.bottom()}) {
++    if (std::abs(edge * 2.0 - std::round(edge * 2.0)) > 1e-6) {
++      error = QStringLiteral("Selection edge %1 is off the native pixel grid")
++                  .arg(edge);
++      return false;
++    }
++  }
++  if (selection != QRectF(QPointF(50.5, 41.0), QPointF(250.5, 200.0))) {
++    error = QStringLiteral("Fractional selection snapped to the wrong pixels");
++    return false;
++  }
++  return true;
++}
++
+ /** Cached select-phase painting preserves bright and dimmed capture pixels. */
+ bool runBackdropCacheRenderingCheck(QString &error) {
+   CaptureData capture;
+@@ -12894,6 +12938,10 @@ int main(int argc, char **argv) {
+     qWarning().noquote() << snapshotError;
+     return 88;
+   }
++  if (!runFractionalSelectionSnapCheck(snapshotError)) {
++    qWarning().noquote() << snapshotError;
++    return 88;
++  }
+   if (!runSelectUndimHoleCheck(snapshotError)) {
+     qWarning().noquote() << snapshotError;
+     return 96;

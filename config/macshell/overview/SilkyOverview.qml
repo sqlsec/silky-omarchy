@@ -422,6 +422,8 @@ Scope {
             var fm = Hyprland.focusedMonitor;
             if (!fm) return;
             var m = dir === "down" ? "app" : "workspace";
+            if (m === "workspace" && root.hub && root.hub.bar && root.hub.bar.tpMissionControl === false) return;
+            if (m === "app" && root.hub && root.hub.bar && root.hub.bar.tpAppExpose === false) return;
             appClass = m === "app" ? activeClass() : "";
             if (m === "app" && appClass === "") return;       // App Exposé needs an app
             screenName = fm.name;

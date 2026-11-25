@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install and maintain Silky fixes for MacShell's Notification Center."""
+"""Install and maintain Silky fixes for MacShell notifications and tray actions."""
 
 import argparse
 import os
@@ -39,13 +39,17 @@ HELPERS = r'''    function silkyActivateWeChat(id) {
         }
         root.notifToastDismiss(id);
 
-        // Give the default action a moment to show the window before using the tray.
-        silkyWeChatFocus.waitTicks = invoked ? 3 : 0;
+        root.silkyShowWeChat(null, invoked ? 3 : 0);
+        return true;
+    }
+
+    function silkyShowWeChat(open, waitTicks) {
+        silkyWeChatFocus.waitTicks = waitTicks;
+        silkyWeChatFocus.open = open;
         silkyWeChatFocus.opened = false;
         silkyWeChatFocus.ticks = 0;
         Hyprland.refreshToplevels();
         silkyWeChatFocus.restart();
-        return true;
     }
 
     Timer {
@@ -55,39 +59,75 @@ HELPERS = r'''    function silkyActivateWeChat(id) {
         property int waitTicks: 0
         property int ticks: 0
         property bool opened: false
+        property var open: null
         onTriggered: {
             const main = Hyprland.toplevels.values.find(window => {
                 const data = window.lastIpcObject;
+                const isMainTitle = title => /^(微信|WeChat)$/i.test(title || "");
                 return data && (data.class === "wechat" || data.initialClass === "wechat")
                     && data.mapped && !data.hidden
-                    && /^(微信|WeChat)$/i.test(data.initialTitle || data.title || window.title);
+                    && (isMainTitle(data.initialTitle) || isMainTitle(data.title));
             });
-            if (main && /^(0x)?[0-9a-f]+$/i.test(main.address)) {
+            if (root.silkyFocusTrayWindow(main)) {
+                open = null;
                 stop();
-                const dock = root.hub && root.hub.dock;
-                if (main.workspace && main.workspace.name === "special:minimized" && dock?.restoreAddress) {
-                    dock.restoreAddress(main.address);
-                    return;
-                }
-                const address = "0x" + main.address.replace(/^0x/i, "");
-                Hyprland.dispatch('hl.dsp.focus({ window = "address:' + address + '" })');
-                Hyprland.dispatch('hl.dsp.window.alter_zorder({ mode = "top", window = "address:' + address + '" })');
                 return;
             }
             if (++ticks <= waitTicks) return;
             if (!opened) {
                 opened = true;
-                const tray = SystemTray.items.values.find(item => item.id === "wechat" && !item.onlyMenu);
-                if (tray) tray.activate();
-                else {
-                    const entry = DesktopEntries.byId("wechat");
-                    if (entry) entry.execute();
-                    else stop();
+                if (open) {
+                    const action = open;
+                    open = null;
+                    action();
+                } else {
+                    const tray = SystemTray.items.values.find(item => item.id === "wechat" && !item.onlyMenu);
+                    if (tray) tray.activate();
+                    else {
+                        const entry = DesktopEntries.byId("wechat");
+                        if (entry) entry.execute();
+                        else stop();
+                    }
                 }
             }
             // A cold start can take several seconds. Never toggle the tray twice.
             if (ticks >= 80) stop();
         }
+    }
+
+    function silkyFocusTrayWindow(window) {
+        if (!window || !/^(0x)?[0-9a-f]+$/i.test(window.address)) return false;
+        const dock = root.hub && root.hub.dock;
+        if (window.lastIpcObject.workspace?.name === "special:minimized" && dock?.restoreAddress) {
+            dock.restoreAddress(window.address);
+        } else {
+            const address = "0x" + window.address.replace(/^0x/i, "");
+            Hyprland.dispatch(
+                '(function() '
+                + 'local prev = hl.get_config("cursor.no_warps"); '
+                + 'if not prev then pcall(hl.config, { cursor = { no_warps = true } }) end; '
+                + 'hl.dispatch(hl.dsp.focus({ window = "address:' + address + '" })); '
+                + 'if not prev then pcall(hl.config, { cursor = { no_warps = false } }) end; '
+                + 'return hl.dsp.window.alter_zorder({ mode = "top", window = "address:' + address + '" }) '
+                + 'end)()'
+            );
+        }
+        return true;
+    }
+
+    function silkyFocusTrayApp(windowClass, appIds) {
+        const appId = value => String(value || "").toLowerCase().replace(/\.desktop$/, "");
+        let recent = null;
+        for (const window of Hyprland.toplevels.values) {
+            const data = window.lastIpcObject;
+            if (!data || !data.mapped || data.hidden || data.acceptsInput === false) continue;
+            const matches = windowClass ? windowClass.test(data.class)
+                : appIds.includes(appId(data.class)) || appIds.includes(appId(data.initialClass));
+            if (!matches) continue;
+            if (!recent || data.focusHistoryID < recent.lastIpcObject.focusHistoryID)
+                recent = window;
+        }
+        return root.silkyFocusTrayWindow(recent);
     }
 '''
 
@@ -112,6 +152,207 @@ def integrate_wechat(text):
     match = matches[0]
     return text[:match.start()] + BEGIN + HELPERS + END + match[0] + CALL + text[match.end():]
 
+
+WECHAT_TRAY_REPLACEMENTS = (
+    (
+        '                                        if (mouse.button === Qt.RightButton || (mouse.button === Qt.LeftButton && tray.modelData.onlyMenu))',
+        '                                        const item = tray.modelData;\n'
+        '                                        if (mouse.button === Qt.LeftButton && item.id === "wechat") {\n'
+        '                                            ui.pop = "";\n'
+        '                                            root.silkyShowWeChat(() => item.activate(), 0);\n'
+        '                                        } else if (mouse.button === Qt.RightButton || (mouse.button === Qt.LeftButton && tray.modelData.onlyMenu))',
+    ),
+    (
+        '                                                te.modelData.triggered();\n'
+        '                                                ui.pop = "";',
+        '                                                const action = te.modelData;\n'
+        '                                                const label = trayPop.clean(action.text).replace(/&/g, "").trim();\n'
+        '                                                if (ui.trayItem?.id === "wechat" && ui.trayStack.length === 0\n'
+        '                                                        && /^(显示|顯示|Show)$/i.test(label)) {\n'
+        '                                                    root.silkyShowWeChat(() => action.triggered(), 0);\n'
+        '                                                } else {\n'
+        '                                                    action.triggered();\n'
+        '                                                }\n'
+        '                                                ui.pop = "";',
+    ),
+)
+
+
+TRAY_SHORTCUTS = r'''                QsMenuOpener {
+                    id: trayShortcutMenu
+                    menu: trayShortcut.item?.menu ?? null
+                }
+
+                Timer {
+                    id: trayShortcut
+                    interval: 80
+                    repeat: true
+                    running: item !== null
+                    property var item: null
+                    property var action: null
+                    property var identities: []
+                    property real anchorX: 0
+                    property int attempts: 0
+                    readonly property var actions: ({
+                        clash: { windowClass: /^clash-verge$/i, label: /^(仪表[板盘]|儀表[板盤]|Dashboard)$/i },
+                        remmina: {
+                            windowClass: /^(org\.remmina\.)?remmina$/i,
+                            label: /^(打开主窗口|開啟主視窗|Open Main Window)(\s*\([a-z]\))?$/i
+                        },
+                        clippy: { label: /^Open Clippy$/i },
+                        claude: { windowClass: /^(com\.anthropic\.)?claude$/i, label: /^Show App$/i },
+                        antigravity: { windowClass: /^antigravity$/i, label: /^(Open Antigravity|打开\s*Antigravity|開啟\s*Antigravity)$/i },
+                        chatgpt: { windowClass: /^chatgpt$/i, desktopId: "chatgpt" },
+                        chrome: { windowClass: /^google-chrome$/i, desktopId: "google-chrome" }
+                    })
+
+                    function startFor(trayItem, kind, x) {
+                        // WeChat also uses its tray activation to restore notifications and hidden windows.
+                        if (trayItem.id.toLowerCase() === "wechat") return false;
+                        ui.pop = "";
+                        anchorX = x;
+                        attempts = 0;
+                        action = actions[kind] || {};
+                        identities = [trayItem.title, trayItem.tooltipTitle, trayItem.id]
+                            .map(value => String(value || "").trim().replace(/\.desktop$/i, ""))
+                            .filter(value => value.length > 0);
+                        Hyprland.refreshToplevels();
+                        item = trayItem;
+                        return true;
+                    }
+
+                    function isOpenAction(entry) {
+                        if (entry.isSeparator || entry.hasChildren || !entry.enabled) return false;
+                        const label = trayPop.clean(entry.text).replace(/&/g, "").trim();
+                        if (action.label?.test(label)) return true;
+                        if (/^(open|show|open app|show app|open main window|show main window|打开|开启|显示|顯示|開啟|開啓|打开主窗口|显示主窗口|開啟主視窗|顯示主視窗)(?:\s*\([a-z]\))?$/i.test(label))
+                            return true;
+                        const named = /^(?:open|show)\s+(.+)$|^(?:打开|开启|显示|顯示|開啟|開啓)\s*(.+)$/i.exec(label);
+                        if (!named) return false;
+                        const name = (named[1] || named[2]).toLowerCase();
+                        return identities.some(value => value.toLowerCase() === name);
+                    }
+
+                    function desktopEntry() {
+                        const ids = action.desktopId ? [action.desktopId] : identities;
+                        for (const id of ids) {
+                            const entry = DesktopEntries.byId(id) || DesktopEntries.byId(id.toLowerCase());
+                            if (entry) return entry;
+                        }
+                        return null;
+                    }
+
+                    onTriggered: {
+                        if (!item) return;
+                        const appIds = identities.map(value => value.toLowerCase());
+                        if (root.silkyFocusTrayApp(action.windowClass, appIds)) {
+                            item = null;
+                            return;
+                        }
+                        const entries = trayShortcutMenu.children?.values ?? [];
+                        const menuAction = entries.find(entry => trayShortcut.isOpenAction(entry));
+                        if (menuAction) {
+                            menuAction.triggered();
+                            item = null;
+                            return;
+                        }
+                        if (item.hasMenu && entries.length === 0 && ++attempts < 12) return;
+
+                        const trayItem = item;
+                        item = null;
+                        const entry = desktopEntry();
+                        if (entry) entry.execute();
+                        else if (trayItem.onlyMenu) ui.openTray(trayItem, anchorX);
+                        else trayItem.activate();
+                    }
+                }
+
+'''
+
+
+# The original per-app shortcuts used the same menu opener without this marker.
+LEGACY_TRAY_SHORTCUTS = re.compile(
+    r"^ {16}QsMenuOpener \{\n {20}id: trayShortcutMenu\n.*?"
+    r"(?=^ {16}function openTray\(item, x\) \{\n)",
+    re.M | re.S,
+)
+TRAY_SHORTCUT_MARKER = "                // Default tray opening actions\n"
+
+TRAY_SHORTCUT_REPLACEMENTS = (
+    (
+        '                function openTray(item, x) {\n',
+        TRAY_SHORTCUT_MARKER + TRAY_SHORTCUTS + '                function openTray(item, x) {\n'
+        '                    trayShortcut.item = null;\n',
+    ),
+    (
+        '                                    color: (ui.pop === "tray" && ui.trayItem === tray.modelData) ? bpal.hover : "transparent"\n'
+        '                                }\n',
+        '                                    color: (ui.pop === "tray" && ui.trayItem === tray.modelData) || trayMouse.pressed || tray.silkyClickFlash ? bpal.hover : "transparent"\n'
+        '                                    Behavior on color { ColorAnimation { duration: 120 } }\n'
+        '                                }\n'
+        '                                property bool silkyClickFlash: false\n'
+        '                                Timer { id: silkyClickFlashTimer; interval: 180; onTriggered: tray.silkyClickFlash = false }\n',
+    ),
+    (
+        '                                MouseArea {\n'
+        '                                    anchors.fill: parent\n'
+        '                                    acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton\n',
+        '                                MouseArea {\n'
+        '                                    id: trayMouse\n'
+        '                                    anchors.fill: parent\n'
+        '                                    acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton\n',
+    ),
+    (
+        '                                        if (root.hub && root.hub.overview && root.hub.overview.shown) root.hub.overview.dismiss(true);\n'
+        '                                        var p = tray.mapToItem(ui, 0, 0);\n',
+        '                                        if (root.hub && root.hub.overview && root.hub.overview.shown) root.hub.overview.dismiss(true);\n'
+        '                                        if (mouse.button !== Qt.RightButton) {\n'
+        '                                            tray.silkyClickFlash = true;\n'
+        '                                            silkyClickFlashTimer.restart();\n'
+        '                                        }\n'
+        '                                        var p = tray.mapToItem(ui, 0, 0);\n',
+    ),
+    (
+        '                                        var p = tray.mapToItem(ui, 0, 0);\n',
+        '                                        var p = tray.mapToItem(ui, 0, 0);\n'
+        '                                        if (mouse.button === Qt.LeftButton\n'
+        '                                                && trayShortcut.startFor(tray.modelData, tray.silkyTrayApp, p.x)) return;\n',
+    ),
+    (
+        '                                id: tray\n',
+        '                                id: tray\n'
+        '                                readonly property string silkyTrayApp: {\n'
+        '                                    const id = tray.modelData.id.toLowerCase();\n'
+        '                                    if (id.startsWith("claude") || id === "com.anthropic.claude") return "claude";\n'
+        '                                    if (id.startsWith("antigravity")) return "antigravity";\n'
+        '                                    const title = (tray.modelData.tooltipTitle || tray.modelData.title || "").trim().toLowerCase();\n'
+        '                                    if (id === "chrome_status_icon_1") {\n'
+        '                                        if (title === "chatgpt") return "chatgpt";\n'
+        '                                        if (title === "google chrome") return "chrome";\n'
+        '                                    }\n'
+        '                                    if (id === "tray-icon tray app clash-verge-rev-tray") return "clash";\n'
+        '                                    if (id === "remmina-icon") return "remmina";\n'
+        '                                    if (id === "clippy") return "clippy";\n'
+        '                                    // LocalSend registers under a random id each launch; its title is stable.\n'
+        '                                    if (title.includes("localsend")) return "localsend";\n'
+        '                                    return "";\n'
+        '                                }\n',
+    ),
+)
+
+# The tray app block as installed before LocalSend got its glyph; upgraded in place so it is not inserted twice.
+TRAY_APP_LOCALSEND = (
+    '                                    if (id === "clippy") return "clippy";\n'
+    '                                    return "";\n'
+    '                                }\n'
+    '                                required property var modelData\n',
+    '                                    if (id === "clippy") return "clippy";\n'
+    '                                    // LocalSend registers under a random id each launch; its title is stable.\n'
+    '                                    if (title.includes("localsend")) return "localsend";\n'
+    '                                    return "";\n'
+    '                                }\n'
+    '                                required property var modelData\n',
+)
 
 NOTIFICATION_REPLACEMENTS = (
     (
@@ -325,21 +566,136 @@ TOAST_MOTION_REPLACEMENTS = (
         '                                function dismiss() { if (leaving) return; leaving = true; goneTimer.restart(); }',
         '                                function dismiss() { root.notifToastDismiss(nid); }',
     ),
+)
+
+
+NOTIF_READABILITY_REPLACEMENTS = (
     (
-        '                                        root.notifMergeFrom = m;\n'
-        '                                        toast.leaving = true;\n'
-        '                                        toast.visible = false;',
-        '                                        root.notifMergeFrom = m;\n'
-        '                                        toast.visible = false;',
+        "        width: parent ? parent.width : 340\n"
+        "        height: Math.max(74, textCol.height + 30)\n\n"
+        "        readonly property string agoText: {\n"
+        "            var m = Math.floor((nb.nowMs - nb.stamp) / 60000);\n"
+        '            return m < 1 ? "now" : (m < 60 ? m + "m ago" : (m < 1440 ? Math.floor(m / 60) + "h ago" : Math.floor(m / 1440) + "d ago"));\n'
+        "        }",
+        "        width: parent ? parent.width : 340\n"
+        "        height: Math.max(72, textCol.height + 28)\n\n"
+        '        readonly property bool hideDupApp: nb.urgency !== 2 && nb.app.trim() !== ""\n'
+        "            && nb.summary.trim().toLowerCase() === nb.app.trim().toLowerCase()\n"
+        "        readonly property real topRightPad: nb.showClose ? 28 : (nb.showTime ? agoLabel.implicitWidth + 10 : 0)\n"
+        "        readonly property string agoText: {\n"
+        "            var m = Math.floor((nb.nowMs - nb.stamp) / 60000);\n"
+        '            return m < 1 ? "now" : (m < 60 ? m + "m ago" : (m < 1440 ? Math.floor(m / 60) + "h ago" : Math.floor(m / 1440) + "d ago"));\n'
+        "        }",
     ),
     (
-        '                                MouseArea {\n'
-        '                                    anchors.fill: parent\n'
-        '                                    onClicked: root.notifActivate(toast.nid)',
-        '                                MouseArea {\n'
-        '                                    anchors.fill: tslab\n'
-        '                                    enabled: !toast.leaving\n'
-        '                                    onClicked: root.notifActivate(toast.nid)',
+        "            x: 70; y: 14\n"
+        "            width: parent.width - 70 - 44\n"
+        "            spacing: 1\n"
+        "            Text {\n"
+        "                width: parent.width\n"
+        '                text: nb.urgency === 2 ? I18n.tr("TIME SENSITIVE") : nb.app\n'
+        "                horizontalAlignment: /[\\u0590-\\u08ff]/.test(text) ? Text.AlignRight : Text.AlignLeft\n"
+        '                visible: text !== ""\n'
+        "                color: nb.urgency === 2 ? nb.t.fg2 : nb.t.fg\n"
+        "                font.family: root.fontForWeight(Font.DemiBold, nb.t.fam); font.pixelSize: nb.urgency === 2 ? 12 : 14\n"
+        "                font.weight: Font.DemiBold\n"
+        "                font.letterSpacing: nb.urgency === 2 ? 0.4 : 0\n"
+        "                elide: Text.ElideRight\n"
+        "            }\n"
+        "            Text {\n"
+        "                width: parent.width\n"
+        "                text: nb.summary\n"
+        "                horizontalAlignment: /[\\u0590-\\u08ff]/.test(text) ? Text.AlignRight : Text.AlignLeft\n"
+        '                visible: text !== ""\n'
+        "                color: nb.t.fg\n"
+        "                font.family: root.fontForWeight(Font.Bold, nb.t.fam); font.pixelSize: 14; font.weight: Font.Bold\n"
+        "                wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight\n"
+        "            }\n"
+        "            Text {\n"
+        "                width: parent.width\n"
+        "                text: nb.body\n"
+        "                horizontalAlignment: /[\\u0590-\\u08ff]/.test(text) ? Text.AlignRight : Text.AlignLeft\n"
+        '                visible: text !== ""\n'
+        "                color: nb.t.fg\n"
+        "                font.family: root.fontForWeight(Font.Normal, nb.t.fam); font.pixelSize: 13\n"
+        "                wrapMode: Text.Wrap; maximumLineCount: 3; elide: Text.ElideRight\n"
+        "            }\n"
+        "        }\n"
+        "        Text {\n"
+        "            visible: nb.showTime && !nb.showClose\n"
+        "            anchors.right: parent.right; anchors.rightMargin: 14\n"
+        "            y: 15\n"
+        "            text: nb.agoText\n"
+        "            color: nb.t.fg2\n"
+        "            font.family: root.fontForWeight(Font.Normal, nb.t.fam); font.pixelSize: 12\n"
+        "        }",
+        "            x: 70\n"
+        "            anchors.verticalCenter: parent.verticalCenter\n"
+        "            width: parent.width - 70 - 16\n"
+        "            spacing: 2\n"
+        "            Text {\n"
+        "                width: Math.max(40, parent.width - nb.topRightPad)\n"
+        '                text: nb.urgency === 2 ? I18n.tr("TIME SENSITIVE") : nb.app\n'
+        "                horizontalAlignment: /[\\u0590-\\u08ff]/.test(text) ? Text.AlignRight : Text.AlignLeft\n"
+        '                visible: text !== "" && !nb.hideDupApp\n'
+        '                color: nb.urgency === 2 ? (nb.t.dark ? "#FFD60A" : "#B25000") : (nb.t.dark ? Qt.rgba(1, 1, 1, 0.80) : Qt.rgba(0.08, 0.08, 0.10, 0.72))\n'
+        "                font.family: root.fontForWeight(Font.DemiBold, nb.t.fam); font.pixelSize: nb.urgency === 2 ? 11 : 12\n"
+        "                font.weight: Font.DemiBold\n"
+        "                font.letterSpacing: nb.urgency === 2 ? 0.4 : 0.1\n"
+        "                elide: Text.ElideRight\n"
+        "            }\n"
+        "            Text {\n"
+        "                width: nb.hideDupApp ? Math.max(40, parent.width - nb.topRightPad) : parent.width\n"
+        "                text: nb.summary\n"
+        "                horizontalAlignment: /[\\u0590-\\u08ff]/.test(text) ? Text.AlignRight : Text.AlignLeft\n"
+        '                visible: text !== ""\n'
+        '                color: nb.t.dark ? "#FFFFFF" : "#121214"\n'
+        "                font.family: root.fontForWeight(Font.Bold, nb.t.fam); font.pixelSize: 14; font.weight: Font.Bold\n"
+        "                lineHeight: 1.14\n"
+        "                wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight\n"
+        "            }\n"
+        "            Text {\n"
+        "                width: parent.width\n"
+        "                text: nb.body\n"
+        "                horizontalAlignment: /[\\u0590-\\u08ff]/.test(text) ? Text.AlignRight : Text.AlignLeft\n"
+        '                visible: text !== ""\n'
+        "                color: nb.t.dark ? Qt.rgba(1, 1, 1, 0.93) : Qt.rgba(0.08, 0.08, 0.10, 0.88)\n"
+        "                font.family: root.fontForWeight(Font.Medium, nb.t.fam); font.pixelSize: 13; font.weight: Font.Medium\n"
+        "                lineHeight: 1.20\n"
+        "                wrapMode: Text.Wrap; maximumLineCount: 3; elide: Text.ElideRight\n"
+        "            }\n"
+        "        }\n"
+        "        Text {\n"
+        "            id: agoLabel\n"
+        "            visible: nb.showTime && !nb.showClose\n"
+        "            anchors.right: parent.right; anchors.rightMargin: 14\n"
+        "            y: Math.max(13, Math.round(textCol.y) + 1)\n"
+        "            text: nb.agoText\n"
+        "            color: nb.t.dark ? Qt.rgba(1, 1, 1, 0.74) : Qt.rgba(0.10, 0.10, 0.12, 0.66)\n"
+        "            font.family: root.fontForWeight(Font.Medium, nb.t.fam); font.pixelSize: 12; font.weight: Font.Medium\n"
+        "        }",
+    ),
+    (
+        "                                    rimTint: 1\n"
+        "                                    ringW: 0.9\n"
+        "                                    shadowAmt: 0.35\n"
+        "                                }\n"
+        "                                MenuBorder {",
+        "                                    rimTint: 1\n"
+        "                                    ringW: 0.9\n"
+        "                                    shadowAmt: 0.35\n"
+        "                                }\n"
+        "                                Rectangle {\n"
+        "                                    visible: tslab.silkyOwned\n"
+        "                                    anchors.fill: tslab\n"
+        "                                    anchors.margins: 1\n"
+        "                                    radius: Math.max(0, tslab.cornerR - 1)\n"
+        "                                    gradient: Gradient {\n"
+        "                                        GradientStop { position: 0.0; color: root.effDark ? Qt.rgba(0.06, 0.06, 0.08, 0.40) : Qt.rgba(0.99, 0.99, 1.0, 0.52) }\n"
+        "                                        GradientStop { position: 1.0; color: root.effDark ? Qt.rgba(0.04, 0.04, 0.06, 0.46) : Qt.rgba(0.97, 0.97, 0.99, 0.44) }\n"
+        "                                    }\n"
+        "                                }\n"
+        "                                MenuBorder {",
     ),
 )
 
@@ -453,12 +809,41 @@ def integrate_scroll(text):
 
 def integrate(text):
     text = integrate_wechat(text)
-    for original, updated in NOTIFICATION_REPLACEMENTS + TOAST_MOTION_REPLACEMENTS:
+    if TRAY_SHORTCUT_MARKER not in text:
+        text, count = LEGACY_TRAY_SHORTCUTS.subn("", text)
+        if count == 1:
+            text = text.replace(
+                "                function openTray(item, x) {\n                    trayShortcut.item = null;\n",
+                "                function openTray(item, x) {\n",
+                1,
+            )
+        elif count != 0:
+            raise ValueError("Multiple tray shortcut blocks in MacBar.qml")
+    text = (
+        text.replace(
+            "GradientStop { position: 0.0; color: root.effDark ? Qt.rgba(0.06, 0.06, 0.08, 0.25) : Qt.rgba(0.99, 0.99, 1.0, 0.38) }",
+            "GradientStop { position: 0.0; color: root.effDark ? Qt.rgba(0.06, 0.06, 0.08, 0.40) : Qt.rgba(0.99, 0.99, 1.0, 0.52) }",
+        ).replace(
+            "GradientStop { position: 1.0; color: root.effDark ? Qt.rgba(0.04, 0.04, 0.06, 0.31) : Qt.rgba(0.97, 0.97, 0.99, 0.30) }",
+            "GradientStop { position: 1.0; color: root.effDark ? Qt.rgba(0.04, 0.04, 0.06, 0.46) : Qt.rgba(0.97, 0.97, 0.99, 0.44) }",
+        )
+    )
+    legacy_tray_app, tray_app = TRAY_APP_LOCALSEND
+    if text.count(legacy_tray_app) == 1 and tray_app not in text:
+        text = text.replace(legacy_tray_app, tray_app, 1)
+    replacements = (WECHAT_TRAY_REPLACEMENTS + TRAY_SHORTCUT_REPLACEMENTS
+                    + NOTIFICATION_REPLACEMENTS + TOAST_MOTION_REPLACEMENTS
+                    + NOTIF_READABILITY_REPLACEMENTS)
+    for original, updated in replacements:
         if text.count(updated) == 1:
             continue
         if text.count(original) != 1:
-            raise ValueError(f"MacBar notification code changed near {original.strip().splitlines()[0]}")
+            raise ValueError(f"MacBar code changed near {original.strip().splitlines()[0]}")
         text = text.replace(original, updated, 1)
+    icon_kind = "                                readonly property string silkyIconKind: {\n"
+    tray_ink = "                                    if (tray.silkyTrayApp) return tray.silkyTrayApp;\n"
+    if icon_kind in text and icon_kind + tray_ink not in text:
+        text = text.replace(icon_kind, icon_kind + tray_ink, 1)
     return integrate_scroll(text)
 
 

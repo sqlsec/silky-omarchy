@@ -46,7 +46,7 @@ FULL_H_NEW = FULL_H_WITH_COMPACT_HEADER.replace("bodyTop: 44", "bodyTop: 4").rep
     "40 : ncol.height", "40 : ncol.height + notifClearFooter.height",
 )
 
-CLEAR_NOTIFICATIONS = """                        Item {
+CLEAR_NOTIFICATIONS_TIGHT = """                        Item {
                             id: notifClearFooter
                             y: ncol.height
                             width: nfl.width
@@ -86,18 +86,36 @@ CLEAR_NOTIFICATIONS = """                        Item {
                         }
 """
 
+CLEAR_NOTIFICATIONS = CLEAR_NOTIFICATIONS_TIGHT.replace(
+    "                            height: visible ? 34 : 0\n"
+    "                            visible: notifHist.count > 0 && !root.notifClearing\n"
+    "                            Rectangle {\n"
+    "                                id: notifClearButton\n"
+    "                                anchors.centerIn: parent",
+    "                            height: visible ? 42 : 0\n"
+    "                            visible: notifHist.count > 0 && !root.notifClearing\n"
+    "                            Rectangle {\n"
+    "                                id: notifClearButton\n"
+    "                                anchors.horizontalCenter: parent.horizontalCenter\n"
+    "                                y: 10",
+    1,
+)
+
 FLOATING_CARDS = """                    // The notification centre has no shared surface; each card has its own glass.
                     Component {
                         id: notifCardMaterial
                         Item {
                             id: material
                             property real r: 22
+                            property bool textCard: r < 20
                             readonly property bool compositorOwned: surface["silkyOwned"] === true
                             Rectangle {
                                 visible: !material.compositorOwned && !notifPopGlass.ctx.liquid
                                 anchors.fill: parent
                                 radius: material.r
-                                color: notifPopGlass.ctx.dark ? Qt.rgba(0.06, 0.06, 0.07, 0.22) : Qt.rgba(0.98, 0.98, 1, 0.28)
+                                color: notifPopGlass.ctx.dark
+                                    ? Qt.rgba(0.06, 0.06, 0.08, material.textCard ? 0.54 : 0.22)
+                                    : Qt.rgba(0.98, 0.98, 1.0, material.textCard ? 0.58 : 0.28)
                             }
                             GGlass {
                                 id: surface
@@ -112,12 +130,25 @@ FLOATING_CARDS = """                    // The notification centre has no shared
                                 flatInner: 1
                             }
                             Rectangle {
-                                // Keep a light veil for text on top of the Control Center material.
+                                // Keep a readable veil on top of the Control Center material (deeper for dense notification text).
                                 visible: material.compositorOwned
                                 anchors.fill: parent
                                 anchors.margins: 1
                                 radius: Math.max(0, material.r - 1)
-                                color: notifPopGlass.ctx.dark ? Qt.rgba(0.06, 0.06, 0.08, 0.10) : Qt.rgba(0.99, 0.99, 1, 0.16)
+                                gradient: Gradient {
+                                    GradientStop {
+                                        position: 0.0
+                                        color: notifPopGlass.ctx.dark
+                                            ? Qt.rgba(0.06, 0.06, 0.08, material.textCard ? 0.42 : 0.10)
+                                            : Qt.rgba(0.99, 0.99, 1.0, material.textCard ? 0.54 : 0.16)
+                                    }
+                                    GradientStop {
+                                        position: 1.0
+                                        color: notifPopGlass.ctx.dark
+                                            ? Qt.rgba(0.04, 0.04, 0.06, material.textCard ? 0.48 : 0.10)
+                                            : Qt.rgba(0.97, 0.97, 0.99, material.textCard ? 0.46 : 0.16)
+                                    }
+                                }
                             }
                             Rectangle {
                                 visible: !material.compositorOwned
@@ -629,6 +660,16 @@ STACK = STACK[:STACK.index("                    property var silkyClearIds:")] +
                     }
 """ + STACK[STACK.index("                    function silkyPress(id)"):]
 
+STACK_GAP_8 = STACK
+STACK = STACK_GAP_8.replace(
+    "                                if (h > 0.5) y += h + 8;",
+    "                                if (h > 0.5) y += h + 10;",
+).replace(
+    "                        return Math.max(0, y - 8);",
+    "                        return Math.max(0, y - 10);",
+    1,
+)
+
 
 EMPTY_OLD = ("                        // fades in as the list finishes collapsing (no pop at the end of Clear All)\n"
              "                        opacity: notifHist.count === 0 ? 1 : 0\n")
@@ -731,7 +772,41 @@ NFL_NEW = """                    Rectangle {
 )
 NFL_WITH_TALL_HEADER = NFL_NEW
 NFL_WITH_COMPACT_HEADER = NFL_WITH_TALL_HEADER.replace("x: 4; y: 92", "x: 4; y: notifPop.bodyTop", 1)
-NFL_NEW = NFL_WITH_COMPACT_HEADER.replace(DECK, DECK + CLEAR_NOTIFICATIONS, 1)
+NFL_WITH_TIGHT_FOOTER = NFL_WITH_COMPACT_HEADER.replace(DECK, DECK + CLEAR_NOTIFICATIONS_TIGHT, 1)
+NFL_WITH_PLAIN_MORE = NFL_WITH_COMPACT_HEADER.replace(DECK, DECK + CLEAR_NOTIFICATIONS, 1)
+NFL_WITH_TINT_MORE = NFL_WITH_PLAIN_MORE.replace(
+    "                                    color: silkyMoreMa.containsMouse ? pal.btnHover : pal.btnOff",
+    "                                    color: pal.dark\n"
+    "                                        ? (silkyMoreMa.containsMouse ? Qt.rgba(0.16, 0.16, 0.20, 0.76) : Qt.rgba(0.10, 0.10, 0.13, 0.62))\n"
+    "                                        : (silkyMoreMa.containsMouse ? Qt.rgba(0.95, 0.95, 0.98, 0.88) : Qt.rgba(0.98, 0.98, 1.0, 0.76))\n"
+    "                                    border.width: 1\n"
+    "                                    border.color: pal.dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.08)",
+    1,
+)
+NFL_NEW = NFL_WITH_PLAIN_MORE.replace(
+    "                                Rectangle {\n"
+    "                                    anchors.horizontalCenter: parent.horizontalCenter\n"
+    "                                    width: silkyMoreText.implicitWidth + 28; height: 28; radius: 14\n"
+    "                                    color: silkyMoreMa.containsMouse ? pal.btnHover : pal.btnOff",
+    "                                Rectangle {\n"
+    "                                    id: silkyMoreButton\n"
+    "                                    anchors.horizontalCenter: parent.horizontalCenter\n"
+    "                                    width: silkyMoreText.implicitWidth + 24; height: 26; radius: 13\n"
+    '                                    color: "transparent"\n'
+    "                                    Loader {\n"
+    "                                        anchors.fill: parent\n"
+    "                                        active: notifPop.silkyMoreShown\n"
+    "                                        sourceComponent: notifCardMaterial\n"
+    "                                        onLoaded: item.r = silkyMoreButton.radius\n"
+    "                                    }\n"
+    "                                    Rectangle {\n"
+    "                                        anchors.fill: parent\n"
+    "                                        radius: silkyMoreButton.radius\n"
+    "                                        visible: silkyMoreMa.containsMouse\n"
+    "                                        color: pal.btnHover\n"
+    "                                    }",
+    1,
+)
 
 CARD_OLD = """                                    height: hc.height * inT
                                     cardH: hc.height
@@ -807,7 +882,7 @@ CARD_NEW = CARD_BEFORE_FEATHER.replace(
 
 
 CARD_WITH_GRADIENT = CARD_NEW
-CARD_NEW = CARD_WITH_GRADIENT.replace(
+CARD_STACK_14 = CARD_WITH_GRADIENT.replace(
     """                                    readonly property real silkyClearT: notifPop.silkyClearIds.includes(nid) ? notifPop.silkyClearProgress : 0
                                     opacity: inT * silkyT * silkyT * silkyT * (1 - silkyClearT) * notifPop.silkyEdge(y, height, nfl.contentY, nfl.height)""",
     """                                    readonly property bool silkyClearing: notifPop.silkyClearIds.indexOf(nid) >= 0
@@ -815,6 +890,21 @@ CARD_NEW = CARD_WITH_GRADIENT.replace(
                                         && y + height > nfl.contentY && y < nfl.contentY + nfl.height
                                     readonly property real silkyClearT: silkyFeathering ? notifPop.silkyClearProgress : 0
                                     opacity: inT * silkyT * silkyT * silkyT * (1 - silkyClearT) * notifPop.silkyEdge(y, height, nfl.contentY, nfl.height)""",
+    1,
+)
+CARD_STACK_11 = CARD_STACK_14.replace(
+    "readonly property real silkyStackTarget: silkyStacked ? (silky.n > 2 ? 14 : 7) : 0",
+    "readonly property real silkyStackTarget: silkyStacked ? (silky.n > 2 ? 11 : 6) : 0",
+    1,
+)
+CARD_STACK_12 = CARD_STACK_14.replace(
+    "readonly property real silkyStackTarget: silkyStacked ? (silky.n > 2 ? 14 : 7) : 0",
+    "readonly property real silkyStackTarget: silkyStacked ? (silky.n > 2 ? 12 : 6.5) : 0",
+    1,
+)
+CARD_NEW = CARD_STACK_14.replace(
+    "readonly property real silkyStackTarget: silkyStacked ? (silky.n > 2 ? 14 : 7) : 0",
+    "readonly property real silkyStackTarget: silkyStacked ? (silky.n > 2 ? 10.5 : 5.5) : 0",
     1,
 )
 
@@ -878,7 +968,7 @@ HC_NEW_V1 = """                                Item { Component.onCompleted: not
                                     y: hcd.silkyHeadH
                                     readonly property int nid: hcd.nid
 """
-HC_NEW = """                                Item { Component.onCompleted: notifPop.silkyReg(hcd.nid, hcd); Component.onDestruction: notifPop.silkyUnreg(hcd.nid, hcd) }
+HC_NEW_V2 = """                                Item { Component.onCompleted: notifPop.silkyReg(hcd.nid, hcd); Component.onDestruction: notifPop.silkyUnreg(hcd.nid, hcd) }
                                 // Silky: the app's header while its stack is open (collapse, clear the app)
                                 Item {
                                     visible: hcd.silkyHeadH > 0.5
@@ -928,6 +1018,255 @@ HC_NEW = """                                Item { Component.onCompleted: notifP
                                         opacity: (0.9 - 0.3 * index) * Math.min(1, hcd.silkyStackH / 7)
                                         border.width: 1; border.color: Qt.rgba(pal.tileBorder.r, pal.tileBorder.g, pal.tileBorder.b, pal.tileBorder.a * 0.3)
                                     }
+                                }
+                                Rectangle {
+                                    id: hc
+                                    y: hcd.silkyHeadH
+                                    readonly property int nid: hcd.nid
+"""
+HC_NEW_V3 = """                                Item { Component.onCompleted: notifPop.silkyReg(hcd.nid, hcd); Component.onDestruction: notifPop.silkyUnreg(hcd.nid, hcd) }
+                                // Silky: the app's header while its stack is open (collapse, clear the app)
+                                Item {
+                                    visible: hcd.silkyHeadH > 0.5
+                                    opacity: hcd.silkyHeadH / 34
+                                    width: hcd.width; height: 30
+                                    Text {
+                                        x: 4; width: parent.width - 120
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: hcd.app
+                                        elide: Text.ElideRight
+                                        color: pal.fg
+                                        font.family: root.fontForWeight(Font.DemiBold, pal.fam); font.pixelSize: 15; font.weight: Font.DemiBold
+                                    }
+                                    Row {
+                                        anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 6
+                                        Rectangle {
+                                            width: silkyLessText.implicitWidth + 20; height: 24; radius: 12
+                                            color: silkyLessMa.containsMouse ? pal.btnHover : pal.btnOff
+                                            Text {
+                                                id: silkyLessText
+                                                anchors.centerIn: parent
+                                                text: notifPop.silkyLess()
+                                                color: pal.fg
+                                                font.family: root.fontForWeight(Font.Medium, pal.fam); font.pixelSize: 12; font.weight: Font.Medium
+                                            }
+                                            MouseArea { id: silkyLessMa; anchors.fill: parent; hoverEnabled: true; onClicked: notifPop.silkyToggle(hcd.silky.key) }
+                                        }
+                                        Rectangle {
+                                            width: 24; height: 24; radius: 12
+                                            color: silkyClearMa.containsMouse ? pal.btnHover : pal.btnOff
+                                            Text { anchors.centerIn: parent; text: "✕"; color: pal.fg; font.pixelSize: 11 }
+                                            MouseArea { id: silkyClearMa; anchors.fill: parent; hoverEnabled: true; onClicked: notifPop.silkyClearGroup(hcd.silky.key) }
+                                        }
+                                    }
+                                }
+                                // Silky: paper edges peeking out under a folded stack (subtracted cleanly from the card silhouette)
+                                ShaderEffect {
+                                    id: silkyStackPeeks
+                                    z: -1
+                                    visible: hcd.silkyStackH > 0.2
+                                    x: 0
+                                    y: hcd.silkyHeadH + hc.height - 28
+                                    width: hcd.width
+                                    height: 28 + hcd.silkyStackH + 3
+                                    opacity: Math.max(0, 1 - hcd.silkyClearT * 1.6)
+                                    transform: Translate {
+                                        x: 8 * hcd.silkyClearT
+                                        y: -7 * hcd.silkyClearT
+                                    }
+                                    property real w: width
+                                    property real h: height
+                                    property real topOverlap: 28
+                                    property real stackH: hcd.silkyStackH
+                                    property real cardR: hc.radius
+                                    property real layers: hcd.silky.n > 2 ? 2 : 1
+                                    property real dark: notifPopGlass.ctx.dark ? 1 : 0
+                                    property real hovered: (hcd.silkyStacked && hhov.hovered && !root.reduceMotion) ? 1 : 0
+                                    Behavior on hovered { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                                    fragmentShader: Qt.resolvedUrl("silky-notification-stack.frag.qsb")
+                                }
+                                Rectangle {
+                                    id: hc
+                                    y: hcd.silkyHeadH
+                                    readonly property int nid: hcd.nid
+"""
+HC_NEW_V4 = """                                Item { Component.onCompleted: notifPop.silkyReg(hcd.nid, hcd); Component.onDestruction: notifPop.silkyUnreg(hcd.nid, hcd) }
+                                // Silky: the app's header while its stack is open (collapse, clear the app)
+                                Item {
+                                    visible: hcd.silkyHeadH > 0.5
+                                    opacity: hcd.silkyHeadH / 34
+                                    width: hcd.width; height: 30
+                                    Text {
+                                        x: 4; width: parent.width - 120
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: hcd.app
+                                        elide: Text.ElideRight
+                                        color: pal.fg
+                                        font.family: root.fontForWeight(Font.DemiBold, pal.fam); font.pixelSize: 15; font.weight: Font.DemiBold
+                                        layer.enabled: hcd.silkyHeadH > 0.5
+                                        layer.effect: MultiEffect {
+                                            shadowEnabled: true
+                                            shadowBlur: 0.35
+                                            shadowVerticalOffset: 1
+                                            shadowColor: pal.dark ? "#78000000" : "#55ffffff"
+                                        }
+                                    }
+                                    Row {
+                                        anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 6
+                                        Rectangle {
+                                            width: silkyLessText.implicitWidth + 20; height: 24; radius: 12
+                                            color: pal.dark
+                                                ? (silkyLessMa.containsMouse ? Qt.rgba(0.16, 0.16, 0.20, 0.78) : Qt.rgba(0.10, 0.10, 0.13, 0.64))
+                                                : (silkyLessMa.containsMouse ? Qt.rgba(0.95, 0.95, 0.98, 0.90) : Qt.rgba(0.98, 0.98, 1.0, 0.78))
+                                            border.width: 1
+                                            border.color: pal.dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.08)
+                                            Text {
+                                                id: silkyLessText
+                                                anchors.centerIn: parent
+                                                text: notifPop.silkyLess()
+                                                color: pal.fg
+                                                font.family: root.fontForWeight(Font.Medium, pal.fam); font.pixelSize: 12; font.weight: Font.Medium
+                                            }
+                                            MouseArea { id: silkyLessMa; anchors.fill: parent; hoverEnabled: true; onClicked: notifPop.silkyToggle(hcd.silky.key) }
+                                        }
+                                        Rectangle {
+                                            width: 24; height: 24; radius: 12
+                                            color: pal.dark
+                                                ? (silkyClearMa.containsMouse ? Qt.rgba(0.16, 0.16, 0.20, 0.78) : Qt.rgba(0.10, 0.10, 0.13, 0.64))
+                                                : (silkyClearMa.containsMouse ? Qt.rgba(0.95, 0.95, 0.98, 0.90) : Qt.rgba(0.98, 0.98, 1.0, 0.78))
+                                            border.width: 1
+                                            border.color: pal.dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.08)
+                                            Glyph { anchors.centerIn: parent; width: 11; height: 11; kind: "close"; color: pal.fg }
+                                            MouseArea { id: silkyClearMa; anchors.fill: parent; hoverEnabled: true; onClicked: notifPop.silkyClearGroup(hcd.silky.key) }
+                                        }
+                                    }
+                                }
+                                // Silky: perspective-recessed glass edges under a folded stack (subtracted cleanly from the card silhouette)
+                                ShaderEffect {
+                                    id: silkyStackPeeks
+                                    z: -1
+                                    visible: hcd.silkyStackH > 0.2
+                                    x: 0
+                                    y: hcd.silkyHeadH + hc.height - 28
+                                    width: hcd.width
+                                    height: 28 + hcd.silkyStackH + 3
+                                    opacity: Math.max(0, 1 - hcd.silkyClearT * 1.6)
+                                    transform: Translate {
+                                        x: 8 * hcd.silkyClearT
+                                        y: -7 * hcd.silkyClearT
+                                    }
+                                    property real w: width
+                                    property real h: height
+                                    property real topOverlap: 28
+                                    property real stackH: hcd.silkyStackH
+                                    property real cardR: hc.radius
+                                    property real layers: hcd.silky.n > 2 ? 2 : 1
+                                    property real dark: notifPopGlass.ctx.dark ? 1 : 0
+                                    property real hovered: (hcd.silkyStacked && hhov.hovered && !root.reduceMotion) ? 1 : 0
+                                    Behavior on hovered { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                                    fragmentShader: Qt.resolvedUrl("silky-notification-stack.frag.qsb")
+                                }
+                                Rectangle {
+                                    id: hc
+                                    y: hcd.silkyHeadH
+                                    readonly property int nid: hcd.nid
+"""
+HC_NEW = """                                Item { Component.onCompleted: notifPop.silkyReg(hcd.nid, hcd); Component.onDestruction: notifPop.silkyUnreg(hcd.nid, hcd) }
+                                // Silky: the app's header while its stack is open (collapse, clear the app)
+                                Item {
+                                    visible: hcd.silkyHeadH > 0.5
+                                    opacity: hcd.silkyHeadH / 34
+                                    width: hcd.width; height: 30
+                                    Rectangle {
+                                        anchors.left: parent.left
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        readonly property real iconLead: silkyAppHeadImg.status === Image.Ready ? 20 : 0
+                                        width: Math.min(parent.width - 124, silkyAppHeadText.implicitWidth + 20 + iconLead)
+                                        height: 24; radius: 12
+                                        color: pal.dark
+                                            ? (silkyAppHeadMa.containsMouse ? Qt.rgba(0.16, 0.16, 0.20, 0.78) : Qt.rgba(0.10, 0.10, 0.13, 0.64))
+                                            : (silkyAppHeadMa.containsMouse ? Qt.rgba(0.95, 0.95, 0.98, 0.90) : Qt.rgba(0.98, 0.98, 1.0, 0.78))
+                                        border.width: 1
+                                        border.color: pal.dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.08)
+                                        Image {
+                                            id: silkyAppHeadImg
+                                            x: 8; anchors.verticalCenter: parent.verticalCenter
+                                            width: 14; height: 14
+                                            visible: status === Image.Ready
+                                            source: hcd.icon
+                                            sourceSize.width: 32; sourceSize.height: 32
+                                            fillMode: Image.PreserveAspectFit
+                                            asynchronous: false; smooth: true
+                                        }
+                                        Text {
+                                            id: silkyAppHeadText
+                                            x: 10 + parent.iconLead
+                                            width: Math.max(20, parent.width - 20 - parent.iconLead)
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: hcd.app
+                                            elide: Text.ElideRight
+                                            color: pal.fg
+                                            font.family: root.fontForWeight(Font.DemiBold, pal.fam); font.pixelSize: 13; font.weight: Font.DemiBold
+                                        }
+                                        MouseArea { id: silkyAppHeadMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: notifPop.silkyToggle(hcd.silky.key) }
+                                    }
+                                    Row {
+                                        anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 6
+                                        Rectangle {
+                                            width: silkyLessText.implicitWidth + 20; height: 24; radius: 12
+                                            color: pal.dark
+                                                ? (silkyLessMa.containsMouse ? Qt.rgba(0.16, 0.16, 0.20, 0.78) : Qt.rgba(0.10, 0.10, 0.13, 0.64))
+                                                : (silkyLessMa.containsMouse ? Qt.rgba(0.95, 0.95, 0.98, 0.90) : Qt.rgba(0.98, 0.98, 1.0, 0.78))
+                                            border.width: 1
+                                            border.color: pal.dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.08)
+                                            Text {
+                                                id: silkyLessText
+                                                anchors.centerIn: parent
+                                                text: notifPop.silkyLess()
+                                                color: pal.fg
+                                                font.family: root.fontForWeight(Font.Medium, pal.fam); font.pixelSize: 12; font.weight: Font.Medium
+                                            }
+                                            MouseArea { id: silkyLessMa; anchors.fill: parent; hoverEnabled: true; onClicked: notifPop.silkyToggle(hcd.silky.key) }
+                                        }
+                                        Rectangle {
+                                            width: 24; height: 24; radius: 12
+                                            color: pal.dark
+                                                ? (silkyClearMa.containsMouse ? Qt.rgba(0.16, 0.16, 0.20, 0.78) : Qt.rgba(0.10, 0.10, 0.13, 0.64))
+                                                : (silkyClearMa.containsMouse ? Qt.rgba(0.95, 0.95, 0.98, 0.90) : Qt.rgba(0.98, 0.98, 1.0, 0.78))
+                                            border.width: 1
+                                            border.color: pal.dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.08)
+                                            Glyph { anchors.centerIn: parent; width: 11; height: 11; kind: "close"; color: pal.fg }
+                                            MouseArea { id: silkyClearMa; anchors.fill: parent; hoverEnabled: true; onClicked: notifPop.silkyClearGroup(hcd.silky.key) }
+                                        }
+                                    }
+                                }
+                                // Silky: perspective-recessed glass edges under a folded stack (subtracted cleanly from the card silhouette)
+                                ShaderEffect {
+                                    id: silkyStackPeeks
+                                    z: -1
+                                    visible: hcd.silkyStackH > 0.2
+                                    x: 0
+                                    y: hcd.silkyHeadH + hc.height - 28
+                                    width: hcd.width
+                                    height: 28 + hcd.silkyStackH + 3
+                                    opacity: Math.max(0, 1 - hcd.silkyClearT * 1.6)
+                                    transform: Translate {
+                                        x: 8 * hcd.silkyClearT
+                                        y: -7 * hcd.silkyClearT
+                                    }
+                                    property real w: width
+                                    property real h: height
+                                    property real topOverlap: 28
+                                    property real stackH: hcd.silkyStackH
+                                    property real cardR: hc.radius
+                                    property real layers: hcd.silky.n > 2 ? 2 : 1
+                                    property real dark: notifPopGlass.ctx.dark ? 1 : 0
+                                    property real hovered: (hcd.silkyStacked && hhov.hovered && !root.reduceMotion) ? 1 : 0
+                                    Behavior on hovered { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                                    fragmentShader: Qt.resolvedUrl("silky-notification-stack.frag.qsb")
                                 }
                                 Rectangle {
                                     id: hc
@@ -1234,10 +1573,12 @@ def integrate(text):
     text = macshell_notification_center.remove_scroll(text)
     if "id: silkyStatusSummary" not in text:
         raise ValueError("Install the MacShell status integration first: python3 scripts/install-macshell-status.py")
-    old_footer = CLEAR_NOTIFICATIONS.replace("notifPop.silkyClearAll()", "root.notifClearAnimated()")
-    text = strip_deck(text.replace(old_footer, CLEAR_NOTIFICATIONS, 1))
+    old_footer = CLEAR_NOTIFICATIONS_TIGHT.replace("notifPop.silkyClearAll()", "root.notifClearAnimated()")
+    text = text.replace(old_footer, CLEAR_NOTIFICATIONS, 1).replace(CLEAR_NOTIFICATIONS_TIGHT, CLEAR_NOTIFICATIONS, 1)
+    text = strip_deck(text)
     # the deck sits inside the scroll block: with an older deck stripped, put the current one back in its place
-    for version in (NFL_NEW_V1, NFL_WITHOUT_FADE, NFL_WITH_TALL_HEADER, NFL_WITH_COMPACT_HEADER, NFL_NEW):
+    for version in (NFL_NEW_V1, NFL_WITHOUT_FADE, NFL_WITH_TALL_HEADER, NFL_WITH_COMPACT_HEADER,
+                    NFL_WITH_TIGHT_FOOTER, NFL_WITH_PLAIN_MORE, NFL_WITH_TINT_MORE, NFL_NEW):
         bare = version.replace(DECK, "")
         if bare in text:
             text = text.replace(bare, NFL_NEW, 1)
@@ -1248,12 +1589,17 @@ def integrate(text):
     text = text.replace(FULL_H_WITH_DOCK, FULL_H_NEW, 1)
     text = text.replace(FULL_H_WITH_COMPACT_HEADER, FULL_H_NEW, 1)
     for old, new in ((STACK_V1, STACK), (STACK_V2, STACK), (STACK_V3, STACK), (STACK_BEFORE_MOTION, STACK),
-                     (STACK_WITH_GRADIENT, STACK), (CARD_WITH_GRADIENT, CARD_NEW),
+                     (STACK_WITH_GRADIENT, STACK), (STACK_GAP_8, STACK),
+                     (CARD_WITH_GRADIENT, CARD_NEW), (CARD_STACK_14, CARD_NEW), (CARD_STACK_11, CARD_NEW), (CARD_STACK_12, CARD_NEW),
                      (GRADIENT_CARD_END, FEATHER_CARD_END), (FEATHER_CARD_END_WITH_ARROW, FEATHER_CARD_END),
                      (PRESS_CARD_WITHOUT_DRIFT, PRESS_CARD_NEW),
                      (CARD_NEW_V1, CARD_NEW), (CARD_NEW_V2, CARD_NEW), (CARD_BEFORE_FEATHER, CARD_NEW),
-                     (HC_NEW_V1, HC_NEW), (NFL_NEW_V1, NFL_NEW), (NFL_WITHOUT_FADE, NFL_NEW),
+                     (HC_NEW_V1, HC_NEW), (HC_NEW_V2, HC_NEW), (HC_NEW_V3, HC_NEW), (HC_NEW_V4, HC_NEW),
+                     (HC_NEW_V4.replace('Glyph { anchors.centerIn: parent; width: 11; height: 11; kind: "close"; color: pal.fg }',
+                                        'Text { anchors.centerIn: parent; text: "✕"; color: pal.fg; font.pixelSize: 11 }'), HC_NEW),
+                     (NFL_NEW_V1, NFL_NEW), (NFL_WITHOUT_FADE, NFL_NEW),
                      (NFL_WITH_TALL_HEADER, NFL_NEW), (NFL_WITH_COMPACT_HEADER, NFL_NEW),
+                     (NFL_WITH_TIGHT_FOOTER, NFL_NEW), (NFL_WITH_PLAIN_MORE, NFL_NEW), (NFL_WITH_TINT_MORE, NFL_NEW),
                      (CLICK_STACK_FIRST, CLICK_NEW), (CLICK_ACTIVATE_ONLY, CLICK_NEW),
                      (CLICK_DISMISS_IMMEDIATELY, CLICK_NEW), (CLICK_PRESS_ONLY, CLICK_NEW),
                      (NOTIFICATION_CARD_END + EXPAND_STACK + "                                }\n", FEATHER_CARD_END),
@@ -1268,7 +1614,9 @@ def integrate(text):
                           (NOTIFICATION_CARD_END + "                                }\n", FEATHER_CARD_END),
                           (PRESS_CARD_OLD, PRESS_CARD_NEW),
                           (FOCUS_OLD, FOCUS_NEW)):
-        if after in text:
+        if after in text or (
+                before is NOTIFICATION_ACTIVATE_OLD
+                and after.replace("notifToastRemove(id);", "notifToastDismiss(id);") in text):
             continue
         if text.count(before) != 1:
             raise ValueError(f"MacBar integration point changed: {before.strip().splitlines()[0][:90]}")

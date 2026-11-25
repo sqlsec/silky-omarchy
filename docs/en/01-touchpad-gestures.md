@@ -9,6 +9,7 @@
 - Four-finger horizontal swipe: switch workspaces on the current monitor with a full-page animation that tracks your fingers
 - Four fingers up / down: window overview (every window of the workspace / of the current app), also with four fingers on the touch screen, done by the silky-gestures plugin and MacShell, see [13](13-window-overview.md)
 - Rubber-band at the first / last workspace instead of creating a new empty one
+- Visual gesture previews and live switches in MacShell Settings → **Trackpad**, see [02 · Trackpad gesture animations and Touchscreen guide](02-macshell.md#trackpad-gesture-animations-and-touchscreen-guide)
 
 ## Why this split
 

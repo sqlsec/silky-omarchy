@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Silky Omarchy: lock with MacLock (instead of omarchy-system-lid-close -> omarchy.lock)
+# and reconcile clamshell display state when the laptop lid closes.
+set -u
+
+script_dir=$(cd -- "$(dirname -- "$(readlink -f -- "$0")")" && pwd)
+
+if command -v omarchy-hw-laptop-closed >/dev/null 2>&1 &&
+   command -v omarchy-hw-external-monitors >/dev/null 2>&1; then
+  if omarchy-hw-laptop-closed && ! omarchy-hw-external-monitors; then
+    "$script_dir/silky-lock" >/dev/null 2>&1 || true
+  fi
+fi
+
+if command -v omarchy-hyprland-monitor-clamshell >/dev/null 2>&1; then
+  omarchy-hyprland-monitor-clamshell
+fi

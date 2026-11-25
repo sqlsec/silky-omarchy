@@ -17,7 +17,11 @@ case "${1:-}" in
     ;;
 esac
 
-sh "$maclock_dir/lock-via-ipc.sh" >/dev/null 2>&1 &
+lock_guard="${XDG_RUNTIME_DIR:-/tmp}/silky-maclock.lock"
+(
+  flock -w 8 9 || exit 0
+  sh "$maclock_dir/lock-via-ipc.sh" >/dev/null 2>&1
+) 9>"$lock_guard" &
 
 # The same housekeeping omarchy-system-lock does: default keyboard layout, lock 1Password, stop the screensaver.
 hyprctl switchxkblayout all 0 >/dev/null 2>&1

@@ -583,6 +583,64 @@ o.rebind("SUPER + T", "Toggle window floating/tiling", o.silky_toggle_window_flo
 o.bind_expressions[o.silky_toggle_isolated_tiling] = "o.silky_toggle_isolated_tiling"
 o.bind("SUPER + ALT + T", "Toggle isolated tiling", o.silky_toggle_isolated_tiling)
 
+-- A tiled window on a floating workspace is drawn under every floating window there, so focusing it from the
+-- Dock or the app switcher leaves it hidden (WeChat after Super+O on a floating window, which Omarchy's pop toggle
+-- turns into a tile). When floating peers cover it, float it again below the menu bar; a tile nothing covers stays.
+local function overlaps(a, b)
+  return a.at and a.size and b.at and b.size
+    and a.at.x < b.at.x + b.size.x and b.at.x < a.at.x + a.size.x
+    and a.at.y < b.at.y + b.size.y and b.at.y < a.at.y + a.size.y
+end
+
+function o.silky_reveal_window(address)
+  local target = "address:" .. tostring(address or ""):gsub("^address:", "")
+  local window = hl.get_window(target)
+  if not window or not window.mapped or window.floating or window.pinned or (window.fullscreen or 0) ~= 0 then return end
+  local workspace = window.workspace
+  if not workspace or workspace.special or not workspace.id or workspace.id < 1 then return end
+  if current_layout_mode(workspace.id) ~= "floating" then return end
+  for _, peer in ipairs(hl.get_workspace_windows(tostring(workspace.id))) do
+    if peer.address ~= window.address and peer.mapped and not peer.hidden and peer.floating and overlaps(window, peer) then
+      local floated = float_below_menu_bar(window)
+      if floated and floated.floating then
+        restore_mode_tag(target)
+        -- The pop toggle that tiled it left its tag behind without the pin.
+        hl.dispatch(hl.dsp.window.tag({ tag = "-pop", window = target }))
+      end
+      return
+    end
+  end
+end
+
+-- Super+O: Omarchy's pop toggle flips floating, so on a floating workspace it tiled the window it meant to pin.
+-- Here a window that already floats is only pinned and raised, and unpinning tiles it only on a tiled workspace.
+function o.silky_toggle_pop()
+  local window = hl.get_active_window()
+  if not window or not window.address then return end
+  local target = "address:" .. window.address
+  local workspace = window.workspace
+  local floating_ws = workspace and workspace.id and workspace.id > 0 and current_layout_mode(workspace.id) == "floating"
+  if window.pinned then
+    hl.dispatch(hl.dsp.window.pin({ action = "off", window = target }))
+    hl.dispatch(hl.dsp.window.tag({ tag = "-pop", window = target }))
+    if not floating_ws then hl.dispatch(hl.dsp.window.float({ action = "off", window = target })) end
+    return
+  end
+  if not window.floating then
+    if (window.fullscreen or 0) ~= 0 then release_fullscreen(window) end
+    hl.dispatch(hl.dsp.window.float({ action = "on", window = target }))
+    hl.dispatch(hl.dsp.window.resize({ x = 1300, y = 900, relative = false, window = target }))
+    hl.dispatch(hl.dsp.window.center({ window = target }))
+    if floating_ws then restore_mode_tag(target) end
+  end
+  hl.dispatch(hl.dsp.window.pin({ action = "on", window = target }))
+  hl.dispatch(hl.dsp.window.alter_zorder({ mode = "top", window = target }))
+  hl.dispatch(hl.dsp.window.tag({ tag = "+pop", window = target }))
+end
+pcall(hl.unbind, "SUPER + O")
+o.bind_expressions[o.silky_toggle_pop] = "o.silky_toggle_pop"
+o.bind("SUPER + O", "Pop window out (float & pin)", o.silky_toggle_pop)
+
 -- Universal paste: Ctrl+V, or Ctrl+Shift+V in a terminal (same as Omarchy's clipboard.lua, whose helpers are local).
 local function send_once(mods, key)
   hl.dispatch(hl.dsp.send_key_state({ mods = mods, key = key, state = "down" }))

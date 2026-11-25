@@ -91,6 +91,12 @@ function tr(text) {
     return /^zh(?:-|$)/i.test(I18n.code()) ? (chinese[text] || text) : text;
 }
 
+function networkColor(direction, dark) {
+    if (direction === "up")
+        return dark ? "#bba4ff" : "#6743a5";
+    return dark ? "#58dcf0" : "#00778a";
+}
+
 function rate(bytes, compact) {
     if (!Number.isFinite(bytes)) return "—";
     var units = compact ? ["B/s", "K/s", "M/s", "G/s", "T/s"] : ["B/s", "KiB/s", "MiB/s", "GiB/s", "TiB/s"];

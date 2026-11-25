@@ -4,6 +4,7 @@ After=dbus.socket wayland-session-waitenv.service
 Requires=dbus.socket
 PartOf=graphical-session.target
 ConditionEnvironment=WAYLAND_DISPLAY
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple

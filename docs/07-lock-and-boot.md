@@ -9,18 +9,21 @@
 
 ## 锁屏有哪些入口
 
-Omarchy 的锁屏不只是一个快捷键，一共有四个入口，都要改：
+Omarchy 的锁屏不只是一个快捷键，一共有五个入口，都要统一到 MacLock 并避免并发抢锁：
 
 | 入口 | 原来 | 现在 |
 | --- | --- | --- |
-| Super+L | MacShell 已绑定 MacLock | 不变 |
+| Super+L | MacShell 已绑定 MacLock | 不变（`lock-via-ipc.sh` 增加 `flock` 互斥） |
 | Super+Ctrl+L、Omarchy 菜单里的“锁定” | `omarchy-system-lock` | `silky-lock` |
 | 闲置 5 分钟 | Omarchy shell 的 `omarchy.idle` 服务调用 `omarchy-system-lock` | 复制出的 `silky.idle` 服务调用 `silky-lock` |
-| 合盖 / 睡眠前 | 用户服务 `omarchy-sleep-lock.service` | 用户服务 `silky-sleep-lock.service`，原服务被 mask |
+| 合盖硬件开关（`switch:on:Lid Switch` 等） | `omarchy-system-lid-close`（调用 `omarchy-system-lock` 触发 `omarchy.lock`） | `silky-lid-close`（无外接显示器时调用 `silky-lock`，再同步 clamshell 状态） |
+| 合盖 / 睡眠前（`PrepareForSleep`） | 用户服务 `omarchy-sleep-lock.service`（及 MacShell 附加的 `hypridle`） | 仅保留用户服务 `silky-sleep-lock.service`；原服务被 mask，冗余 `hypridle` 钩子停用 |
 
-[`bin/silky-lock`](../bin/silky-lock) 通过 MacLock 的 IPC（`lock-via-ipc.sh`）上锁，并做 `omarchy-system-lock` 原本的附带工作：切回默认键盘布局、锁定 1Password、关闭屏保。新版 Omarchy 屏保（`omarchy-screensaver` 1.3.1+）运行独立进程 `/usr/lib/omarchy-screensaver/omarchy-screensaver` 而非旧版 `ttfx` 终端窗口，若不显式结束会在 MacLock 之下继续运行并在解锁后重新出现；`silky-lock` 会在上锁时结束该进程（等待退出或强杀）并恢复 `cursor:invisible false`，同时保留对旧版 `ttfx` / `org.omarchy.screensaver` 的兼容清理。`silky-lock --is-locked` 供闲置服务判断是否已锁；`silky-lock --sleep` 会等到 MacLock 报告已锁（`qs -c MacLock ipc call lockscreen state` 返回 `busy`）再返回。
+[`bin/silky-lock`](../bin/silky-lock) 通过 MacLock 的 IPC（`lock-via-ipc.sh`）上锁，并用 `${XDG_RUNTIME_DIR:-/tmp}/silky-maclock.lock`（`flock`）串行化所有锁屏调用，同时做 `omarchy-system-lock` 原本的附带工作：切回默认键盘布局、锁定 1Password、关闭屏保。新版 Omarchy 屏保（`omarchy-screensaver` 1.3.1+）运行独立进程 `/usr/lib/omarchy-screensaver/omarchy-screensaver` 而非旧版 `ttfx` 终端窗口，若不显式结束会在 MacLock 之下继续运行并在解锁后重新出现；`silky-lock` 会在上锁时结束该进程（等待退出或强杀）并恢复 `cursor:invisible false`，同时保留对旧版 `ttfx` / `org.omarchy.screensaver` 的兼容清理。`silky-lock --is-locked` 供闲置服务判断是否已锁；`silky-lock --sleep` 会等到 MacLock 报告已锁（`qs -c MacLock ipc call lockscreen state` 返回 `busy`）再返回。
 
-[`bin/silky-sleep-lock`](../bin/silky-sleep-lock) 持有 logind 的 delay 抑制锁，收到 `PrepareForSleep` 后用 MacLock 上锁，锁好后立即退出以释放抑制锁让系统睡眠，systemd 随后重启它，为下一次睡眠重新拿锁。
+[`bin/silky-lid-close`](../bin/silky-lid-close) 替代 Omarchy 默认的 `omarchy-system-lid-close`（通过 [`config/hypr/bindings-lock.lua`](../config/hypr/bindings-lock.lua) 重绑定 `switch:on:Lid Switch`、`Apple SMC power/lid events` 与 `cros_ec_buttons`）。此前合盖瞬间会同时触发三条锁屏路径——`omarchy-system-lid-close` 启动带 500 ms 延迟的 `omarchy.lock`、MacShell 附带的 `hypridle` 调用 `lock-via-ipc.sh`、`silky-sleep-lock.service` 再次调用 `lock-via-ipc.sh`。在开启 `misc:allow_session_lock_restore = true` 的情况下，并发抢占 `ext-session-lock-v1` 会导致被夺锁的 `MacLock` 触发 `lost the session lock: quitting` 退出；若发生在冻结用户态进程的临界区，最后持有锁的客户端退出且未解锁，唤醒时 Hyprland 会显示 `lockdead.png`（`the lockscreen app died :(`）。[`scripts/install-maclock.sh`](../scripts/install-maclock.sh) 会同时为 `lock-via-ipc.sh` 注入 `flock` 串行保护，并注释 `~/.config/hypr/macshell.lua` 中的 `enable-sleep-lock.sh` 自启行、停掉仅含 `before_sleep_cmd` 的冗余 `hypridle`。
+
+[`bin/silky-sleep-lock`](../bin/silky-sleep-lock) 持有 logind 的 delay 抑制锁，收到 `PrepareForSleep` 后用 MacLock 上锁，锁好后立即退出以释放抑制锁让系统睡眠，systemd 随后重启它，为下一次睡眠重新拿锁。重启申请新抑制锁前，脚本会轮询 `org.freedesktop.login1.Manager.PreparingForSleep` 直到恢复为 `b false`（避免唤醒收尾阶段报 `Failed to inhibit: The operation inhibition has been requested for is already running` 失败退出），并在单元文件里设 `StartLimitIntervalSec=0`。
 
 ### 闲置服务与熄屏
 

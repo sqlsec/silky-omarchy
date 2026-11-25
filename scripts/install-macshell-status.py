@@ -213,7 +213,7 @@ TRAY_KIND_V4 = TRAY_KIND_V3.replace(
     '                                    case "netease-cloud-music-gtk4": return "netease-cloud-music";\n',
 )
 
-TRAY_KIND = """                                readonly property string silkyIconKind: {
+TRAY_KIND_V5 = """                                readonly property string silkyIconKind: {
                                     const item = tray.modelData;
                                     if (item.status === Status.NeedsAttention)
                                         return "";
@@ -237,6 +237,14 @@ TRAY_KIND = """                                readonly property string silkyIco
                                     }
                                 }
 """
+
+TRAY_KIND = TRAY_KIND_V5.replace(
+    '                                        return "antigravity";\n',
+    '                                        return "antigravity";\n'
+    '                                    // LocalSend registers under a random id each launch; its title is stable.\n'
+    '                                    if (name.includes("localsend"))\n'
+    '                                        return "localsend";\n',
+)
 
 TRAY_ICON_STYLED = TRAY_KIND + """                                SilkyStatusIcon {
                                     anchors.centerIn: parent
@@ -334,7 +342,7 @@ def integrate(text):
     for old_indicator in (BATTERY_INDICATOR_V1, BATTERY_INDICATOR_V2, BATTERY_INDICATOR_V3, BATTERY_INDICATOR_V4, BATTERY_INDICATOR_V5, BATTERY_INDICATOR_V6):
         if old_indicator in text:
             text = text.replace(old_indicator, BATTERY_INDICATOR, 1)
-    for old_kind in (TRAY_KIND_V1, TRAY_KIND_V2, TRAY_KIND_V3, TRAY_KIND_V4):
+    for old_kind in (TRAY_KIND_V1, TRAY_KIND_V2, TRAY_KIND_V3, TRAY_KIND_V4, TRAY_KIND_V5):
         if old_kind in text:
             text = text.replace(old_kind, TRAY_KIND, 1)
     if STATUS_OPEN not in text:

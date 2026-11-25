@@ -448,8 +448,11 @@ def main():
     }
 
     function activate(item, forceNew) {""", dock)
-    updated = replace_once(updated, "            wins[(idx + 1) % wins.length].activate();",
-                           "            activateToplevel(wins[(idx + 1) % wins.length]);", dock)
+    # tune-dock-window-pick.py rewrites the cycle line to
+    # `activateToplevel(idx >= 0 ? ... : recentWindow(wins))`; either form is installed.
+    if "            activateToplevel(" not in updated:
+        updated = replace_once(updated, "            wins[(idx + 1) % wins.length].activate();",
+                               "            activateToplevel(wins[(idx + 1) % wins.length]);", dock)
     updated = replace_once(updated, "run: function () { w.activate(); }",
                            "run: function () { activateToplevel(w); }", dock)
     if "    FolioMinimizeFx { id: folioEffect }" not in updated:

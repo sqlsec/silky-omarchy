@@ -29,12 +29,15 @@ Item {
         SilkyWLabel {
             id: total
             y: 17; host: w.host; strong: true; px: w.host.size === "small" ? 22 : 26
-            width: w.host.size === "small" ? parent.width : 150
+            width: w.host.size === "medium" ? 150 : parent.width
+            fontSizeMode: Text.HorizontalFit; minimumPixelSize: 16
             text: w.d ? F.duration(w.d.total) : ""
         }
         SilkyWLabel {
             visible: w.host.size !== "small"
             y: 52; host: w.host; dim: true; px: 11
+            width: w.host.size === "medium" ? 150 : parent.width
+            fontSizeMode: Text.HorizontalFit; minimumPixelSize: 9
             readonly property int diff: w.d ? w.d.total - w.d.yesterday : 0
             text: !w.d || w.d.yesterday <= 0 ? F.tr("Today")
                  : (diff >= 0 ? "▲ " : "▼ ") + F.duration(Math.abs(diff)) + " " + F.tr("vs yesterday")

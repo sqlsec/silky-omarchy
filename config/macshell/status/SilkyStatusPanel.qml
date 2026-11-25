@@ -37,8 +37,8 @@ Item {
         return {"label": label, "value": value};
     }
 
-    readonly property color downloadColor: palette.dark ? "#58dcf0" : "#00778a"
-    readonly property color uploadColor: palette.dark ? "#bba4ff" : "#6743a5"
+    readonly property color downloadColor: Status.networkColor("down", palette.dark)
+    readonly property color uploadColor: Status.networkColor("up", palette.dark)
     readonly property color thermalColor: Status.thermalColor(summary ? summary.temp : null, palette.dark, palette.fg)
     readonly property bool batteryPowered: power.sample?.onBattery ?? UPower.onBattery
     // Five semantic power states aligned with the thermal/load palette:

@@ -72,7 +72,8 @@ python3 scripts/install-login-transition.py  # 可选：MacShell 登录后的壁
 ./scripts/install-obsidian-theme.sh
 ./scripts/install-desktop-priority.sh   # 需要 sudo
 ./scripts/install-occlusion-plugin.sh   # 被完全遮挡的窗口暂停重绘（Hyprland 插件）
-./scripts/install-sleep-usb-wakeup.sh   # 需要 sudo，高通 Snapdragon X 合盖防 USB 误唤醒
+./scripts/install-sleep-usb-wakeup.sh   # 需要 sudo，高通 Snapdragon X 合盖防 USB 误唤醒与 Wi-Fi 7 唤醒硬复位修复
+./scripts/install-ath12k-wifi-fix.sh    # 需要 sudo，高通 WCN7850 5 GHz Wi-Fi 防卡死与自动恢复
 ```
 
 每个脚本都会先备份要修改的文件。装完或升级后可以跑一遍自检，逐项确认菜单栏、Dock、插件、锁屏、语音浮条等都处于预期状态，有问题会给出修复命令：
@@ -133,4 +134,5 @@ docs/             逐项说明（英文版在 docs/en/）
 - [14 · Omalogi：G604 按键、板载配置与系统快捷键](docs/14-omalogi.md)
 - [15 · Obsidian：macOS 27 风格主题、文件图标与丝滑打字](docs/15-obsidian.md)
 - [16 · 桌面优先调度：Hyprland 与 MacShell 先拿到 CPU / GPU](docs/16-desktop-priority.md)
-- [17 · 合盖睡眠防 USB 控制器误唤醒（Qualcomm `dwc3-qcom`）](docs/17-sleep-usb-wakeup.md)
+- [17 · 高通平台合盖睡眠优化：防 USB 误唤醒与 Wi-Fi 7 唤醒硬复位](docs/17-sleep-usb-wakeup.md)
+- [18 · 5 GHz Wi-Fi 连接卡死与列表消失修复（Qualcomm `ath12k_wifi7`）](docs/18-ath12k-5ghz-wifi.md)

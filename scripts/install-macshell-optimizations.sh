@@ -96,8 +96,13 @@ managed_files=("${calendar_paths[@]}" MacShell/FolioMinimizeFx.qml MacShell/Foli
 for display_asset in "$repo_root/config/macshell/displays/"{*.js,*.qml}; do
   managed_files+=("MacShell/${display_asset##*/}")
 done
+for trackpad_asset in "$repo_root/config/macshell/trackpad/"*.qml; do
+  managed_files+=("MacShell/${trackpad_asset##*/}")
+done
 # Bluetooth backend, device icon and pairing helper (scripts/tune-bluetooth.py installs them).
 managed_files+=(MacShell/SilkyBluetooth.qml MacShell/SilkyBtIcon.qml MacShell/assets/silky-bt-helper.py)
+# Wi-Fi model and details helper; the scan helper is refreshed too (scripts/tune-wifi.py installs them).
+managed_files+=(MacShell/SilkyWifi.qml MacShell/assets/silky-wifi-info.py MacShell/assets/silky-wifi-conn.py MacShell/assets/silky-wifi-scan.py)
 for relative_path in "${managed_files[@]}"; do
   case "$relative_path" in
     MacShell/*) source_path="$shell_dir/${relative_path#MacShell/}" ;;
@@ -143,17 +148,28 @@ python3 "$repo_root/scripts/tune-about-version.py" "$staged_shell"
 python3 "$repo_root/scripts/tune-apps-panel.py" "$staged_shell/MacBar.qml"
 python3 "$repo_root/scripts/tune-apps-dock-passthrough.py" "$staged_shell/MacDock.qml"
 python3 "$repo_root/scripts/tune-control-center-glass.py" "$staged_shell/MacBar.qml"
+# WiFi / Bluetooth tiles: the round icon toggles, the rest of the tile (and its "›") opens the list.
+python3 "$repo_root/scripts/tune-control-center-network-tiles.py" "$staged_shell/MacBar.qml"
 for file in "${calendar_files[@]}"; do
   install -m 644 "$repo_root/config/macshell/calendar/$file" "$staged_shell/$file"
 done
 python3 "$repo_root/scripts/tune-calendar.py" "$staged_shell/MacBar.qml"
 python3 "$repo_root/scripts/tune-display-controls.py" "$staged_shell/MacBar.qml"
 python3 "$repo_root/scripts/tune-display-settings.py" "$staged_shell"
+python3 "$repo_root/scripts/tune-trackpad-settings.py" "$staged_shell"
 # Bluetooth: D-Bus backend, paired-only Control Center list, macOS-style Settings page with pairing requests.
 python3 "$repo_root/scripts/tune-bluetooth.py" "$staged_shell"
+# Wi-Fi: known / other networks, Option-click details, macOS-style Settings page (needs install-macshell-wifi.sh first).
+if grep -q 'assets/silky-wifi-scan.py' "$staged_shell/MacBar.qml"; then
+  python3 "$repo_root/scripts/tune-wifi.py" "$staged_shell"
+else
+  printf 'Skipping the Wi-Fi page: run scripts/install-macshell-wifi.sh first.\n' >&2
+fi
 python3 "$repo_root/scripts/tune-window-tiling.py" "$staged_shell/MacBar.qml"
 # Volume sliders play a tap at the level they set.
 python3 "$repo_root/scripts/tune-volume-feedback.py" "$staged_shell/MacBar.qml"
+# Screen Recording first lets you click a monitor or drag a region (slurp), Esc cancels.
+python3 "$repo_root/scripts/tune-screen-recording-picker.py" "$staged_shell/MacBar.qml"
 # Live microphone level under the input slider on the Sound page.
 python3 "$repo_root/scripts/tune-mic-meter.py" "$staged_shell/MacBar.qml"
 # Keep glass window stacking in sync when focus changes without a geometry change.
@@ -175,6 +191,8 @@ python3 "$repo_root/scripts/tune-folio-macshell.py" "$staged_shell"
 python3 "$repo_root/scripts/tune-wps-dock.py" "$staged_shell/MacDock.qml"
 python3 "$repo_root/scripts/tune-macshell-settings.py" "$staged_shell/MacDock.qml"
 python3 "$repo_root/scripts/tune-wallpaper-picker.py" "$staged_shell/MacDock.qml"
+python3 "$repo_root/scripts/tune-dock-focus-cursor.py" "$staged_shell/MacDock.qml"
+python3 "$repo_root/scripts/tune-dock-window-pick.py" "$staged_shell/MacDock.qml"
 python3 "$repo_root/scripts/tune-dock-window-check.py" "$staged_shell/MacDock.qml"
 
 # Also update existing Silky installations: keep application-provided window controls visible.

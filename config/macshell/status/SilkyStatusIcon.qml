@@ -21,6 +21,7 @@ Canvas {
         ctx.strokeStyle = ink;
         ctx.lineWidth = weight;
         let bulb = false;
+        let dot = 0;
         ctx.lineJoin = "round";
         ctx.lineCap = "round";
         ctx.beginPath();
@@ -50,6 +51,20 @@ Canvas {
             ctx.bezierCurveTo(3.0, 15.0, 3.7, 13.4, 4.5, 11.2);
             ctx.bezierCurveTo(5.9, 7.2, 7.7, 3.0, 10, 3.0);
             ctx.closePath();
+            break;
+        case "claude":
+            // Claude's asymmetric spark, redrawn with the same strokes as the tray glyphs.
+            line([10, 10, 3.2, 13.8]);
+            line([10, 10, 2.1, 9.9]);
+            line([10, 10, 3.5, 5.6]);
+            line([10, 10, 6.6, 2.0]);
+            line([10, 10, 11.6, 2.3]);
+            line([10, 10, 15.7, 4.1]);
+            line([10, 10, 18.0, 8.5]);
+            line([10, 10, 16.6, 12.3]);
+            line([10, 10, 14.9, 16.9]);
+            line([10, 10, 10.6, 18.0]);
+            line([10, 10, 6.3, 17.0]);
             break;
         case "chatgpt":
             ctx.save();
@@ -138,6 +153,16 @@ Canvas {
             ctx.bezierCurveTo(11.5, 14, 12.4, 12.7, 12.1, 11.2);
             ctx.lineTo(10.6, 5.8);
             ctx.bezierCurveTo(9.7, 2.4, 12.4, 1.2, 15, 3.6);
+            break;
+        case "localsend":
+            // LocalSend: a ring of eight dashes around a solid centre dot.
+            for (let dash = 0; dash < 8; dash++) {
+                const start = dash * Math.PI / 4 - Math.PI / 2 + 0.2;
+                const end = start + Math.PI / 4 - 0.4;
+                ctx.moveTo(10 + 7.4 * Math.cos(start), 10 + 7.4 * Math.sin(start));
+                ctx.arc(10, 10, 7.4, start, end);
+            }
+            dot = 3.0;
             break;
         case "remmina":
             ctx.roundedRect(2.5, 3.5, 15, 10.5, 2.2, 2.2);
@@ -232,6 +257,12 @@ Canvas {
             // A filled bulb gives the thermometer the same visual weight as the solid Wi-Fi and search glyphs.
             ctx.beginPath();
             ctx.arc(10, 14.1, 2.1, 0, Math.PI * 2);
+            ctx.fillStyle = ink;
+            ctx.fill();
+        }
+        if (dot > 0) {
+            ctx.beginPath();
+            ctx.arc(10, 10, dot, 0, Math.PI * 2);
             ctx.fillStyle = ink;
             ctx.fill();
         }

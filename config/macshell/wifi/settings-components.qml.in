@@ -1,0 +1,105 @@
+    // Silky WiFi components begin
+    // Controls of the Wi-Fi network details window (docs/02-macshell.md#wi-fi-面板与设置页).
+    // Text field: right-aligned value like macOS; read-only fields show plain grey text.
+    component SField: Rectangle {
+        id: sf
+        required property var t
+        property alias text: sfIn.text
+        property string placeholder: ""
+        property bool editable: true
+        property bool alignRight: true
+        signal edited()
+        signal accepted()
+        width: 190; height: 26; radius: 6
+        color: editable ? t.field : "transparent"
+        border.width: editable ? 1 : 0
+        border.color: sfIn.activeFocus ? t.accent : t.cardBorder
+        TextInput {
+            id: sfIn
+            anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 8
+            verticalAlignment: TextInput.AlignVCenter
+            horizontalAlignment: sf.alignRight ? TextInput.AlignRight : TextInput.AlignLeft
+            clip: true; selectByMouse: true
+            readOnly: !sf.editable
+            color: sf.editable ? sf.t.text : sf.t.text2
+            selectionColor: sf.t.accent
+            font.family: root.fontForWeight(Font.Normal, sf.t.fam); font.pixelSize: 13
+            onTextEdited: sf.edited()
+            onAccepted: sf.accepted()
+            // long values (a PAC URL) show their beginning unless the field is being edited
+            onTextChanged: if (!activeFocus) cursorPosition = 0
+            onActiveFocusChanged: if (!activeFocus) cursorPosition = 0
+            Component.onCompleted: cursorPosition = 0
+        }
+        Text {
+            visible: sfIn.text === "" && !sfIn.activeFocus
+            anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 8
+            verticalAlignment: Text.AlignVCenter
+            horizontalAlignment: sf.alignRight ? Text.AlignRight : Text.AlignLeft
+            text: sf.placeholder
+            color: sf.t.text3
+            font.family: root.fontForWeight(Font.Normal, sf.t.fam); font.pixelSize: 13
+        }
+    }
+
+    // macOS pop-up button: current value and the ⌃⌄ badge; the owner shows the choices
+    component SChoice: Item {
+        id: sc
+        required property var t
+        property string label: ""
+        property bool enabled2: true
+        signal clicked()
+        width: scRow.width; height: 26
+        Row {
+            id: scRow
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 8
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: sc.label
+                color: sc.enabled2 ? sc.t.text : sc.t.text3
+                font.family: root.fontForWeight(Font.Normal, sc.t.fam); font.pixelSize: 13
+            }
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                width: 20; height: 20; radius: 10
+                color: scMa.pressed ? sc.t.buttonPressed : sc.t.button
+                border.width: 1; border.color: sc.t.buttonBorder
+                Canvas {
+                    anchors.centerIn: parent
+                    width: 8; height: 11
+                    property color c: sc.t.text
+                    onCChanged: requestPaint()
+                    onPaint: {
+                        var g = getContext("2d"); g.reset();
+                        g.strokeStyle = c; g.lineWidth = 1.3; g.lineCap = "round"; g.lineJoin = "round";
+                        g.beginPath(); g.moveTo(1, 4); g.lineTo(4, 1); g.lineTo(7, 4); g.stroke();
+                        g.beginPath(); g.moveTo(1, 7); g.lineTo(4, 10); g.lineTo(7, 7); g.stroke();
+                    }
+                }
+            }
+        }
+        MouseArea { id: scMa; anchors.fill: parent; enabled: sc.enabled2; cursorShape: Qt.PointingHandCursor; onClicked: sc.clicked() }
+    }
+
+    component SCheck: Rectangle {
+        id: ck
+        required property var t
+        property bool checked: false
+        signal toggled(bool v)
+        width: 16; height: 16; radius: 4
+        color: checked ? t.accent : t.field
+        border.width: checked ? 0 : 1; border.color: t.text3
+        Canvas {
+            visible: ck.checked
+            anchors.fill: parent
+            onPaint: {
+                var g = getContext("2d"); g.reset();
+                g.strokeStyle = "white"; g.lineWidth = 1.8; g.lineCap = "round"; g.lineJoin = "round";
+                g.beginPath(); g.moveTo(4, 8.4); g.lineTo(7, 11.2); g.lineTo(12.2, 5); g.stroke();
+            }
+        }
+        MouseArea { anchors.fill: parent; anchors.margins: -4; onClicked: ck.toggled(!ck.checked) }
+    }
+    // Silky WiFi components end
+

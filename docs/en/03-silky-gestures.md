@@ -9,6 +9,7 @@
 - On the touchscreen, a single finger swiped inward from the left or right edge switches workspaces
 - Both touchscreen swipes rubber-band at the ends too
 - Move and resize floating windows by finger on the touchscreen: drag the title area to move, drag edges and corners to resize, and long-press anywhere in a window, then drag, to move it as well
+- Interactive tutorials and hardware toggle in MacShell Settings → **Touchscreen**, see [02 · Trackpad gesture animations and Touchscreen guide](02-macshell.md#trackpad-gesture-animations-and-touchscreen-guide)
 
 ## Why a plugin
 

@@ -65,9 +65,7 @@ Item {
             height: 11
             anchors.verticalCenter: parent.verticalCenter
             kind: root.lead
-            // Monochrome like the rest of the bar and as heavy as the DemiBold digits beside it;
-            // the panel keeps the upload and download colours.
-            ink: root.palette.fg
+            ink: Status.networkColor(root.lead, root.palette.dark)
             weight: 2.4
         }
         Text {

@@ -95,7 +95,7 @@ The same file also adds a **110 Hz** custom `modeline` for the external `BOE 0x0
 
 The menu bar, Control Center, and System Settings Wi-Fi page share one scanner. When opening Wi-Fi with an empty list, MacShell first loads NetworkManager's cached networks immediately (~50–100 ms) so the connected and nearby networks appear right away, then runs an `auto` refresh in the background: scans completed within the last 30 seconds reuse the cache, while older caches or clicking Scan Again trigger D-Bus `RequestScan` and wait for `LastScan` to advance (up to 22 seconds, covering the ~16 s tri-band scan on WCN7850, and falling back cleanly to the latest cache if NetworkManager rate-limits the request). While networks are already shown, background scans display a subtle "Searching…" label on the right of the Networks header without shifting or hiding the list. A timeout keeps the previous list and displays a retry message. The menu bar status and panel list polls read cached results, and new panel scans pause during connection attempts. System Settings shows connection progress and errors.
 
-On November 22, 2026, wpa_supplicant first reported lost access-point beacons. The Qualcomm WCN7850 driver `ath12k_wifi7_pci` then failed to flush its transmit queue, and NetworkManager logged `ssid-not-found`. MacShell was reading its cache immediately after requesting an asynchronous scan, so the panel could show an empty list prematurely. This patch fixes the panel behavior. Determining whether the underlying incident originated in the driver, firmware, or access point requires more evidence.
+On November 22, 2026, wpa_supplicant first reported lost access-point beacons. The Qualcomm WCN7850 driver `ath12k_wifi7_pci` then failed to flush its transmit queue, and NetworkManager logged `ssid-not-found`. MacShell was reading its cache immediately after requesting an asynchronous scan, so the panel could show an empty list prematurely. This patch fixes the panel behavior; for the confirmed WCN7850 scan-MAC collision, `received scan start failure event` 25-second stall, and 5 GHz radio wedge prevention and auto-recovery, see [18 · Fix 5 GHz Wi-Fi Connection Stalls and Disappearing Networks](18-ath12k-5ghz-wifi.md).
 
 Run from the repository root. Requires Bash, Python 3, NetworkManager's `nmcli`, systemd's `busctl`, and GNU `patch`. Tested on the local MacShell 0.5.3 installation. Run preflight to check other builds.
 
@@ -114,6 +114,23 @@ nmcli -f IN-USE,SIGNAL,FREQ device wifi list --rescan yes
 To roll back, remove `~/.config/omarchy/hooks/post-update.d/silky-macshell-wifi.hook`. Restore `MacBar.qml`, `MacDock.qml`, and `lang/zh-CN.js` from the printed `~/.local/state/macshell/silky-backup-wifi.*` directory, remove `assets/silky-wifi-scan.py` if it was added in the first installation, and run `qs -c MacShell ipc call macshell reload`. After an update, use the backup that matches the installed version.
 
 ## Control Center
+
+### WiFi and Bluetooth tiles: icon toggles, the rest opens the list
+
+**Effect**: the two wide tiles at the top left of the Control Center now split their click areas like macOS. Only the round icon turns WiFi or Bluetooth on or off. Clicking the name, the subtitle, the empty area or the `›` at the right edge opens the network or device list inside the Control Center, so a stray click no longer switches the radio off. The `›` is always shown and uses the same glyph, size, colour and 22 px right inset as the Display and Sound rows. Hovering the icon gives it a light round highlight and pressing it springs it; the tile's own hover tint and press shrink only appear over the rest of the tile. The WiFi tile is titled `WiFi` in every language (it read 无线局域网 in Chinese); the Bluetooth title is unchanged.
+
+One-cell WiFi / Bluetooth tiles hold only the icon, so the whole tile still toggles. Touch taps follow the same split. Control Center tiles have no keyboard focus yet, so there is no keyboard path to keep in step.
+
+**Install**: [`scripts/tune-control-center-network-tiles.py`](../../scripts/tune-control-center-network-tiles.py) runs from `install-macshell-optimizations.sh`. It adds a `splitIcon` mode to `CCButton` in the staged `MacBar.qml` and turns it on for the WiFi and Bluetooth tiles. It is idempotent and skips a file that already has it. To update an installed MacShell only:
+
+```bash
+python3 scripts/tune-control-center-network-tiles.py ~/.config/quickshell/MacShell/MacBar.qml
+qs ipc -c MacShell call macshell reload
+```
+
+**Verify**: checked on Hyprland 0.57 with MacShell 0.5.3: the log shows no new QML errors after reload. Screenshots in dark and light appearance show the `WiFi` title and both `›` lined up with the Display and Sound arrows. The click split still needs a manual check: open the Control Center, click the WiFi name and the network list should open while `nmcli radio wifi` stays `enabled`; click the round Bluetooth icon and `Powered` in `bluetoothctl show` should flip, then click again to restore it.
+
+**Roll back**: restore `~/.config/quickshell/MacShell/MacBar.qml` from `~/.local/state/macshell/MacBar.qml.bak.nettiles-*` or the `silky-backup-*` directory written by `install-macshell-optimizations.sh`, remove the `tune-control-center-network-tiles.py` line from the installer, and run `qs ipc -c MacShell call macshell reload`.
 
 ### Bluetooth panel and Settings page
 
@@ -156,6 +173,83 @@ python3 scripts/tune-bluetooth.py --install
 Pairing, connecting, disconnecting, forgetting and renaming a real device, and the battery display, still need manual checks. Open Settings → Bluetooth, put a device in pairing mode and click Connect. The row should show "Pairing…" and then "Connecting…", and the device should move to "My Devices" when it succeeds. Pairing a keyboard should bring up the enter-code or type-code sheet.
 
 **Roll back**: restore `MacBar.qml`, `MacDock.qml` and `lang/zh-CN.js` from `~/.local/state/silky-omarchy/bluetooth-backup-*` (or the installer's `silky-backup-*`). Delete `SilkyBluetooth.qml`, `SilkyBtIcon.qml` and `assets/silky-bt-helper.py` from `~/.config/quickshell/MacShell/`. Remove the `tune-bluetooth.py` line and the added `managed_files` entry from `install-macshell-optimizations.sh`, then run `qs -c MacShell ipc call macshell reload`.
+
+### Wi-Fi panel and Settings page
+
+**Effect**: the Wi-Fi list in the menu bar and Control Center, and Settings → Wi-Fi, now follow the macOS grouping and style.
+
+- The menu-bar list is split into "Known Networks" and "Other Networks". Each known network has a round badge in front: the network in use has an accent-colored badge, and a lock appears on the right. Other networks are folded behind an "Other Networks ›" row that expands when clicked, and they open on their own when no known network is nearby. That row shows "Searching…" during a background scan.
+- When the network in use has WEP, WPA1 (TKIP) or no encryption, a "Weak Security Network… ⚠" or "Insecure Network… ⚠" row appears under the switch. Clicking it opens Settings → Wi-Fi.
+- Right-clicking the menu-bar Wi-Fi icon (the equivalent of macOS's Option-click) adds the interface name and hardware address, and lists the connected network's IP address, router, MAC address, security, BSSID, channel (for example `149 (5 GHz, 40 MHz)`), country code, RSSI, noise, Tx rate, PHY mode, MCS index and NSS, refreshed every 2 s. A left click still opens the plain list, and the Control Center copy of the list does not show these details either. `Alt` + click is not offered: the menu bar has no keyboard focus and Wayland pointer events carry no modifiers, so MacShell cannot see `Alt`. Tracking the key in Hyprland instead proved unreliable in practice and was removed.
+- When joining fails, the reason appears under that network instead of at the bottom of the list.
+- Settings starts with a card that has a blue icon, a description and the switch. Below it is the network in use, showing "Connected", a yellow "Weak Security" or "Insecure Network" warning when needed, and on the right a lock, the signal and "Details…".
+- "Details…" opens a network settings window with a sidebar, like macOS. Changes stay in the window until OK applies them all at once; Cancel discards them.
+  - The network itself (its name at the top of the sidebar): Auto-Join, Private Wi-Fi Address (System Default, Off, Fixed, Rotating), and while connected the link figures such as IP, router, BSSID, channel and RSSI.
+  - TCP/IP: Configure IPv4 can be Using DHCP, Manually or Off. Manually lets you enter the IP address, subnet mask and router. With DHCP the page shows the time left on the lease, a Renew DHCP Lease button and the DHCP client ID. Configure IPv6 can be Automatically, Link-Local Only or Off, and the page shows the IPv6 addresses.
+  - DNS: DNS servers and search domains, added and removed with `+` / `−`. Without manual servers the ones from DHCP are listed in grey. Servers you add replace the ones from DHCP.
+  - Proxies: Automatic Proxy Configuration (PAC URL), Web Proxy (HTTP), Secure Web Proxy (HTTPS), SOCKS Proxy, and the hosts and domains that bypass the proxy.
+  - Hardware: MAC address, hardware address and MTU (Standard 1500 or Custom).
+  - The bottom bar has "Forget This Network…", Cancel and OK. Changing IP, DNS, the private address or MTU reconnects the network once. If applying fails, the reason appears next to the buttons and the window stays open.
+- "Known Networks" lists every saved network, including ones out of range, which show no signal. The network in use has a `✓`. Each row's `⋯` menu offers Connect or Disconnect, Details… (on every known network), Auto-Join (with a check mark) and Forget This Network….
+- "Other Networks" shows a spinner next to its heading while scanning. Hovering a row shows Connect, a tap shows it on touch screens, and a double-click joins directly. Secured networks ask for the password in a sheet that has a "Show password" option. "Other…" at the bottom joins a hidden network: enter its name, and its password if it has one.
+- Forgetting a network asks for confirmation first, then deletes the NetworkManager profile. A network in use is disconnected first.
+
+This also fixes two bugs. Known networks used to be matched by profile name, so this machine's network in use, profile `hidden-2021` with SSID `2021`, never counted as known. They are now matched by SSID. And "Join…" on an unsaved secured network in Settings called a `wifiJoin` function that did not exist, so it only closed the window. It now opens the password sheet. The Wi-Fi titles follow macOS 26 and read "Wi-Fi" and "Wi-Fi 设置…" in Chinese.
+
+**Install**: [`scripts/tune-wifi.py`](../../scripts/tune-wifi.py) runs from `install-macshell-optimizations.sh`. It depends on two things: the installed [Wi-Fi scan patch](#wi-fi-scanning-and-recovery) (`install-macshell-wifi.sh`), and `SBtSpinner` from the [Bluetooth page](#bluetooth-panel-and-settings-page). Without the scan patch, the installer skips this step and says why. The script does the following:
+
+- Copies `SilkyWifi.qml` from [`config/macshell/wifi/`](../../config/macshell/wifi/) to `~/.config/quickshell/MacShell/`, and `silky-wifi-info.py`, `silky-wifi-conn.py` and the extended [`silky-wifi-scan.py`](../../config/macshell/silky-wifi-scan.py) to `assets/`. The scan helper's new `K:` lines carry each saved profile's UUID, name, Auto-Join state and SSID, and the old parser ignores them.
+- Adds the `SilkyWifi` object to `MacBar.qml`, routes scan parsing through it, gives `connectWifi` a `hidden` argument and records which network failed, adds a right click to the Wi-Fi icon, and replaces the list with `wifi-list.qml.in`.
+- Adds the `SField`, `SChoice` and `SCheck` controls from `settings-components.qml.in` to `MacDock.qml`, replaces the Wi-Fi Settings page with `settings-pane.qml.in` (which pulls in `network-details.qml.in`), and adds the Chinese strings.
+
+The inserted blocks carry `Silky WiFi … begin/end` markers, so re-running the script updates them to the repository version. `install-macshell-wifi.sh` recognizes these markers, so the hook that runs after `omarchy update` does not treat them as a conflict. To update an installed MacShell only:
+
+```bash
+python3 scripts/tune-wifi.py --check
+python3 scripts/tune-wifi.py --install
+```
+
+`--install` first backs up the files it changes to `~/.local/state/silky-omarchy/wifi-backup-*`, then runs `macshell reload`. If the log reports `SField is not a type` after the network settings window is first installed, the running instance did not pick up the new inline components on reload. Log in again, or run `qs kill -c MacShell` followed by `macshell-start`. It needs NetworkManager (`nmcli`, `busctl`), `iw`, and Python 3 at `/usr/bin/python3`.
+
+**Implementation and compatibility**:
+
+- Scanning is still done by the existing `silky-wifi-scan.py`, on the same schedule: opening the list reads the cache, and a new scan is requested only when the last one is more than 30 s old. `SilkyWifi.parseScan()` groups the results and rates their security: no encryption is open, WEP or WPA1 / TKIP without WPA3 is weak, and everything else is ok.
+- Details come from `silky-wifi-info.py`: `iw dev … link`, `iw dev … info`, `survey dump` and `iw reg get`, plus NetworkManager's address, gateway and `PermHwAddress`. Each read takes about 80 ms and runs every 2 s, but only while the Option-click list or the Details sheet is open. Fields a driver does not report are left out; for example, some cards don't report noise.
+- Auto-Join maps to `connection.autoconnect`, Forget runs `nmcli connection delete`, and joining a hidden network uses `nmcli dev wifi connect … hidden yes`.
+- The network settings window reads and writes through `silky-wifi-conn.py get / set / renew`:
+  - `get` reads the NetworkManager profile's `ipv4.*`, `ipv6.method`, DNS, `802-11-wireless.cloned-mac-address` and `mtu`, plus the device's live addresses and DHCP lease.
+  - `set` validates addresses, masks, DNS servers and ports, then runs a single `nmcli connection modify`. If NetworkManager rejects it, the profile stays unchanged and the reason goes back to the window. When the profile is in use, `nmcli connection up` follows so the changes take effect.
+  - Renew DHCP Lease reconnects once so a new lease is requested.
+- IPv6 DNS servers are written only while Configure IPv6 is Automatically. With Link-Local Only or Off, NetworkManager does not accept IPv6 DNS, and the window says so.
+- Proxies are not per network. They are written to the desktop-wide `org.gnome.system.proxy` keys, which GTK / GIO programs, Chromium-based browsers and Firefox (with "Use system proxy settings") read. When all three proxies are identical, `use-same-proxy` is kept. A proxy app (such as the one on port 7897 here) may write these values again. NetworkManager's own `proxy.*` settings need PacRunner, which is not installed here, so they are not used.
+- There are no WINS or 802.1X pages: this machine does not use WINS, and enterprise authentication is outside this change.
+- Known limitations:
+  - There is no Personal Hotspot group, because NetworkManager cannot tell whether an access point is a hotspot from one of your own devices.
+  - There are no "Enable Wi-Fi Logging / Create Diagnostics Report / Open Wireless Diagnostics" items, since this system has no equivalent.
+  - "Ask to join networks" and similar settings are not included.
+- Hyprland binds no action to a plain right click, so the right click reaches MacShell.
+
+**Verification**: tested on this machine on 2026-11-25 with Hyprland 0.57, MacShell 0.5.3, NetworkManager and a Qualcomm WCN7850 (`ath12k`):
+
+- The new QML compiled in a separate engine first, and after the reload the log had no Wi-Fi warnings.
+- Re-running `tune-wifi.py` and `tune-bluetooth.py` changed nothing, and `install-macshell-wifi.sh --check` passed.
+- Screenshots confirmed the Settings page (the network in use marked Weak Security, `⋯` on known networks, other networks) and the Option-click menu, which was opened from code for the test. All five pages of the network settings window were also captured with real values: DHCP, `192.168.250.135 / 255.255.255.0 / 192.168.250.254`, the time left on the lease, the IPv6 link-local address, the two DNS servers from DHCP, this machine's three `127.0.0.1:7897` proxies and PAC URL, and the MTU. The captures used `grim -T`, which grabs the window directly and does not steal focus.
+- The apply path was tested on a throwaway profile that was not connected. One run wrote manual IPv4, IPv4 / IPv6 DNS, a search domain, a fixed private address, MTU 1400 and Auto-Join, and `get` read every value back. Switching back to DHCP restored it correctly. The combination "IPv6 Link-Local Only + IPv6 DNS" was rejected as expected, with the profile left unchanged. The profile was deleted afterwards.
+
+These steps change the live network connection and still need manual checks:
+
+- A real right click: confirmed on this machine; it opens the menu with the interface, hardware address and link details.
+- Applying changes with OK on the network in use, Renew DHCP Lease, and how browsers behave after a proxy change.
+- Joining a secured network and a hidden network, and the message for a wrong password.
+- Toggling Auto-Join, after which `nmcli -g connection.autoconnect connection show <name>` should change.
+- Forgetting a network, after which the profile should no longer appear in `nmcli connection show`.
+
+**Roll back**:
+
+1. Restore `MacBar.qml`, `MacDock.qml`, `lang/zh-CN.js` and `assets/silky-wifi-scan.py` from `~/.local/state/silky-omarchy/wifi-backup-*` (or the installer's `silky-backup-*`).
+2. Delete `~/.config/quickshell/MacShell/SilkyWifi.qml`, `assets/silky-wifi-info.py` and `assets/silky-wifi-conn.py`. To restore the proxy, set the old values back with `gsettings set org.gnome.system.proxy …`.
+3. Remove the `tune-wifi.py` block and the added `managed_files` entry from `install-macshell-optimizations.sh`, and remove the `Silky WiFi model begin` check from `install-macshell-wifi.sh`.
+4. Run `qs -c MacShell ipc call macshell reload`.
 
 ## Rapidly toggling the system menu
 
@@ -236,7 +330,7 @@ python3 scripts/install-macshell-status.py --check
 python3 scripts/install-macshell-status.py
 ```
 
-Network speed and temperature are sampled every 1.5 s, and the panels show roughly the last minute. The menu bar shows network speed on one line, 12 px `DemiBold` like the temperature: the busier direction with its arrow (for example `↓ 26K/s`). The panel still shows both upload and download, and the accessible description includes both. The other direction has to be clearly ahead (1.5× and above 1 KB/s) before it switches, so a near tie does not flip the arrow on every sample. The button reserves `↓888K/s`; the arrow stays next to the digits, right-aligned, with spare room on its left, so the tray does not move as the reading changes, and it only widens while a rate is above 100 MB/s. Tabular figures (`tnum`) are requested too, but `Open Runde` is missing on this machine and the PingFang fallback ignores the feature. It used to be two 10 px lines for upload and download, about 22 px tall, noticeably taller than the other icons. Arrows and numbers use the menu bar ink, with the arrow stroke as heavy as the `DemiBold` digits (the cyan and violet upload and download colors stay in the panel). The thermometer grew from 14 px to 16 px with a heavier stroke and a filled bulb, matching the solid Wi-Fi and search glyphs, about 3.5 px from its digits, and the temperature reserves two digits. The network and temperature buttons keep about 6 px of visible space on each side, after the blank space built into the arrow and thermometer canvases, so their gaps to neighbours match Wi-Fi to search (about 8–9 px). The switching rule is `lead` in [`SilkyStatusButton.qml`](../../config/macshell/status/SilkyStatusButton.qml). Click the network speed to see per-app traffic and this machine's IPv4 / IPv6; click an address to copy it. The app ranking uses TCP sockets visible to the current user that still exist at sampling time; UDP and QUIC are not counted. Traffic forwarded by a proxy may show up under the proxy's process name.
+Network speed and temperature are sampled every 1.5 s, and the panels show roughly the last minute. The menu bar shows network speed on one line, 12 px `DemiBold` like the temperature: the busier direction with its arrow (for example `↓ 26K/s`). The panel still shows both upload and download, and the accessible description includes both. The other direction has to be clearly ahead (1.5× and above 1 KB/s) before it switches, so a near tie does not flip the arrow on every sample. The button reserves `↓888K/s`; the arrow stays next to the digits, right-aligned, with spare room on its left, so the tray does not move as the reading changes, and it only widens while a rate is above 100 MB/s. Tabular figures (`tnum`) are requested too, but `Open Runde` is missing on this machine and the PingFang fallback ignores the feature. It used to be two 10 px lines for upload and download, about 22 px tall, noticeably taller than the other icons. Download and upload arrows share the network panel’s cyan and violet palette, including its light and dark variants. The rate digits use the menu bar foreground. The thermometer grew from 14 px to 16 px with a heavier stroke and a filled bulb, matching the solid Wi-Fi and search glyphs, about 3.5 px from its digits, and the temperature reserves two digits. The network and temperature buttons keep about 6 px of visible space on each side, after the blank space built into the arrow and thermometer canvases, so their gaps to neighbours match Wi-Fi to search (about 8–9 px). The switching rule is `lead` in [`SilkyStatusButton.qml`](../../config/macshell/status/SilkyStatusButton.qml). Click the network speed to see per-app traffic and this machine's IPv4 / IPv6; click an address to copy it. The app ranking uses TCP sockets visible to the current user that still exist at sampling time; UDP and QUIC are not counted. Traffic forwarded by a proxy may show up under the proxy's process name.
 
 Click the temperature to see the 10 processes using the most CPU right now, plus a hardware overview of the GPU, SSD, Wi-Fi card, fans and so on. Below the overview are whole-machine CPU, memory and system disk (`/`) usage. Process usage is the CPU-time delta between two samples; 100% means one logical core fully used. Click the battery icon to see the power source, power, voltage, charge, capacity, cycle count and health; what appears depends on what the hardware exposes. While MacShell runs it samples every 3 seconds; the "System power" chart in the middle of the panel keeps about the last 5 minutes, and sampling continues with the panel closed. Whole-system power can only be measured on battery, where the battery's discharge rate is everything the laptop draws. On external power the Yoga Slim 7x (Snapdragon X, `qcom-battmgr`) reports neither the adapter input (the USB-C port's `voltage_now` is 0 and `2.00 A` is only the PD contract) nor the system load (the battery's `power_now` is 0 when not charging), so the chart leaves a gap while plugged in and the "System power" row under "Power source" reads "Unavailable on external power". Charge and discharge power are shown as numbers in the "Battery" group ("Charging power / Discharging power / Battery power"). Health is the battery fuel gauge's full-charge capacity `energy_full` divided by the design capacity `energy_full_design`. The gauge recalibrates its full-charge capacity from time to time, so health can jump several points at once; with a charge limit on, recalibration happens less often and the jumps are larger. So you can look back at changes, the menu bar checks every 10 minutes and appends a row to `~/.local/state/silky/battery-health.csv` once a day and whenever the full-charge capacity changes (time, model, full/design capacity, health, cycle count). On the Yoga Slim 7 14Q8X9 you can drag a slider in the battery panel to set a 55%–100% charge limit; "Apply" writes it with system authorization and checks the kernel's read-back. Right-click the battery icon to switch between the power modes the system offers; Omarchy remembers the choice separately for AC and battery power. The Power & Battery panel (left-click) also has a Power mode card below Charge limit: a three-part segmented control (power saver, balanced, performance) with the current mode on a raised pill; one click switches it, using the same `omarchy-powerprofiles-set autodetect` call and per-source memory as the right-click panel. While switching, the title shows "Applying…", and a failure is reported inside the card. The read-only Power mode row in the Power source group is hidden, and only kept when the system offers no modes. At the bottom of the right-click panel there is also a "Show battery percentage" switch; turned off, the battery shows only the charge bar without the number. It is MacShell's `showBatteryPercent` setting and is saved to `~/.config/macbar/settings.json`.
 
@@ -260,7 +354,7 @@ The "Notification system" panel that opens from the bell in the menu bar now has
 | System | CPU, memory and disk bars (4-tier load colors) | Three rings with usage (4-tier load colors) | Adds a 5-minute CPU chart, uptime and load | `/proc`, `statvfs("/")` |
 | AI usage | One row each for Claude, Codex and Antigravity: icon on the left, name on top, and paired `5h` / `7d` remaining percentages with mini quota bars below (each using 4-tier remaining-quota colors; when the weekly quota is `0%`, the `5h` figure and bar are muted in neutral gray) | Three columns with the same structure: icon and name, main figure, caption, two detail lines | Adds tokens per hour (Claude and Codex stacked) and Codex 5-hour / weekly quota bars with reset times | See "AI usage" below |
 
-Notifications and widgets each have their own glass surface. The panel opens directly to its content. Clear All appears centered below the notifications and above the widgets, and scrolls with the list. Do Not Disturb is available in Control Center under Focus. Cards use the Control Center blur, refraction, and thin rim, bringing their translucency closer to the Wi-Fi panel. A light text-contrast veil adds 10% tint in dark mode and 16% in light mode. The weather card adds a subtle sky tint and puts the condition, high, and low on one line at medium and large sizes.
+Notifications and widgets each have their own glass surface. The panel opens directly to its content. Clear All appears centered below the notifications and above the widgets, scrolling with the list, and shares the same 26 px rounded Liquid Glass pill material as "N more apps". Do Not Disturb is available in Control Center under Focus. Cards use the Control Center blur, refraction, and thin rim: widget tiles keep a light veil (10% in dark mode, 16% in light mode), while text-dense notification cards and action pills add a deeper vertical-gradient reading veil (42%–48% in dark mode, 46%–54% in light mode, with banners matching at 40%–46% / 44%–52%) so body copy stays crisp over bright web pages and saturated icons. The weather card adds a subtle sky tint and puts the condition, high, and low on one line at medium and large sizes.
 
 Stock colors default to red up / green down in the Chinese UI and green up / red down otherwise; switch them in the right-click menu. During trading hours the chart is today's intraday line with the previous close dashed; when intraday data is unavailable it shows the last month of daily closes. You can follow up to 12 entries, each one of:
 
@@ -279,13 +373,15 @@ Resolutions are cached while the data process runs; an entry that cannot be reso
 
 With many notifications, the notification area and the widgets used to be two separate scroll areas with hard-cut edges, which felt disjointed. Now:
 
-- **Stacked by app** (as on macOS): one app's notifications fold into a stack that shows only the newest, with one or two "paper" edges peeking out below (without a separate lower-right expand arrow button). Clicking a folded stack expands it first; an app header with "Show less" and "✕" (clear that app’s notifications) appears above. Clicking a single notification or an expanded notification’s body gives a brief press effect, then runs its default action and removes the notification. The card’s close button, the app’s clear button, and Clear All feather out the affected cards. If the notification has no default action, MacShell focuses a matching window or launches the app from its matching desktop entry. With Reduced Motion, opening and clearing take effect immediately.
+- **Stacked by app** (as on macOS): one app's notifications fold into a stack that shows only the newest, with one or two perspective-recessed glass lips peeking out below (`5.5 px` / `10.5 px`, without a separate lower-right expand arrow button). Clicking a folded stack expands it first; an app header with an icon-badged app pill, "Show less", and a vector close pill (clear that app’s notifications) appears above. Clicking a single notification or an expanded notification’s body gives a brief press effect, then runs its default action and removes the notification. The card’s close button, the app’s clear button, and Clear All feather out the affected cards. If the notification has no default action, MacShell focuses a matching window or launches the app from its matching desktop entry. With Reduced Motion, opening and clearing take effect immediately.
 - **Only the 3 newest apps**: older apps fold into "N more apps", which expands and collapses again. Closing the panel folds everything back.
 - **One scroll**: notifications and widgets scroll together and stop above the Dock on that screen. The bottom fades while more content remains. At the end, the last widget and Edit Widgets can be seen in full. The empty-state label hides as widgets scroll up.
 
 Implementation: the list groups notifications with `notifPop.silkyPlan` and animates positions computed by `silkyY()`. The cards and `SilkyWidgetDeck` share a `Flickable`, whose height accounts for the Dock height and bottom margin. The scroll resets to the top each time Notification Center opens. In Normal Blur, silky-dock-glass 0.5.2 and later clip the glass to the scroll viewport and fade it along with the contents at the bottom. Partly visible cards retain blur and refraction. Older versions and MacShell’s built-in Liquid Glass fade cards by their visible share.
 
 Expanding and collapsing no longer ghost. In the first version, folded cards sat at the newest card's position and faded at the same pace as they moved, and each card's target position came from its neighbours' animating heights, so the targets kept moving, the animations kept restarting, and several translucent cards piled up. Now the layout uses each card's final height only (`silkyFinalH`, including the final app header and paper edges), so every card glides once to a fixed target; a folded card's opacity is the transition progress cubed, so it appears only after sliding out from under the newest card and is gone before it slides back; each app's newest card always draws above its folded cards; and the app header, the paper edges, the "N more apps" button and the widget area all move on the same 420 ms curve. Clearing applies a feather mask only to the affected cards in the viewport. The remaining cards and widgets slide into place when the animation ends.
+
+The folded stack lips are drawn by [`silky-notification-stack.frag`](../../config/macshell/widgets/silky-notification-stack.frag) (compiled with `qsb` to `.frag.qsb`) using rounded-rectangle SDF subtraction: each peeking lip is clipped strictly outside the main card and the lip above it (`10.5 px` inset / `5.5 px` peek for layer 1, `20 px` inset / `10.5 px` total peek for layer 2), so nothing bleeds through the translucent card glass or forms double borders. Their translucent body matches the main card's effective opacity across both dark and pure-white backdrops, combining tight upper-seam ambient occlusion, a continuous 1 px inner specular rim along the lower arc (tapering smoothly to zero as the sides curve into the upper card's shadow), a subtle outer hairline keyline for bright backdrops, and a gentle hover peek (without changing layout height), adapting to `notifPopGlass.ctx.dark`.
 
 Check with sample notifications (nothing is sent; they are only added to the list, and `undemo` removes only entries tagged `[Silky demo]`):
 
@@ -308,13 +404,25 @@ Install with `python3 scripts/macshell_notification_center.py --install`, shared
 
 Clicking a WeChat card invokes its default action when available (guarding against stale notifications without `actions` so a `TypeError` does not abort activation). If WeChat is in the tray and the default action leaves its window hidden, MacShell restores it through the tray; once the main window is found, Hyprland both focuses and raises it (`alter_zorder` `top`) so floating windows do not obscure it. A notification without a conversation action opens the main window. The previous window lookup could not see WeChat in the tray, and the existing focus-stealing rule could block ordinary activation requests. Tray restoration uses the [Quickshell tray activation API](https://quickshell.org/docs/v0.3.2/types/Quickshell.Services.SystemTray/SystemTrayItem/).
 
-Opening Notification Center hides existing banners immediately and keeps their cards in the list. New notifications, including urgent ones, appear directly in the list while the center is open. Once it closes, new banners follow the usual settings. Notification Center state is shared across displays, so operating menus on another display does not resume banners early. Notification cards (both banners and Notification Center items) vertically center the left app icon inside the card (`anchors.verticalCenter: parent.verticalCenter` instead of a fixed `y: 15` in `NotifBody`) so multi-line notifications no longer leave the icon pinned near the top.
+Opening Notification Center hides existing banners immediately and keeps their cards in the list. New notifications, including urgent ones, appear directly in the list while the center is open. Once it closes, new banners follow the usual settings. Notification Center state is shared across displays, so operating menus on another display does not resume banners early. Notification cards (both banners and Notification Center items) vertically center both the left app icon and the right text column inside the card, collapse duplicate app headers when `app` matches `summary`, establish a clear contrast hierarchy across the eyebrow (`12 px DemiBold`), title (`14 px Bold`), body (`13 px Medium`), and timestamp (`12 px Medium`), and extend wrapped body lines across the full right content width (reserving top-right space only on the first row).
 
 Run `python3 scripts/macshell_notification_center.py --install` from the repository root. The installer backs up and updates `~/.config/quickshell/MacShell/MacBar.qml` and reloads MacShell. It installs the repair script at `~/.local/libexec/silky-macshell-notifications` and enables the matching systemd user path unit and service. The path unit reapplies the fixes when a system or MacShell update replaces the file. The service also checks it at startup. Use `--check` to check a new version's compatibility. The installer reports unrecognized layouts and keeps the original file.
 
 On MacShell 0.5.3, close WeChat to the tray and click a WeChat notification. Send a sample notification before opening Notification Center and an urgent one while it is open. Both should appear once in the list. Close the center and send another notification to check that banners resume. See automatic repair messages with `journalctl --user -u silky-macshell-notifications.service`.
 
 To roll back, first run `systemctl --user disable --now silky-macshell-notifications.path silky-macshell-notifications.service`. If there have been no other MacBar edits since installation, restore the `~/.local/state/macshell/MacBar.qml.bak.notifications-*` backup printed by the first install, then run `qs -c MacShell ipc call macshell reload`. If there have been later edits, compare the live file with the backup and revert the desired Notification Center changes selectively.
+
+### Show WeChat from the tray
+
+In MacShell 0.5.3, left-click the WeChat tray icon or right-click it and select Show to bring the main window forward. Hyprland focuses and raises an existing window, and the Dock restores a minimized one. When WeChat is closed to the tray, MacShell sends the original tray action and waits for the main window. On this machine with native Wayland WeChat 4.1.13.29, the original tray activation and Show actions left focus elsewhere while the main window existed.
+
+Installation and rollback follow the [Notification Center fixes](#wechat-activation-and-notification-banners) above. To verify, switch to another window and test both tray entries. Close WeChat to the tray and repeat. Simulated mouse clicks verified both entries with the main window open and closed to the tray. A left click also restored WeChat after minimizing it to the Dock.
+
+### Tray left-click actions
+
+Left-click opens the app by default. MacShell first focuses or restores a window that matches the tray identity, temporarily disabling Hyprland cursor warping during focus so the pointer stays on the tray icon (Dock clicks and window restores use the same no-warp focus via [tune-dock-focus-cursor.py](../../scripts/tune-dock-focus-cursor.py)). Clicking a tray icon also shows the same rounded pill press and brief highlight feedback as the Wi-Fi status button. If the app is hidden, it can use a top-level Open or Show action or a matching desktop entry. Right-click opens the original menu directly. LocalSend needs no per-app configuration. Clash Verge’s Dashboard and the tray ID shared by Chrome and ChatGPT keep their specific matching rules. The monochrome Claude spark adapts to light and dark backgrounds.
+
+From the repository root, run `python3 scripts/macshell_notification_center.py --install` for the click actions and `python3 scripts/install-macshell-status.py` for the status glyphs and network colors, then run `qs -c MacShell ipc call macshell reload`. On MacShell 0.5.3 under Wayland, verify both the existing window and hidden tray action with LocalSend, and right-click to check the original menu. For click-action rollback, use the [Notification Center backup](#wechat-activation-and-notification-banners). To roll back the appearance, reinstall the status components from the previous version and reload MacShell.
 
 ### Sharp notification banner entrances
 
@@ -351,7 +459,7 @@ The installer copies the [widget files](../../config/macshell/widgets/) to `~/.c
 
 ### How Screen Time is counted
 
-Every 5 s the data process reads the focused window's `class` over the Hyprland socket and adds that time to the app and the current hour. Not counted: 2 minutes without keyboard or mouse input (Quickshell `IdleMonitor`; idle inhibitors from video players count as use), a locked screen (`hyprlock` / `swaylock` / `gtklock` running), and suspend. Days are stored in `~/.local/state/silky/screen-time/YYYY-MM-DD.json`, written once a minute and kept for 30 days. App names and icons come from desktop entries matched by `class` (`DesktopEntries.heuristicLookup`), falling back to the `class`. Counting starts at install and only runs while MacShell runs.
+Every 5 s the data process reads the focused window's `class` over the Hyprland socket and adds that time to the app and the current hour. Not counted: 2 minutes without keyboard or mouse input (Quickshell `IdleMonitor`; idle inhibitors from video players count as use), a locked screen (`hyprlock` / `swaylock` / `gtklock` running), and suspend. Days are stored in `~/.local/state/silky/screen-time/YYYY-MM-DD.json`, written once a minute and kept for 30 days. App names and icons come from desktop entries matched by `class` (`DesktopEntries.heuristicLookup`), falling back to the `class`. Counting starts at install and only runs while MacShell runs. On large cards the total duration and vs-yesterday labels now span the full content width, and `Text.HorizontalFit` scales them down when needed on `small` / `medium` cards so localized strings such as Chinese `X 小时 Y 分` no longer elide before the minutes unit (verified offscreen across all three sizes).
 
 ### AI usage
 
@@ -540,6 +648,12 @@ When the Hyprland plugin handles the Dock, its app context menus share the same 
 
 Run `./scripts/install-dock-glass-plugin.sh` from the repository root and reload MacShell. Right-click a Dock app where the menu crosses a window edge and the wallpaper to check the backdrop blur and refraction. Click outside the menu to confirm it closes. To roll back the menu change, restore `MacDock.qml` and `DockGlassPanel.qml` from the installer backup and reload MacShell.
 
+### Bolder text in Dock context menus
+
+Dock icon context menu items previously used `Font.Normal`, which appeared too thin over translucent glass backgrounds, especially for CJK fallback glyphs. Both the menu item `Text` and the width-measuring `menuTm` `TextMetrics` in `MacDock.qml` (captured in [`patches/macshell-0.5.2-silky.patch`](../patches/macshell-0.5.2-silky.patch)) now use `Font.DemiBold` (`font.family: root.fontForWeight(Font.DemiBold, root.fontFamily)` and `font.weight: Font.DemiBold`) so both Latin and CJK text render in semibold and the menu width adjusts to prevent truncation.
+
+After applying the patch or re-running `./scripts/install-macshell-optimizations.sh`, Quickshell reloads automatically (verify `Configuration Loaded` in `~/.local/state/macshell/MacShell.log`). Right-click any Dock icon or Files to confirm the bolder labels and proper menu width. To roll back, revert `Font.DemiBold` back to `Font.Normal` and remove the `font.weight` lines on `menuTm` and the menu item `Text` in `MacDock.qml`.
+
 ### Control Center glass on menus and panels
 
 Menus and panels share the Control Center tiles' refraction, dispersion, and edge highlights by default. Their interiors use a little more blur and tint for legibility over busy backgrounds. When the compositor draws menus, Wi-Fi, Bluetooth, volume, and Notification Center, it supplies their only outer rim. Dropdown menus also hide their extra dark veil in that mode. With widgets installed, Notification Center uses standalone cards with the Control Center material.
@@ -654,6 +768,16 @@ pgrep -af '^qs -c MacShell'
 hyprctl getoption input:natural_scroll
 ```
 
+## Screen recording: pick a screen or region
+
+Record Screen in the Control Center, Start Screen Recording in the Apple menu and the IPC entry used to record the whole focused monitor at once. Now a `slurp` overlay comes first: click a monitor to record all of it, drag a rectangle to record that region, or press `Esc` / right-click to cancel without recording. The Control Center closes first so it does not sit under the overlay. While recording, click the button again or Stop in the menu bar to finish; files still go to `~/Videos/Screen-Recording-<time>.mp4`.
+
+- Implementation: [`scripts/tune-screen-recording-picker.py`](../../scripts/tune-screen-recording-picker.py), applied to `MacBar.qml` by `install-macshell-optimizations.sh`. A whole monitor uses `wf-recorder -o`, a region `wf-recorder -g`. Needs `slurp` and `wf-recorder` (already in MacShell's installer list). `slurp -o` first reads extra boxes from stdin, which a Quickshell child process keeps open, so it is started with `</dev/null`; otherwise the overlay never appears and the button seems dead.
+- Limits: a region is clipped to the monitor its top-left corner is on, so a selection across monitors records only that part; width and height are rounded to even logical pixels and selections under 16 px are ignored. For audio, webcam or GPU encoding use Omarchy's own `Alt+Print` recording menu.
+- Applying it alone: back up `~/.config/quickshell/MacShell/MacBar.qml`, run `python3 scripts/tune-screen-recording-picker.py ~/.config/quickshell/MacShell/MacBar.qml`, then `qs ipc -c MacShell call macshell reload`.
+- Verification: MacShell 0.5.3, Hyprland Wayland, internal `eDP-1` and external `DP-1` both at 2×. In isolated tests `wf-recorder -g "100,100 600x400"` produced 1200×800, a negative-coordinate region on the external monitor 1600×1000, and `-o eDP-1` 2944×1840; the reload showed no QML errors. Clicking, dragging and cancelling in the overlay still need confirming by hand.
+- Rollback: restore the backed-up `MacBar.qml` (for a standalone apply, under `~/.local/state/macshell/silky-backup-recpick-*`), remove the tuner line from the install script, and reload MacShell.
+
 ## Screenshots needing two presses, then popping up again
 
 Omarchy binds `PRINT` to omasnap, and MacShell's `macshell.lua` bound the same key to its own region capture. One press started two capture overlays that cancelled each other: the first press seemed to do nothing, then another capture overlay popped up.
@@ -728,6 +852,30 @@ patch="$PWD/patches/omasnap-1.26.2-zh-scroll-shortcut.patch"
 ```
 
 Press `PrtSc` and draw a region to see the regular toolbar. Offscreen tests cover clicking the former button position and opening the scroll panel for the current region with `Shift+S`. Simulated keyboard input also verified the installed version on Hyprland 0.57.2 at 2× scale. To roll back, restore `~/.local/bin/omasnap.pre-scroll-shortcut` to `~/.local/bin/omasnap` and run `git -C "$src" apply -R "$patch"` to reverse the source patch.
+
+## Screenshot region softening on release
+
+On a 2× display, drawing a region with the touchpad and releasing it made the text inside soften for a moment as the editor opened. Pointer positions are fractional (for example `100.37` logical pixels), so the selection edges fell between physical pixels. The editor cropped one extra source column or row, smooth-scaled it back to the display size, and drew it at a half-pixel offset, resampling the whole region. Saved and copied images were unaffected; only the on-screen view blurred.
+
+Region edges now snap to the capture's native pixel grid (0.5 logical pixels at 2× scale) from the start of the drag, so the released region shows its pixels 1:1. Other region entry paths, such as `R` to restore the last region, use the same snapping.
+
+The [selection snap patch](../../patches/omasnap-1.26.2-zh-selection-snap.patch) targets the Chinese Omasnap 1.26.2 checkout (`6150151`) with the earlier patches applied, using the build dependencies above. If `ninja` or Qt Linguist is not installed, unpack the `ninja` and `qt6-tools` packages into a temporary directory and point `-DCMAKE_MAKE_PROGRAM` and `-DLRELEASE` at them. Run from the Silky Omarchy repository root. The change takes effect on the next screenshot.
+
+```bash
+src="$HOME/.local/src/omasnap-zh"
+patch="$PWD/patches/omasnap-1.26.2-zh-selection-snap.patch"
+(
+  set -e
+  if ! git -C "$src" apply -R --check "$patch" 2>/dev/null; then
+    git -C "$src" apply "$patch"
+  fi
+  "$src/bin/test"
+  cp -an "$HOME/.local/bin/omasnap" "$HOME/.local/bin/omasnap.pre-selection-snap"
+  install -m 755 "$src/build/omasnap" "$HOME/.local/bin/omasnap"
+)
+```
+
+Verification: press `PrtSc`, slowly draw a region over small text with the touchpad, and release. The text should stay as sharp as before release, with no flash of softness. A new offscreen test drags with fractional coordinates at 2× scale and checks that all four edges land on physical pixels; all existing tests pass. The on-device result still needs a visual check in a Hyprland 2× session. Limitation: dragging crop handles in the editor still follows the fractional pointer position, so a cropped preview at 2× may show slight resampling. To roll back, restore `~/.local/bin/omasnap.pre-selection-snap` to `~/.local/bin/omasnap` and run `git -C "$src" apply -R "$patch"` to reverse the source patch.
 
 ## Standalone screenshot pins
 
@@ -816,6 +964,12 @@ o.window("^(org\\.quickshell)$", { float = true, center = true, border_size = 0 
 How it was checked: record the opening with `wf-recorder` at 60 fps and inspect the edges frame by frame.
 
 Note: rules apply only to newly created windows; restart MacShell once after changing it.
+
+## Passbolt popup size in Firefox
+
+When a form opens Passbolt on a floating workspace, Firefox initially creates the separate window with a generic title. Omarchy applies its regular app window dimensions at that point, leaving blank space to the right of and below the sign-in form. The [window configuration](../../config/hypr/silky-macshell-windows.lua) waits for Firefox to report the Passbolt title, then fits the popup to the extension’s requested size of 380 × 400 logical pixels.
+
+From the repository root, run `./scripts/install-macshell-optimizations.sh` followed by `hyprctl reload`. Reopening Passbolt from a web form reduced the popup from 942 × 626 to 380 × 400 on Hyprland 0.57.2 with Wayland, Firefox 160.0.1, Passbolt 5.18.0, and 200% display scaling. You can check the dimensions at the locked sign-in form. To roll back, restore `silky-macshell-windows.lua` from the installer’s `~/.local/state/macshell/silky-backup-*/settings/` backup and reload Hyprland.
 
 ## Window opening flashes
 
@@ -930,6 +1084,26 @@ From the repository root, run `./scripts/install-macshell-optimizations.sh`. If 
 
 To update these settings on their own, run `python3 scripts/migrate-macshell-files.py`. Then run `hyprctl reload` and `qs -c MacShell ipc call macshell reload`. The Files icon should open Folio and activate its existing window on the next click. Press `Super+Shift+F` to verify the shortcut. If you reinstall Nautilus and want your previous settings back, copy the `.bak.folio.*` files printed by the migration back to their original locations, then reload Hyprland and MacShell.
 
+### Clicking a Dock icon shows no window, or the wrong one first
+
+Two causes made Dock clicks miss.
+
+- **WeChat would not come up**: on a floating workspace, `Super+O` on a window that already floats makes Omarchy's pop script toggle floating, so the window is tiled and the pin does not stick. Hyprland always draws tiled windows below floating ones, so the Dock focused WeChat but other windows covered it. Before focusing, the Dock now calls [`o.silky_reveal_window`](../../config/hypr/silky-shortcuts.lua): a tiled window on a floating workspace that floating windows cover floats again below the menu bar, gets its `omarchy-mode-floated` tag back, and loses the leftover `pop` tag. A tile nothing covers is left alone. `Super+O` now runs `o.silky_toggle_pop`, which only pins and raises a window that already floats, and tiles it on unpin only on a tiled workspace.
+- **Claude opened a browser window first**: Electron apps such as Claude Desktop put their desktop file in `CHROME_DESKTOP`. A Chromium started from a link they open inherits the variable and uses it as its Wayland `app_id`, so every Chromium window showed up as `com.anthropic.Claude` and the Dock counted them as Claude windows. When the app was not frontmost the Dock took the first window in the list, often the browser, and it took several clicks to reach Claude. The Dock now records focus order and brings back the window used last, falling back to Hyprland's `focusHistoryID`. Clicking an app that is already frontmost still cycles its windows.
+
+Install and use: from the repository root, run `./scripts/install-shortcuts.sh` for the Lua part and `./scripts/install-macshell-optimizations.sh` for the Dock. To update only the Dock, run `python3 scripts/tune-dock-window-pick.py` (backup in `~/.local/state/macshell/MacDock.qml.bak.window-pick-*`), after [`tune-dock-focus-cursor.py`](../../scripts/tune-dock-focus-cursor.py). [`tune-folio-macshell.py`](../../scripts/tune-folio-macshell.py) treats the cycle line already rewritten to `activateToplevel(... recentWindow(wins))` as installed, so running both in either order no longer stops `install-folio-macos.sh` with `Unsupported MacShell window activation`. MacShell hot-reloads on its own; the Lua part needs `hyprctl reload`. The inherited variable is fixed in the browser launch wrapper: start Chromium with `CHROME_DESKTOP=chromium.desktop` (here `~/.local/bin/chromium-font-private`; Chrome uses `google-chrome.desktop`). A Chromium process that was already running keeps Claude's class until you quit Chromium completely and open it again.
+
+Verify:
+
+```bash
+hyprctl configerrors
+hyprctl clients -j | jq -r '.[] | select(.class == "com.anthropic.Claude") | .title'
+```
+
+The second command should list only Claude's own windows, with no titles ending in `- Chromium`. Open a link from Claude: the new browser window should sit under the Chromium icon. Checked on this machine: `hyprctl eval 'o.silky_reveal_window("0x<address>")'` brought WeChat back as a floating window on top, and Chromium started with a temporary profile and `CHROME_DESKTOP=com.anthropic.Claude.desktop` still got the class `chromium`. Switching to WeChat and Claude by clicking their Dock icons still needs a check on the desktop.
+
+Roll back: restore `~/.config/hypr/silky-shortcuts.lua.bak.*` and run `hyprctl reload`, copy `MacDock.qml.bak.window-pick-*` back to `~/.config/quickshell/MacShell/MacDock.qml`, and remove the two `CHROME_DESKTOP=` prefixes from the browser wrapper.
+
 ## Glass refreshes when focus changes
 
 [`tune-glass-stacking.py`](../../scripts/tune-glass-stacking.py): the "fingerprint" of the windows behind the glass used to cover only position and size, so clicking to change which floating window is in front left the glass showing the old stacking order. The focus order (`focusHistoryID`) is now part of it, so the glass refreshes immediately on focus changes; windows changing their titles (terminals, browser tabs, players) still do not wake the 60 Hz refresh.
@@ -974,6 +1148,28 @@ The standard optimization installer applies this change. To update only the menu
 python3 scripts/tune-dock-trash.py ~/.config/quickshell/MacShell/MacDock.qml
 qs ipc -c MacShell call macshell reload
 ```
+
+### Trackpad gesture animations and Touchscreen guide
+
+MacShell's original Trackpad pane only showed four basic controls with no gesture previews and no coverage of the touchscreen gestures built for this desktop. The updated Settings window brings macOS-style dual-card live gesture previews and three-tab navigation to **Trackpad**, and adds a sibling **Touchscreen** entry right below `Keyboard` / `Mouse` / `Trackpad` in the Input sidebar section:
+
+- **Dual-card 1:1 synchronized gesture stage** ([`SilkyGestureStage.qml`](../../config/macshell/trackpad/SilkyGestureStage.qml)): the left dark card draws a trackpad or 16:10 touchscreen frame with Apple-blue fingertip contact dots, tap ripples, 0.4 s radial hold arcs, and palm-rejection hints; the right anti-aliased rounded viewport renders a miniature desktop with menu bar, colorful Dock, and windows driven by the exact same animation phase. It demonstrates tap to click, two-finger / bottom-right secondary click, three-finger drag with edge snap preview, natural scrolling (live-synced to the current direction switch and speed slider), two-finger pinch zoom, browser page swipes, 1:1 workspace swipes with end-of-list rubber-band bounce, Mission Control five-window spread, App Exposé window focus, four-/five-finger Launchpad pinch, and touchscreen window top-bar dragging (clamped below the menu bar), edge/corner resizing, 0.4 s hold-to-move, and kinetic flick scrolling with tap-to-brake. The `FrameAnimation` runs only while Settings is visible and pauses automatically when Reduce Motion is enabled.
+- **Three-tab Trackpad settings** ([`TrackpadPanes.qml.inc`](../../config/macshell/trackpad/TrackpadPanes.qml.inc)): organized into `Point & Click`, `Scroll & Zoom`, and `More Gestures`. Alongside tap to click, natural scrolling, ignore while typing, and scrolling speed, it wires live controls for `Secondary click` (`clickfinger_behavior`), `Three Finger Drag` (`drag_3fg`), `Tap and drag` (`tap_and_drag`), `Swipe between full-screen spaces` (4 fingers / 3 fingers / Off, automatically resolving conflicts with three-finger drag), `Mission Control` (4 fingers up / Off), `App Exposé` (4 fingers down / Off), and `Applications` pinch. Values persist in `~/.config/macbar/settings.json`, apply immediately via `hyprctl eval`, and re-apply across `hyprctl reload`.
+- **Touchscreen hardware toggle and interactive guide** ([`SilkyTouchscreenController.qml`](../../config/macshell/trackpad/SilkyTouchscreenController.qml)): detects touch hardware via `omarchy-hw-touchscreen` and `hyprctl devices -j`, wiring the top switch directly to `omarchy device touchscreen on|off` (when no touch hardware is present, the switch is disabled while keeping the tutorials available for external touch displays). Tutorials are grouped into `Window & Tap`, `Scroll & Browse`, and `Workspaces & Multitasking`, sharing the live Mission Control, App Exposé, and Applications switches with the Trackpad pane. Hovering or clicking/tapping any row previews or replays its animation ([`SilkyGestureRow.qml`](../../config/macshell/trackpad/SilkyGestureRow.qml), [`SilkyGestureBadge.qml`](../../config/macshell/trackpad/SilkyGestureBadge.qml)).
+
+Apply via `./scripts/install-macshell-optimizations.sh` from the repository root, or run the standalone idempotent installer (backs up to `~/.local/state/silky-omarchy/trackpad-backup-<timestamp>/` and hot-reloads MacShell without logging out):
+
+```bash
+python3 scripts/tune-trackpad-settings.py --check
+python3 scripts/tune-trackpad-settings.py --install
+```
+
+Verify:
+
+- Run `qs -c MacShell ipc call settings pane trackpad` (supports `:0`, `:1`, `:2` sub-tab suffixes such as `trackpad:2` for `More Gestures`) and `qs -c MacShell ipc call settings pane touchscreen`. Confirm the sidebar scrolls to reveal the aligned `Touchscreen` icon, hovering rows updates the dual-card animation smoothly, MacShell's stdout logs `INFO: Configuration Loaded`, and `hyprctl configerrors` prints nothing.
+- Verified on MacShell 0.5.3 and Hyprland 0.57.2 (2× scale) across all six sub-tabs, sidebar auto-scroll, and idempotent re-runs; physical trackpad/touchscreen feel after toggling individual gesture switches can be checked interactively as needed.
+
+To roll back, copy `MacDock.qml`, `MacBar.qml`, `lang/zh-CN.js`, and `SilkyOverview.qml` from `~/.local/state/silky-omarchy/trackpad-backup-<timestamp>/` back into `~/.config/quickshell/MacShell/`, remove `SilkyGestureStage.qml`, `SilkyTouchscreenController.qml`, `SilkyGestureBadge.qml`, and `SilkyGestureRow.qml` there, and run `qs -c MacShell ipc call macshell reload` and `hyprctl reload`.
 
 ## Window minimizing
 

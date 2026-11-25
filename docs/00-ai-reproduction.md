@@ -123,9 +123,9 @@ python3 scripts/install-login-transition.py   # 07：使用 MacShell 登录界�
 
 - MacShell 登录界面与桌面交接时先沿用同一张壁纸。系统登录侧安装和回滚见 [07 · 登录壁纸过渡](07-lock-and-boot.md#登录壁纸过渡)。
 - **效果**：所有锁屏都用 MacLock；开机磁盘解锁界面与 MacLock 布局一致（清晰壁纸、底部圆形头像、用户名、毛玻璃密码框，单位 u = 屏高/1200）
-- **文件**：`bin/silky-lock`、`bin/silky-sleep-lock`、`config/systemd/silky-sleep-lock.service`、`config/omarchy/plugins/silky.idle/`、`config/hypr/bindings-lock.lua`、`config/omarchy/omarchy-menu-lock.jsonc`、`plymouth/silky-maclock.script`、`scripts/install-maclock.sh`、`scripts/install-boot-screen.sh`
+- **文件**：`bin/silky-lock`、`bin/silky-lid-close`、`bin/silky-sleep-lock`、`config/systemd/silky-sleep-lock.service`、`config/omarchy/plugins/silky.idle/`、`config/hypr/bindings-lock.lua`、`config/omarchy/omarchy-menu-lock.jsonc`、`plymouth/silky-maclock.script`、`scripts/install-maclock.sh`、`scripts/install-boot-screen.sh`
 - **关键词**：
-  - Omarchy 锁屏的四个入口：`omarchy-system-lock`（Super+Ctrl+L、菜单 `system.lock`）、`omarchy.idle` 服务、`omarchy-sleep-lock.service`（`systemd-inhibit --mode=delay` + `dbus-monitor` 监听 `PrepareForSleep`）
+  - Omarchy 锁屏的五个入口：`omarchy-system-lock`（Super+Ctrl+L、菜单 `system.lock`）、`omarchy.idle` 服务、合盖开关 `switch:on:Lid Switch`（`omarchy-system-lid-close` → `silky-lid-close`）、`omarchy-sleep-lock.service`（`systemd-inhibit --mode=delay` + `dbus-monitor` 监听 `PrepareForSleep`），并停用 MacShell 附带的冗余 `hypridle` 睡眠钩子，用 `flock` 串行化 `lock-via-ipc.sh` 防并发夺锁触发 `lockdead.png`
   - MacLock IPC：`qs -c MacLock ipc call lockscreen lock|state`（`ready` / `busy` / `stopping`），入口脚本 `~/.config/quickshell/MacLock/lock-via-ipc.sh`
   - `omarchy plugin clone omarchy.idle` → 改 id 为 `silky.idle`（`omarchy.` 前缀保留给官方），保留 `clonedFrom` 才能读到 `shell.json` 的 `idle` 配置
   - 开机：LUKS + Plymouth（script 模块：`Plymouth.SetDisplayPasswordFunction`、`Image.Scale`、`Sprite.SetPosition`）+ SDDM 自动登录；`plymouth-set-default-theme`，`limine-mkinitcpio` 重建 initramfs
@@ -198,13 +198,21 @@ python3 scripts/install-login-transition.py   # 07：使用 MacShell 登录界�
 - **遮挡暂停**：`plugins/silky-occlusion/main.cpp` 在 `RENDER_PRE` 按绘制顺序累计上方窗口的不透明区域，取走被完全遮挡窗口的 `m_current.callbacks`，露出、keepalive（1 s）或卸载时回应；截图进行中、特殊工作区、全屏、工作区滑动和 `silky-live` 标签不暂停。文件：`config/hypr/silky-occlusion.lua`、`scripts/install-occlusion-plugin.sh`（`--remove` 回滚）；坑：Hyprland 0.57 对被遮挡表面仍经 `discard()` → `presentFeedback()` 发帧回调；aarch64 不用函数钩子；测试客户端的 shm 缓冲区不算不透明，要设 opaque region
 - **验证**：`/usr/local/bin/silky-desktop-priority --config /etc/silky/desktop-priority.conf --status`、`ps -L -o tid,ni,cls,comm -p "$(pgrep -x Hyprland)"`；无 root 预览用 `--dry-run`
 
-## 17 合盖睡眠防 USB 控制器误唤醒
+## 17 高通平台合盖睡眠优化（USB 误唤醒 + Wi-Fi 7 唤醒硬复位）
 
-- **效果**：合盖挂起期间临时关闭高通 `dwc3-qcom` 控制器的 `power/wakeup`，唤醒后按原状态恢复；避免插着 YubiKey 等全速 USB 设备时被固件 5 分钟 CX collapse 退出触发 `dp_hs_phy_irq` 循环唤醒，同时保留开盖唤醒、电源键唤醒、合盖 Type-C PD 充电与开盖 USB 唤醒
-- **文件**：`config/systemd/system-sleep/silky-dwc3-lid-wake`（→ `/usr/lib/systemd/system-sleep/`）、`scripts/install-sleep-usb-wakeup.sh`（`--status` / `--uninstall`）、`docs/17-sleep-usb-wakeup.md`
-- **关键词**：`dwc3-qcom`、`device_may_wakeup`、`dp_hs_phy_irq`、`org.freedesktop.login1.Manager.LidClosed`、`/run/silky-dwc3-lid-wake.state`
+- **效果**：合盖挂起期间临时关闭高通 `dwc3-qcom` 控制器的 `power/wakeup`，唤醒后按原状态恢复，避免插着 YubiKey 等全速 USB 设备时被固件 5 分钟 CX collapse 退出触发 `dp_hs_phy_irq` 循环唤醒；同时在挂起前卸载 `ath12k_wifi7`（失败回退 PCI `unbind`）、唤醒后执行 `/proc/sys/vm/compact_memory` 并重新加载模块，消除 `qcom-pcie 1c08000.pcie` L2 超时与长时间运行后唤醒硬复位重启
+- **文件**：`config/systemd/system-sleep/silky-dwc3-lid-wake`、`config/systemd/system-sleep/silky-ath12k-sleep`（→ `/usr/lib/systemd/system-sleep/`）、`scripts/install-sleep-usb-wakeup.sh`（`--status` / `--uninstall`）、`docs/17-sleep-usb-wakeup.md`
+- **关键词**：`dwc3-qcom`、`device_may_wakeup`、`dp_hs_phy_irq`、`org.freedesktop.login1.Manager.LidClosed`、`ath12k_wifi7`、`1c08000.pcie`、`compact_memory`、`/run/silky-dwc3-lid-wake.state`、`/run/silky-ath12k-sleep.state`
 - **坑**：`systemd-sleep` 会并行执行 `/usr/lib/systemd/system-sleep/` 下所有可执行文件，备份文件必须放在 `/var/backups/silky-omarchy/` 而不是同目录；只记录本次从 `enabled` 改为 `disabled` 的路径，避免唤醒后误打开用户原本关闭的端口
 - **验证**：`./scripts/install-sleep-usb-wakeup.sh --status`；安装后插着 YubiKey 电池合盖 15 分钟，检查 `journalctl -b -u systemd-suspend.service` 仅 1 次进入/返回且 `/sys/power/pm_wakeup_irq` 不为 `dp_hs_phy_irq`
+
+## 18 5 GHz Wi-Fi 连接卡死与列表消失修复
+
+- **效果**：为高通 WCN7850（`ath12k_wifi7_pci`）关闭扫描随机 MAC，消除断开/重连时 70 ms 内双改 MAC 引发的固件 `11d` 扫描与关联扫描撞车（`received scan start failure event`）、`ath12k_start_scan` 持有 `wiphy_lock` 期间读到未清零 `ATH12K_SCAN_STARTING` 造成的 25 秒连接卡死，以及固件后续跳过全部 5 GHz 信道的问题；启用 `WIRELESS_REGDOM="CN"`，将已保存 5 GHz Wi-Fi 的 `autoconnect-priority` 提升至 `10`，并由零轮询内核日志监听服务在异常发生约 2.5 秒内自动重载 `ath12k_wifi7` 恢复 5 GHz
+- **文件**：`config/networkmanager/30-silky-ath12k-wifi.conf`（→ `/etc/NetworkManager/conf.d/`）、`bin/silky-ath12k-recovery`（→ `/usr/local/bin/`）、`config/systemd/system/silky-ath12k-recovery.service`（→ `/etc/systemd/system/`）、`scripts/install-ath12k-wifi-fix.sh`（`--status` / `--priorities-only` / `--recover` / `--uninstall`）、`docs/18-ath12k-5ghz-wifi.md`
+- **关键词**：`ath12k_wifi7_pci`、`wifi.scan-rand-mac-address=no`、`received scan start failure event`、`WMI_SCAN_EVENT_START_FAILED`、`ATH12K_SCAN_STARTING`、`WIRELESS_REGDOM`、`connection.autoconnect-priority`
+- **坑**：`nmcli radio wifi off/on` 与 `rfkill` 只重置软件接口而不重载 MHI PCIe 固件，无法解除 WCN7850 的 5 GHz 假死，必须 `modprobe -r ath12k_wifi7 ath12k && modprobe ath12k_wifi7`（或 PCI `unbind`/`bind`）；备份文件不可放在 `/etc/NetworkManager/conf.d/` 内；若网卡在报错后 2.5 秒内已凭旧 BSS 缓存关联上 `>= 5000 MHz`，守护进程不得重载模块打断连接
+- **验证**：`./scripts/install-ath12k-wifi-fix.sh --status`、`nmcli -f IN-USE,SSID,CHAN,FREQ,SIGNAL device wifi list --rescan yes`
 
 ## 杂项
 

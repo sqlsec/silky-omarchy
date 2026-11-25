@@ -3,7 +3,24 @@
 # (lid close, sleep menu, idle suspend). Replaces Omarchy's omarchy-sleep-lock.service, which uses its own lock.
 set -u
 
+wait_until_not_preparing() {
+  local prop tries=0
+  while (( tries < 75 )); do
+    prop=$(busctl --timeout=2 get-property org.freedesktop.login1 /org/freedesktop/login1 \
+      org.freedesktop.login1.Manager PreparingForSleep 2>/dev/null || true)
+    if [[ $prop != "b true" ]]; then
+      return 0
+    fi
+    sleep 0.2
+    tries=$((tries + 1))
+  done
+}
+
 if [[ ${1:-} != --inhibited ]]; then
+  # When systemd restarts this unit right after releasing the previous inhibitor, logind may still be
+  # finishing the suspend/resume cycle (`PreparingForSleep == true`), which would make `systemd-inhibit`
+  # exit 1 ("The operation inhibition has been requested for is already running"). Wait for it to clear first.
+  wait_until_not_preparing
   exec systemd-inhibit --what=sleep --mode=delay --who="Silky Omarchy" --why="Lock screen before suspend" \
     "$0" --inhibited
 fi
@@ -15,7 +32,7 @@ coproc SLEEP_EVENTS {
     "type='signal',sender='org.freedesktop.login1',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'"
 }
 monitor_pid=$SLEEP_EVENTS_PID
-trap 'kill "$monitor_pid" 2>/dev/null' EXIT
+trap 'kill "$monitor_pid" 2>/dev/null; wait "$monitor_pid" 2>/dev/null || true' EXIT
 
 while IFS= read -r line <&"${SLEEP_EVENTS[0]}"; do
   if [[ $line == *"boolean true"* ]]; then

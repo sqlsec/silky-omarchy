@@ -1,0 +1,407 @@
+                    // Silky WiFi list begin
+                    // macOS-style Wi-Fi menu (docs/02-macshell.md#wi-fi-面板与设置页): known networks with round badges, "Other
+                    // Networks" folded behind a row, a notice for a weak / open current network, and the Option-click view (right click on
+                    // the menu-bar icon) details: interface, hardware address and the connected network's link figures.
+                    Column {
+                        id: wifiCol
+                        property var pp: pal                // palette: the panel palette in the popover, ccPal in the Control Center
+                        property bool showBack: false       // Control Center page: show the back arrow
+                        signal back()
+                        width: parent ? parent.width : 296
+                        spacing: 4
+
+                        readonly property var wf: root.wifiModel
+                        readonly property bool adv: !showBack && ui.wifiAdvanced && ui.pop === "wifi"
+                        readonly property var inf: wf ? wf.info : ({})
+                        property bool othersOpen: false
+                        readonly property bool othersShown: othersOpen || (wf !== null && wf.knownNearby.length === 0)
+                        property bool holdsInfo: false
+                        function syncInfo() {
+                            if (!wf) return;
+                            if (adv && !holdsInfo) { holdsInfo = true; wf.acquireInfo(); }
+                            else if (!adv && holdsInfo) { holdsInfo = false; wf.releaseInfo(); }
+                        }
+                        onAdvChanged: syncInfo()
+                        Component.onCompleted: syncInfo()
+                        Component.onDestruction: if (holdsInfo && wf) wf.releaseInfo()
+                        function infoLines(i) {
+                            if (!i || !i.connected) return [];
+                            var out = [];
+                            function add(k, v) { if (v !== undefined && v !== null && v !== "") out.push(I18n.tr(k) + I18n.tr(": ") + v); }
+                            add("IP Address", i.ip);
+                            add("Router", i.router);
+                            add("MAC Address", i.mac);
+                            add("Security", i.security === "" ? I18n.tr("None") : (i.security + (i.securityKind ? " " + I18n.tr(i.securityKind === "enterprise" ? "Enterprise" : "Personal") : "")));
+                            add("BSSID", i.bssid);
+                            add("Channel", wf ? wf.channelText(i) : "");
+                            add("Country Code", i.country);
+                            add("RSSI", i.rssi !== undefined ? i.rssi + " dBm" : "");
+                            add("Noise", i.noise !== undefined ? i.noise + " dBm" : "");
+                            add("Tx Rate", i.txRate !== undefined ? i.txRate + " Mbps" : "");
+                            add("PHY Mode", i.phy);
+                            add("MCS Index", i.mcs);
+                            add("NSS", i.nss);
+                            return out;
+                        }
+
+                        // header: title + on/off switch
+                        Item {
+                            width: parent.width; height: 32
+                            Item {
+                                visible: wifiCol.showBack
+                                x: 0; width: 30; height: parent.height
+                                Glyph { anchors.centerIn: parent; width: 12; height: 12; kind: "chevL"; color: pp.fg }
+                                MouseArea { anchors.fill: parent; onClicked: wifiCol.back() }
+                            }
+                            Text {
+                                x: wifiCol.showBack ? 30 : 6; anchors.verticalCenter: parent.verticalCenter
+                                text: I18n.tr("Wi-Fi")
+                                color: pp.fg
+                                font.family: root.fontForWeight(Font.DemiBold, pp.fam); font.pixelSize: 15; font.weight: Font.DemiBold
+                            }
+                            PSwitch {
+                                t: pp
+                                anchors.right: parent.right; anchors.rightMargin: 4
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: root.wifiOn
+                                onToggled: { root.toggleWifi(); wifiAfter.restart(); }
+                            }
+                        }
+
+                        // weak / open current network: one line with a warning sign, opens Settings → Wi-Fi
+                        Item {
+                            id: secNotice
+                            readonly property var cur: wifiCol.wf ? wifiCol.wf.current : null
+                            visible: root.wifiOn && cur !== null && cur.level !== "ok"
+                            width: parent.width; height: visible ? 28 : 0
+                            Rectangle { anchors.fill: parent; radius: 8; color: root.accent; visible: secMa.containsMouse }
+                            Text {
+                                x: 6; anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width - 40; elide: Text.ElideRight
+                                text: secNotice.cur && secNotice.cur.level === "open" ? I18n.tr("Insecure Network…") : I18n.tr("Weak Security Network…")
+                                color: secMa.containsMouse ? "white" : pp.fg
+                                font.family: root.fontForWeight(Font.Normal, pp.fam); font.weight: (pp === ccPal ? Font.DemiBold : Font.Normal); font.pixelSize: 13
+                            }
+                            Canvas {
+                                id: warnSign
+                                anchors.right: parent.right; anchors.rightMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 15; height: 14
+                                property color c: secMa.containsMouse ? "white" : pp.fg
+                                onCChanged: requestPaint()
+                                onPaint: {
+                                    var g = getContext("2d"); g.reset();
+                                    g.fillStyle = c;
+                                    g.beginPath(); g.moveTo(7.5, 0.8); g.lineTo(14.4, 13.2); g.lineTo(0.6, 13.2); g.closePath(); g.fill();
+                                    g.globalCompositeOperation = "destination-out";
+                                    g.fillRect(6.8, 4.6, 1.4, 4.8);
+                                    g.fillRect(6.8, 10.4, 1.4, 1.4);
+                                }
+                            }
+                            MouseArea { id: secMa; anchors.fill: parent; hoverEnabled: true; onClicked: { ui.pop = ""; root.openSettings("wifi"); } }
+                        }
+
+                        // Option-click: interface and hardware address
+                        Column {
+                            visible: wifiCol.adv
+                            width: parent.width
+                            Repeater {
+                                model: wifiCol.adv ? [
+                                    I18n.tr("Interface Name") + I18n.tr(": ") + (wifiCol.inf.iface || "—"),
+                                    I18n.tr("Hardware Address") + I18n.tr(": ") + (wifiCol.inf.hwaddr || "—")
+                                ] : []
+                                delegate: Text {
+                                    required property string modelData
+                                    x: 6; width: wifiCol.width - 12; height: 20
+                                    verticalAlignment: Text.AlignVCenter
+                                    elide: Text.ElideRight
+                                    text: modelData
+                                    color: pp.fg2
+                                    font.family: root.fontForWeight(Font.Normal, pp.fam); font.weight: (pp === ccPal ? Font.DemiBold : Font.Normal); font.pixelSize: 12
+                                }
+                            }
+                        }
+                        Rectangle { width: parent.width; height: 1; color: pp.sep }
+
+                        Text { visible: root.otherConnections.length>0; width:parent.width; leftPadding:6; text:I18n.tr("Ethernet & VPN"); color:pp.fg2; font.family: root.fontForWeight(Font.DemiBold, pp.fam); font.pixelSize:11; font.weight:Font.DemiBold }
+                        Column {
+                            width: parent.width
+                            Repeater {
+                                model: root.otherConnections.slice(0,5)
+                                delegate: Item {
+                                    required property var modelData
+                                    width: parent.width; height: 30
+                                    Rectangle { anchors.fill:parent; radius:8; color:connMa.containsMouse?pp.hover:"transparent" }
+                                    Glyph { x:8; anchors.verticalCenter:parent.verticalCenter; width:14; height:14; kind:modelData.type==="vpn"?"lock":"ethernet"; color:pp.fg }
+                                    Text { x:30; anchors.verticalCenter:parent.verticalCenter; width:parent.width-42; elide:Text.ElideRight; text:modelData.name+(modelData.active?I18n.tr(" · Connected"):""); color:pp.fg; font.family: root.fontForWeight(Font.Normal, pp.fam); font.weight: (pp === ccPal ? Font.DemiBold : Font.Normal); font.pixelSize:12 }
+                                    MouseArea { id:connMa; anchors.fill:parent; hoverEnabled:true; onClicked:root.toggleConnection(modelData) }
+                                }
+                            }
+                        }
+
+                        Text {
+                            visible: root.wifiOn && (root.wifiNets.length === 0 || (!root.wifiScanning && root.wifiScanFailed))
+                            width: parent.width; height: 40
+                            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                            text: root.wifiScanning ? I18n.tr("Searching…")
+                                                    : root.wifiScanFailed ? root.wifiScanError : I18n.tr("No networks found")
+                            color: pp.fg2
+                            font.family: root.fontForWeight(Font.Normal, pp.fam); font.weight: (pp === ccPal ? Font.DemiBold : Font.Normal); font.pixelSize: 13
+                        }
+                        Text {
+                            visible: root.wifiOn && !root.wifiScanning && root.wifiBusy === ""
+                                     && (root.wifiScanFailed || root.wifiNets.length === 0)
+                            width: parent.width; height: 24
+                            horizontalAlignment: Text.AlignHCenter
+                            text: I18n.tr("Scan Again")
+                            color: root.accent
+                            font.family: root.fontForWeight(Font.Normal, pp.fam)
+                            font.pixelSize: 13
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: root.scanWifi("refresh")
+                            }
+                        }
+
+                        // one network row (+ password field, + Option-click details under the connected network)
+                        Component {
+                            id: wifiRowComp
+                            Column {
+                                id: nr
+                                readonly property var net: parent ? parent.modelData : null
+                                readonly property bool busy: net !== null && root.wifiBusy === net.ssid
+                                readonly property bool prompting: net !== null && ui.wifiPrompt === net.ssid
+                                readonly property bool failed: net !== null && root.wifiError !== "" && root.wifiErrorSsid === net.ssid && !busy
+                                width: wifiCol.width
+
+                                Item {
+                                    width: parent.width; height: 38
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: 14
+                                        color: root.accent
+                                        visible: wma.containsMouse
+                                    }
+                                    Rectangle {     // round badge: accent when connected
+                                        x: 4; anchors.verticalCenter: parent.verticalCenter
+                                        width: 28; height: 28; radius: 14
+                                        color: wma.containsMouse ? Qt.rgba(1, 1, 1, 0.25)
+                                             : (nr.net && nr.net.inUse ? root.accent : (pp.dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.07)))
+                                        Glyph {
+                                            anchors.centerIn: parent
+                                            width: 16; height: 16
+                                            kind: "wifi"; level: nr.net ? (nr.net.inUse ? 3 : root.sigLevel(nr.net.signal)) : 3
+                                            color: wma.containsMouse || (nr.net && nr.net.inUse) ? "white" : pp.fg
+                                        }
+                                    }
+                                    Text {
+                                        x: 40
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: parent.width - 40 - 104
+                                        elide: Text.ElideRight
+                                        text: nr.net ? nr.net.ssid : ""
+                                        color: wma.containsMouse ? "white" : pp.fg
+                                        font.family: root.fontForWeight(Font.Normal, pp.fam); font.pixelSize: 13
+                                        font.weight: pp === ccPal ? Font.DemiBold : Font.Normal
+                                    }
+                                    Text {
+                                        visible: nr.busy || (nr.net && nr.net.inUse && wma.containsMouse)
+                                        anchors.right: parent.right; anchors.rightMargin: 12
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: nr.busy ? I18n.tr("Connecting…") : I18n.tr("Disconnect")
+                                        color: wma.containsMouse ? "white" : pp.fg2
+                                        font.family: root.fontForWeight(Font.Normal, pp.fam); font.weight: (pp === ccPal ? Font.DemiBold : Font.Normal); font.pixelSize: 12
+                                    }
+                                    Glyph {
+                                        visible: !nr.busy && nr.net !== null && nr.net.secure && !(nr.net.inUse && wma.containsMouse)
+                                        anchors.right: parent.right; anchors.rightMargin: 12
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 13; height: 13
+                                        kind: "lock"
+                                        color: wma.containsMouse ? "white" : pp.fg2
+                                    }
+                                    MouseArea {
+                                        id: wma
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        enabled: !nr.busy
+                                        onClicked: if (nr.net) ui.wifiPick(nr.net)
+                                    }
+                                }
+                                Text {
+                                    visible: nr.failed
+                                    x: 40; width: parent.width - 46
+                                    wrapMode: Text.WordWrap
+                                    text: root.wifiError
+                                    color: "#FF6961"
+                                    font.family: root.fontForWeight(Font.Normal, pp.fam); font.weight: (pp === ccPal ? Font.DemiBold : Font.Normal); font.pixelSize: 12
+                                }
+                                // Option-click: link details of the connected network
+                                Column {
+                                    visible: wifiCol.adv && nr.net !== null && nr.net.inUse
+                                    x: 40; width: parent.width - 46
+                                    bottomPadding: 4
+                                    Repeater {
+                                        model: wifiCol.adv && nr.net && nr.net.inUse ? wifiCol.infoLines(wifiCol.inf) : []
+                                        delegate: Text {
+                                            required property string modelData
+                                            width: parent.width; height: 20
+                                            verticalAlignment: Text.AlignVCenter
+                                            elide: Text.ElideRight
+                                            text: modelData
+                                            color: pp.fg2
+                                            font.family: root.fontForWeight(Font.Normal, pp.fam); font.weight: (pp === ccPal ? Font.DemiBold : Font.Normal); font.pixelSize: 12
+                                        }
+                                    }
+                                }
+
+                                // password field (secured network that has no saved profile)
+                                Item {
+                                    visible: nr.prompting
+                                    width: parent.width; height: 42
+                                    Rectangle {
+                                        x: 40; y: 3
+                                        width: parent.width - 40 - 4; height: 32; radius: 10
+                                        color: pp.btnOff
+                                    }
+                                    Text {
+                                        x: 52; y: 3; height: 32
+                                        verticalAlignment: Text.AlignVCenter
+                                        visible: pw.text === ""
+                                        text: I18n.tr("Password")
+                                        color: pp.fg3
+                                        font.family: root.fontForWeight(Font.Normal, pp.fam); font.weight: (pp === ccPal ? Font.DemiBold : Font.Normal); font.pixelSize: 13
+                                    }
+                                    TextInput {
+                                        id: pw
+                                        x: 52; y: 3
+                                        width: parent.width - 52 - 62; height: 32
+                                        verticalAlignment: TextInput.AlignVCenter
+                                        clip: true
+                                        echoMode: TextInput.Password
+                                        color: pp.fg
+                                        selectionColor: root.accent
+                                        selectedTextColor: "white"
+                                        font.family: root.fontForWeight(Font.Normal, pp.fam); font.weight: (pp === ccPal ? Font.DemiBold : Font.Normal); font.pixelSize: 13
+                                        onVisibleChanged: if (visible) { text = ""; forceActiveFocus(); }
+                                        Keys.onPressed: event => {
+                                            if (event.key === Qt.Key_Escape) { ui.wifiPrompt = ""; event.accepted = true; }
+                                            else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                                                ui.wifiSubmit(nr.net.ssid, text); event.accepted = true;
+                                            }
+                                        }
+                                    }
+                                    Text {
+                                        anchors.right: parent.right; anchors.rightMargin: 16
+                                        y: 3; height: 32
+                                        verticalAlignment: Text.AlignVCenter
+                                        text: I18n.tr("Join")
+                                        color: pw.text.length > 0 ? root.accent : pp.fg3
+                                        font.family: root.fontForWeight(Font.DemiBold, pp.fam); font.pixelSize: 13; font.weight: Font.DemiBold
+                                        MouseArea {
+                                            anchors.fill: parent; anchors.margins: -6
+                                            onClicked: ui.wifiSubmit(nr.net.ssid, pw.text)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // known networks in range
+                        Text {
+                            visible: root.wifiOn && wifiCol.wf !== null && wifiCol.wf.knownNearby.length > 0
+                            width: parent.width; leftPadding: 6; topPadding: 2
+                            text: I18n.tr("Known Networks")
+                            color: pp.fg2
+                            font.family: root.fontForWeight(Font.DemiBold, pp.fam); font.pixelSize: 12; font.weight: Font.DemiBold
+                        }
+                        Column {
+                            visible: root.wifiOn
+                            width: parent.width
+                            Repeater {
+                                model: wifiCol.wf ? wifiCol.wf.knownNearby : []
+                                delegate: Loader {
+                                    required property var modelData
+                                    width: wifiCol.width
+                                    sourceComponent: wifiRowComp
+                                }
+                            }
+                        }
+
+                        // other networks, folded behind one row like macOS
+                        Rectangle { visible: root.wifiOn && root.wifiNets.length > 0; width: parent.width; height: 1; color: pp.sep }
+                        Item {
+                            visible: root.wifiOn && wifiCol.wf !== null && wifiCol.wf.others.length > 0
+                            width: parent.width; height: 30
+                            Rectangle { anchors.fill: parent; radius: 8; color: pp.hover; visible: othMa.containsMouse }
+                            Text {
+                                x: 6; anchors.verticalCenter: parent.verticalCenter
+                                text: I18n.tr("Other Networks")
+                                color: pp.fg2
+                                font.family: root.fontForWeight(Font.DemiBold, pp.fam); font.pixelSize: 12; font.weight: Font.DemiBold
+                            }
+                            Text {
+                                visible: root.wifiScanning
+                                anchors.right: othChev.left; anchors.rightMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: I18n.tr("Searching…")
+                                color: pp.fg2
+                                font.family: root.fontForWeight(Font.Normal, pp.fam); font.pixelSize: 11
+                            }
+                            Glyph {
+                                id: othChev
+                                anchors.right: parent.right; anchors.rightMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 11; height: 11
+                                kind: "chevR"; color: pp.fg2
+                                rotation: wifiCol.othersShown ? 90 : 0
+                                Behavior on rotation { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                            }
+                            MouseArea { id: othMa; anchors.fill: parent; hoverEnabled: true; onClicked: wifiCol.othersOpen = !wifiCol.othersShown }
+                        }
+                        Flickable {
+                            id: wifiFlick
+                            visible: root.wifiOn && wifiCol.othersShown && wifiCol.wf !== null && wifiCol.wf.others.length > 0
+                            width: parent.width
+                            height: Math.min(wifiList.height, 260)
+                            contentWidth: width
+                            contentHeight: wifiList.height
+                            clip: true
+                            boundsBehavior: Flickable.StopAtBounds
+                            Column {
+                                id: wifiList
+                                width: wifiFlick.width
+                                Repeater {
+                                    model: wifiCol.wf ? wifiCol.wf.others : []
+                                    delegate: Loader {
+                                        required property var modelData
+                                        width: wifiCol.width
+                                        sourceComponent: wifiRowComp
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle { width: parent.width; height: 1; color: pp.sep }
+                        Item {
+                            width: parent.width; height: 30
+                            Rectangle {
+                                anchors.fill: parent; radius: 12
+                                color: root.accent
+                                visible: wsa.containsMouse
+                            }
+                            Text {
+                                x: 10; anchors.verticalCenter: parent.verticalCenter
+                                text: I18n.tr("Wi-Fi Settings…")
+                                color: wsa.containsMouse ? "white" : pp.fg
+                                font.family: root.fontForWeight(Font.Normal, pp.fam); font.weight: (pp === ccPal ? Font.DemiBold : Font.Normal); font.pixelSize: 13
+                            }
+                            MouseArea {
+                                id: wsa
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: { ui.pop = ""; root.openSettings("wifi"); }
+                            }
+                        }
+                    }
+                    // Silky WiFi list end

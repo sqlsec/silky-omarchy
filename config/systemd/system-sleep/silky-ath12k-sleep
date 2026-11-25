@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# Silky Omarchy: unload Qualcomm Wi-Fi 7 (ath12k_wifi7 / ath12k_pci) before
+# suspend and reload it on resume.
+#
+# On Snapdragon X Elite laptops (e.g. Lenovo Yoga Slim 7x, WCN7850 on
+# 1c08000.pcie), suspending to `deep` with ath12k_wifi7 bound frequently stalls
+# PCIe L2 entry (`qcom-pcie 1c08000.pcie: Timeout waiting for L2 entry!`) and,
+# after hours of uptime / memory fragmentation, fails QMI/MHI resume or 7 MB
+# DMA allocation (`qmi dma allocation failed`), triggering a hard SoC reset
+# seconds after opening the lid.
+
+set -u
+shopt -s nullglob
+
+module_root=${SILKY_ATH12K_MODULE_ROOT:-/sys/module}
+pci_drivers_root=${SILKY_ATH12K_PCI_DRIVERS_ROOT:-/sys/bus/pci/drivers}
+compact_path=${SILKY_VM_COMPACT_PATH:-/proc/sys/vm/compact_memory}
+state_file=${SILKY_ATH12K_STATE_FILE:-/run/silky-ath12k-sleep.state}
+modprobe_bin=${SILKY_MODPROBE_BIN:-modprobe}
+
+phase=${1:-}
+action=${SYSTEMD_SLEEP_ACTION:-${2:-}}
+
+is_suspend_action() {
+  case "$1" in
+    suspend|suspend-after-failed-hibernate|hybrid-sleep)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+run_bounded() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout --kill-after=2s 8s "$@"
+  else
+    "$@"
+  fi
+}
+
+find_loaded_module() {
+  local mod
+  for mod in ath12k_wifi7 ath12k_pci; do
+    if [[ -d "$module_root/$mod" ]]; then
+      printf '%s\n' "$mod"
+      return 0
+    fi
+  done
+  return 1
+}
+
+unbind_pci_fallback() {
+  local drv dev bdf unbound=0
+  for drv in ath12k_wifi7_pci ath12k_pci; do
+    [[ -d "$pci_drivers_root/$drv" && -w "$pci_drivers_root/$drv/unbind" ]] || continue
+    for dev in "$pci_drivers_root/$drv"/[0-9a-fA-F]*:*; do
+      [[ -L $dev ]] || continue
+      bdf=${dev##*/}
+      if printf '%s' "$bdf" >"$pci_drivers_root/$drv/unbind" 2>/dev/null; then
+        printf 'unbind:%s:%s\n' "$drv" "$bdf" >>"$state_file"
+        unbound=1
+      fi
+    done
+  done
+  (( unbound == 1 ))
+}
+
+if [[ $phase == "pre" ]] && is_suspend_action "$action"; then
+  rm -f -- "$state_file"
+  mod=$(find_loaded_module || true)
+  [[ -n $mod ]] || exit 0
+
+  if run_bounded "$modprobe_bin" -r "$mod" 2>/dev/null; then
+    printf 'module:%s\n' "$mod" >"$state_file"
+  else
+    unbind_pci_fallback || rm -f -- "$state_file"
+  fi
+elif [[ $phase == "post" && -f $state_file ]]; then
+  if [[ -w $compact_path ]]; then
+    printf '1\n' >"$compact_path" 2>/dev/null || true
+  fi
+
+  while IFS= read -r entry; do
+    case "$entry" in
+      module:*)
+        mod=${entry#module:}
+        [[ -n $mod ]] && run_bounded "$modprobe_bin" "$mod" 2>/dev/null || true
+        ;;
+      unbind:*:*)
+        rest=${entry#unbind:}
+        drv=${rest%%:*}
+        bdf=${rest#*:}
+        if [[ -n $drv && -n $bdf && -w "$pci_drivers_root/$drv/bind" ]]; then
+          printf '%s' "$bdf" >"$pci_drivers_root/$drv/bind" 2>/dev/null || true
+        fi
+        ;;
+    esac
+  done <"$state_file"
+
+  rm -f -- "$state_file"
+fi
+
+exit 0

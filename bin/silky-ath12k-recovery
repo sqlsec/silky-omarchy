@@ -1,0 +1,470 @@
+#!/usr/bin/env python3
+"""Inspect and recover Qualcomm WCN7850 (ath12k_wifi7_pci) 5 GHz scan wedges."""
+
+import argparse
+import os
+import pathlib
+import re
+import subprocess
+import sys
+import time
+
+DRIVER_SYSFS = pathlib.Path(
+    os.environ.get("SILKY_ATH12K_DRIVER_DIR", "/sys/bus/pci/drivers/ath12k_wifi7_pci")
+)
+NET_SYSFS = pathlib.Path(os.environ.get("SILKY_NET_CLASS_DIR", "/sys/class/net"))
+NM_CONF_PATH = pathlib.Path(
+    os.environ.get(
+        "SILKY_ATH12K_NM_CONF",
+        "/etc/NetworkManager/conf.d/30-silky-ath12k-wifi.conf",
+    )
+)
+REGDOM_CONF_PATH = pathlib.Path(
+    os.environ.get("SILKY_REGDOM_CONF", "/etc/conf.d/wireless-regdom")
+)
+SERVICE_NAME = os.environ.get(
+    "SILKY_ATH12K_SERVICE", "silky-ath12k-recovery.service"
+)
+STAMP_PATH = pathlib.Path(
+    os.environ.get("SILKY_ATH12K_STAMP", "/run/silky-ath12k-recovery.stamp")
+)
+
+COOLDOWN_SECONDS = float(os.environ.get("SILKY_ATH12K_COOLDOWN", "90"))
+SETTLE_SECONDS = float(os.environ.get("SILKY_ATH12K_SETTLE", "2.5"))
+
+WEDGE_LINE_RE = re.compile(
+    r"ath12k_wifi7_pci\b.*:\s*(?:received scan start failure event|failed to send WMI_START_SCAN_CMDID)"
+)
+FREQ_RE = re.compile(r"^\s*freq:\s*([0-9]+(?:\.[0-9]+)?)")
+REGDOM_ACTIVE_RE = re.compile(r'^\s*WIRELESS_REGDOM="?([A-Z0-9]{2})"?\s*$')
+FIVE_GHZ_NAME_RE = re.compile(r"(?:^|[-_ ])5[gG](?:[hH][zZ])?$")
+
+
+def clean_env():
+    env = dict(os.environ)
+    env["LC_ALL"] = "C"
+    return env
+
+
+def run_cmd(*args, timeout=10, check=False):
+    return subprocess.run(
+        args,
+        capture_output=True,
+        text=True,
+        errors="replace",
+        timeout=timeout,
+        check=check,
+        env=clean_env(),
+    )
+
+
+def log(msg):
+    print(f"silky-ath12k-recovery: {msg}", flush=True)
+
+
+def pci_devices():
+    if not DRIVER_SYSFS.is_dir():
+        return []
+    devs = []
+    for entry in sorted(DRIVER_SYSFS.iterdir()):
+        if re.match(r"^[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-9]$", entry.name):
+            devs.append(entry.name)
+    return devs
+
+
+def wifi_interfaces():
+    if not NET_SYSFS.is_dir():
+        return []
+    ifaces = []
+    for entry in sorted(NET_SYSFS.iterdir()):
+        if (entry / "wireless").is_dir() or (entry / "phy80211").exists():
+            ifaces.append(entry.name)
+    return ifaces
+
+
+def active_link_info(iface):
+    res = run_cmd("iw", "dev", iface, "link", timeout=4)
+    if res.returncode != 0 or "Not connected." in res.stdout:
+        return None
+    ssid = ""
+    freq = 0.0
+    for line in res.stdout.splitlines():
+        s = line.strip()
+        if s.startswith("SSID:"):
+            ssid = s.partition(":")[2].strip()
+        else:
+            m = FREQ_RE.match(line)
+            if m:
+                freq = float(m.group(1))
+    return {"ssid": ssid, "freq": freq}
+
+
+def scan_cache_counts(iface):
+    res = run_cmd("iw", "dev", iface, "scan", "dump", timeout=6)
+    if res.returncode != 0:
+        return {"2.4ghz": 0, "5ghz": 0, "6ghz": 0}
+    counts = {"2.4ghz": 0, "5ghz": 0, "6ghz": 0}
+    for line in res.stdout.splitlines():
+        m = FREQ_RE.match(line)
+        if not m:
+            continue
+        freq = float(m.group(1))
+        if freq < 3000:
+            counts["2.4ghz"] += 1
+        elif freq < 5925:
+            counts["5ghz"] += 1
+        else:
+            counts["6ghz"] += 1
+    return counts
+
+
+def boot_wedge_events():
+    res = run_cmd("journalctl", "-b", "-t", "kernel", "-o", "cat", "--no-pager", timeout=8)
+    if res.returncode != 0:
+        return []
+    return [line for line in res.stdout.splitlines() if WEDGE_LINE_RE.search(line)]
+
+
+def wifi_radio_enabled():
+    res = run_cmd("nmcli", "radio", "wifi", timeout=4)
+    return res.returncode == 0 and res.stdout.strip() == "enabled"
+
+
+def is_wedged():
+    if not pci_devices() or not wifi_radio_enabled():
+        return False
+    ifaces = wifi_interfaces()
+    if not ifaces:
+        return True
+    events = boot_wedge_events()
+    if not events:
+        return False
+    for iface in ifaces:
+        link = active_link_info(iface)
+        if link and link["freq"] >= 5000.0:
+            return False
+        counts = scan_cache_counts(iface)
+        if counts["5ghz"] > 0 or counts["6ghz"] > 0:
+            return False
+    return True
+
+
+def cooldown_allows():
+    if not STAMP_PATH.exists():
+        return True
+    try:
+        prev = float(STAMP_PATH.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return True
+    now = time.monotonic()
+    if prev <= now and (now - prev) < COOLDOWN_SECONDS:
+        return False
+    return True
+
+
+def record_cooldown():
+    try:
+        STAMP_PATH.parent.mkdir(parents=True, exist_ok=True)
+        STAMP_PATH.write_text(f"{time.monotonic():.3f}\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def trigger_nm_scan_and_wait():
+    dev_out = run_cmd("nmcli", "-t", "-f", "TYPE,DBUS-PATH", "device", "status", timeout=4)
+    paths = []
+    if dev_out.returncode == 0:
+        for line in dev_out.stdout.splitlines():
+            kind, _, path = line.partition(":")
+            if kind == "wifi" and path:
+                paths.append(path)
+    if not paths:
+        run_cmd("nmcli", "device", "wifi", "rescan", timeout=6)
+        return
+
+    before = {}
+    for path in paths:
+        p = run_cmd(
+            "busctl", "--system", "--timeout=2s", "get-property",
+            "org.freedesktop.NetworkManager", path,
+            "org.freedesktop.NetworkManager.Device.Wireless", "LastScan",
+            timeout=4,
+        )
+        if p.returncode == 0 and len(p.stdout.split()) >= 2:
+            try:
+                before[path] = int(p.stdout.split()[1])
+            except ValueError:
+                before[path] = -1
+        run_cmd(
+            "busctl", "--system", "--timeout=3s", "call",
+            "org.freedesktop.NetworkManager", path,
+            "org.freedesktop.NetworkManager.Device.Wireless", "RequestScan",
+            "a{sv}", "0",
+            timeout=5,
+        )
+
+    deadline = time.monotonic() + 20.0
+    while time.monotonic() < deadline:
+        time.sleep(0.5)
+        for iface in wifi_interfaces():
+            link = active_link_info(iface)
+            if link and link["freq"] >= 5000.0:
+                return
+        for path, prev in before.items():
+            p = run_cmd(
+                "busctl", "--system", "--timeout=2s", "get-property",
+                "org.freedesktop.NetworkManager", path,
+                "org.freedesktop.NetworkManager.Device.Wireless", "LastScan",
+                timeout=4,
+            )
+            if p.returncode == 0 and len(p.stdout.split()) >= 2:
+                try:
+                    cur = int(p.stdout.split()[1])
+                except ValueError:
+                    continue
+                if cur > prev:
+                    return
+
+
+def recover_radio(reason="manual", force=False):
+    devs = pci_devices()
+    if not devs and not force:
+        log("no ath12k_wifi7_pci device bound; skipping recovery")
+        return 0
+
+    was_enabled = wifi_radio_enabled()
+    if not was_enabled and not force:
+        log("Wi-Fi radio is turned off by user; skipping recovery (pass --force to override)")
+        return 0
+
+    record_cooldown()
+    log(f"recovering ath12k_wifi7 firmware ({reason}) on {', '.join(devs) or 'ath12k_wifi7'}")
+
+    run_cmd("nmcli", "radio", "wifi", "off", timeout=6)
+    time.sleep(0.5)
+
+    unload = run_cmd("modprobe", "-r", "ath12k_wifi7", "ath12k", timeout=12)
+    if unload.returncode == 0:
+        time.sleep(0.5)
+        load = run_cmd("modprobe", "ath12k_wifi7", timeout=12)
+        if load.returncode != 0:
+            log(f"modprobe ath12k_wifi7 failed: {load.stderr.strip()}")
+            return 1
+    else:
+        log("modprobe -r busy; falling back to PCI driver unbind/bind")
+        unbind_path = DRIVER_SYSFS / "unbind"
+        bind_path = DRIVER_SYSFS / "bind"
+        try:
+            for bdf in devs:
+                unbind_path.write_text(bdf, encoding="utf-8")
+            time.sleep(0.8)
+            for bdf in devs:
+                bind_path.write_text(bdf, encoding="utf-8")
+        except OSError as exc:
+            log(f"PCI unbind/bind failed: {exc}")
+            return 1
+
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        if wifi_interfaces():
+            break
+        time.sleep(0.25)
+
+    if was_enabled or force:
+        run_cmd("rfkill", "unblock", "wifi", timeout=4)
+        run_cmd("nmcli", "radio", "wifi", "on", timeout=6)
+        time.sleep(1.0)
+        trigger_nm_scan_and_wait()
+
+    ifaces = wifi_interfaces()
+    for iface in ifaces:
+        counts = scan_cache_counts(iface)
+        link = active_link_info(iface)
+        conn_desc = (
+            f"connected to {link['ssid']} ({link['freq']:.0f} MHz)"
+            if link
+            else "disconnected"
+        )
+        log(
+            f"{iface}: {conn_desc}; visible BSS count 2.4GHz={counts['2.4ghz']}, "
+            f"5GHz={counts['5ghz']}, 6GHz={counts['6ghz']}"
+        )
+    return 0
+
+
+def should_recover_after_event():
+    deadline = time.monotonic() + SETTLE_SECONDS
+    while time.monotonic() < deadline:
+        time.sleep(0.5)
+        ifaces = wifi_interfaces()
+        for iface in ifaces:
+            link = active_link_info(iface)
+            if link and link["freq"] >= 5000.0:
+                return False
+    if not wifi_radio_enabled():
+        return False
+    for iface in wifi_interfaces():
+        link = active_link_info(iface)
+        if link and link["freq"] >= 5000.0:
+            return False
+        state_res = run_cmd("nmcli", "-t", "-f", "GENERAL.STATE", "dev", "show", iface, timeout=4)
+        if "connecting" in state_res.stdout.lower():
+            return True
+        counts = scan_cache_counts(iface)
+        if counts["5ghz"] == 0 and counts["6ghz"] == 0:
+            return True
+    return False
+
+
+def watch_journal():
+    log("watching kernel journal for ath12k_wifi7_pci scan start failures")
+    proc = subprocess.Popen(
+        ["journalctl", "-kf", "-n", "0", "-o", "cat"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        errors="replace",
+        env=clean_env(),
+    )
+    try:
+        assert proc.stdout is not None
+        for raw_line in proc.stdout:
+            line = raw_line.strip()
+            if not WEDGE_LINE_RE.search(line):
+                continue
+            if not cooldown_allows():
+                log(f"ignoring event within {COOLDOWN_SECONDS:.0f}s cooldown: {line}")
+                continue
+            log(f"detected kernel scan failure: {line}")
+            if should_recover_after_event():
+                recover_radio(reason="kernel scan start failure")
+            else:
+                log("interface already recovered onto >=5 GHz; no module reload needed")
+    finally:
+        proc.terminate()
+    return 0
+
+
+def configured_regdom():
+    if not REGDOM_CONF_PATH.is_file():
+        return "missing"
+    try:
+        for line in REGDOM_CONF_PATH.read_text(encoding="utf-8", errors="replace").splitlines():
+            m = REGDOM_ACTIVE_RE.match(line)
+            if m:
+                return m.group(1)
+    except OSError:
+        return "unreadable"
+    return "unset"
+
+
+def saved_wifi_priorities():
+    res = run_cmd("nmcli", "-t", "-f", "NAME,UUID,TYPE", "connection", "show", timeout=5)
+    if res.returncode != 0:
+        return []
+    items = []
+    for line in res.stdout.splitlines():
+        parts = line.rsplit(":", 2)
+        if len(parts) != 3 or parts[2] != "802-11-wireless":
+            continue
+        name, uuid, _ = parts
+        detail = run_cmd(
+            "nmcli", "-g", "connection.autoconnect-priority,802-11-wireless.band",
+            "connection", "show", "uuid", uuid, timeout=4,
+        )
+        lines = detail.stdout.splitlines() if detail.returncode == 0 else []
+        prio = lines[0].strip() if len(lines) >= 1 else "?"
+        band = lines[1].strip() if len(lines) >= 2 else ""
+        if band == "a" or FIVE_GHZ_NAME_RE.search(name) or "2.4" in name.lower():
+            items.append((name, prio, band or "auto"))
+    return items
+
+
+def show_status():
+    devs = pci_devices()
+    print(f"PCI devices (ath12k_wifi7_pci): {', '.join(devs) if devs else 'none'}")
+    print(
+        f"NetworkManager conf ({NM_CONF_PATH}): "
+        f"{'installed' if NM_CONF_PATH.is_file() else 'not installed'}"
+    )
+    print(f"Configured WIRELESS_REGDOM ({REGDOM_CONF_PATH}): {configured_regdom()}")
+
+    reg_res = run_cmd("iw", "reg", "get", timeout=4)
+    if reg_res.returncode == 0:
+        countries = [
+            line.strip()
+            for line in reg_res.stdout.splitlines()
+            if line.strip().startswith(("global", "phy#", "country "))
+        ]
+        print("Active regulatory domains: " + " | ".join(countries))
+
+    svc_res = run_cmd("systemctl", "is-active", SERVICE_NAME, timeout=4)
+    svc_state = svc_res.stdout.strip() or "inactive"
+    print(f"Recovery service ({SERVICE_NAME}): {svc_state}")
+
+    events = boot_wedge_events()
+    print(f"Boot scan-failure events: {len(events)}")
+
+    for iface in wifi_interfaces():
+        link = active_link_info(iface)
+        counts = scan_cache_counts(iface)
+        link_str = (
+            f"{link['ssid']} @ {link['freq']:.0f} MHz" if link else "disconnected"
+        )
+        print(
+            f"Interface {iface}: {link_str} "
+            f"(cached BSS: 2.4GHz={counts['2.4ghz']}, 5GHz={counts['5ghz']}, 6GHz={counts['6ghz']})"
+        )
+
+    prios = saved_wifi_priorities()
+    if prios:
+        summary = ", ".join(f"{name}=priority:{prio}(band:{band})" for name, prio, band in prios)
+        print(f"Saved dual-band priorities: {summary}")
+    print(f"5 GHz wedge detected right now: {'yes' if is_wedged() else 'no'}")
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Inspect and recover Qualcomm WCN7850 (ath12k_wifi7_pci) 5 GHz Wi-Fi."
+    )
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--status", action="store_true", help="Show read-only status")
+    group.add_argument(
+        "--check-wedge",
+        action="store_true",
+        help="Exit 0 if a 5 GHz scan wedge is currently detected, 1 otherwise",
+    )
+    group.add_argument(
+        "--recover",
+        action="store_true",
+        help="Reload ath12k_wifi7 to reset WCN7850 firmware and rescan 5 GHz",
+    )
+    group.add_argument(
+        "--watch",
+        action="store_true",
+        help="Watch kernel journal and auto-recover on ath12k scan start failures",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force module reload on --recover even if Wi-Fi radio is off",
+    )
+    args = parser.parse_args()
+
+    if args.status:
+        return show_status()
+    if args.check_wedge:
+        return 0 if is_wedged() else 1
+    if args.recover:
+        if os.geteuid() != 0 and os.environ.get("SILKY_ALLOW_NONROOT_TEST") != "1":
+            print("silky-ath12k-recovery --recover requires root (run with sudo).", file=sys.stderr)
+            return 1
+        return recover_radio(reason="cli --recover", force=args.force)
+    if args.watch:
+        return watch_journal()
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

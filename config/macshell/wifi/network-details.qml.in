@@ -1,0 +1,665 @@
+                // ── network details window (Details…): the macOS sheet with a sidebar. The network itself (Auto-Join,
+                // private address, link figures), TCP/IP, DNS, Proxies and Hardware. Edits are kept here and applied
+                // together with OK through assets/silky-wifi-conn.py; IP / DNS / address changes reconnect the network.
+                Item {
+                    id: netDlg
+                    parent: frame
+                    anchors.fill: parent
+                    z: 900
+                    readonly property bool open: wifiPane.sheet === "details"
+                    readonly property var n: wifiPane.sheetNet
+                    visible: open
+                    property var conf: null
+                    property string tab: "network"
+                    property string err: ""
+                    property bool busy: false
+                    readonly property string helper: decodeURIComponent(String(Qt.resolvedUrl("assets/silky-wifi-conn.py")).replace(/^file:\/\//, ""))
+
+                    // working copy
+                    property bool autoJoin: false
+                    property string privMac: ""
+                    property string v4method: "auto"
+                    property string v4addr: ""
+                    property string v4mask: ""
+                    property string v4gw: ""
+                    property string v4client: ""
+                    property string v6method: "auto"
+                    property var dnsServers: []
+                    property var dnsSearch: []
+                    property string mtuMode: "auto"
+                    property string mtu: ""
+                    property bool pacOn: false
+                    property string pacUrl: ""
+                    property var px: ({ http: { on: false, host: "", port: "" }, https: { on: false, host: "", port: "" }, socks: { on: false, host: "", port: "" } })
+                    property string ignoreHosts: ""
+                    property var orig: ({})
+
+                    // choice pop-up
+                    property var choiceItems: []
+                    property var choicePick: null
+                    property real choiceX: 0
+                    property real choiceY: 0
+                    function choose(item, items, pick) {
+                        var p = item.mapToItem(netDlg, item.width, item.height + 2);
+                        choiceX = p.x; choiceY = p.y; choiceItems = items; choicePick = pick;
+                    }
+
+                    onOpenChanged: if (open) load()
+                    function load() {
+                        conf = null; err = ""; busy = false; tab = "network"; choiceItems = [];
+                        if (!n || !n.uuid) return;
+                        getProc.command = ["/usr/bin/python3", "-I", helper, "get", n.uuid];
+                        getProc.running = true;
+                    }
+                    function snapshot() {
+                        return JSON.stringify({
+                            autoJoin: autoJoin, privMac: privMac,
+                            v4: [v4method, v4addr, v4mask, v4gw, v4client], v6: v6method,
+                            dns: [dnsServers, dnsSearch], mtu: [mtuMode, mtu],
+                            proxy: [pacOn, pacUrl, px, ignoreHosts]
+                        });
+                    }
+                    function fill(c) {
+                        conf = c;
+                        var live = c.live || {};
+                        autoJoin = c.autoconnect;
+                        privMac = c.mac || "";
+                        v4method = c.ipv4.method;
+                        var a = c.ipv4.addresses.length > 0 ? c.ipv4.addresses[0].split("/") : [];
+                        v4addr = a.length ? a[0] : (live.ip || "");
+                        v4mask = a.length ? maskOf(parseInt(a[1])) : (live.mask || "");
+                        v4gw = c.ipv4.gateway || live.router || "";
+                        v4client = c.ipv4.clientId || "";
+                        v6method = c.ipv6.method;
+                        dnsServers = c.dns.servers.slice();
+                        dnsSearch = c.dns.search.slice();
+                        mtuMode = c.mtu > 0 ? "custom" : "auto";
+                        mtu = c.mtu > 0 ? String(c.mtu) : "";
+                        var p = c.proxy;
+                        if (p) {
+                            pacOn = p.mode === "auto";
+                            pacUrl = p.pac || "";
+                            var o = {};
+                            ["http", "https", "socks"].forEach(function (k) {
+                                o[k] = { on: p.mode === "manual" && p[k].host !== "", host: p[k].host, port: p[k].port ? String(p[k].port) : "" };
+                            });
+                            px = o;
+                            ignoreHosts = (p.ignore || []).join(", ");
+                        }
+                        orig = JSON.parse(snapshot());
+                    }
+                    function maskOf(prefix) {
+                        var m = prefix >= 32 ? 0xFFFFFFFF : (prefix <= 0 ? 0 : (0xFFFFFFFF << (32 - prefix)) >>> 0);
+                        return [m >>> 24, (m >>> 16) & 255, (m >>> 8) & 255, m & 255].join(".");
+                    }
+                    function setPx(kind, key, value) {
+                        var o = JSON.parse(JSON.stringify(px));
+                        o[kind][key] = value;
+                        px = o;
+                    }
+                    function changes() {
+                        var now = JSON.parse(snapshot()), ch = {};
+                        if (now.autoJoin !== orig.autoJoin) ch.autoconnect = autoJoin;
+                        if (now.privMac !== orig.privMac) ch.mac = privMac;
+                        if (JSON.stringify(now.v4) !== JSON.stringify(orig.v4))
+                            ch.ipv4 = { method: v4method, address: v4addr, mask: v4mask, gateway: v4gw, clientId: v4client };
+                        if (now.v6 !== orig.v6) ch.ipv6 = { method: v6method };
+                        if (JSON.stringify(now.dns) !== JSON.stringify(orig.dns)) ch.dns = { servers: dnsServers, search: dnsSearch };
+                        if (JSON.stringify(now.mtu) !== JSON.stringify(orig.mtu)) ch.mtu = mtuMode === "custom" ? (parseInt(mtu) || 0) : 0;
+                        if (JSON.stringify(now.proxy) !== JSON.stringify(orig.proxy)) {
+                            var anyManual = px.http.on || px.https.on || px.socks.on;
+                            function entry(k) { return px[k].on ? { host: px[k].host, port: parseInt(px[k].port) || 0 } : { host: "", port: 0 }; }
+                            ch.proxy = {
+                                mode: pacOn ? "auto" : (anyManual ? "manual" : "none"),
+                                pac: pacUrl, http: entry("http"), https: entry("https"), socks: entry("socks"),
+                                ignore: ignoreHosts.split(/[,\s]+/).filter(function (h) { return h !== ""; })
+                            };
+                        }
+                        return ch;
+                    }
+                    function close() { choiceItems = []; wifiPane.sheet = ""; }
+                    function apply() {
+                        if (busy || !conf) return;
+                        var ch = changes();
+                        if (Object.keys(ch).length === 0) return close();
+                        err = ""; busy = true;
+                        setProc.payload = JSON.stringify(ch);
+                        setProc.command = ["/usr/bin/python3", "-I", helper, "set", n.uuid];
+                        setProc.running = true;
+                    }
+                    function renew() {
+                        if (busy || !n) return;
+                        busy = true; err = "";
+                        renewProc.command = ["/usr/bin/python3", "-I", helper, "renew", n.uuid];
+                        renewProc.running = true;
+                    }
+                    function leaseText() {
+                        var l = conf && conf.live ? conf.live : {};
+                        if (!l.expiry) return "";
+                        var left = Math.max(0, l.expiry - Math.floor(Date.now() / 1000));
+                        var h = Math.floor(left / 3600), m = Math.floor(left % 3600 / 60);
+                        return I18n.tr("Expires in %1 h %2 min").arg(h).arg(m);
+                    }
+                    function resultOf(text) { try { return JSON.parse(text); } catch (e) { return { ok: false, error: text.trim() }; } }
+
+                    Process {
+                        id: getProc
+                        stdout: StdioCollector {
+                            onStreamFinished: {
+                                var r = netDlg.resultOf(text);
+                                if (r && r.uuid) netDlg.fill(r);
+                                else netDlg.err = r && r.error ? r.error : I18n.tr("Could not read this network's settings.");
+                            }
+                        }
+                    }
+                    Process {
+                        id: setProc
+                        property string payload: ""
+                        stdinEnabled: true
+                        onStarted: { write(payload + "\n"); stdinEnabled = false; }
+                        stdout: StdioCollector {
+                            onStreamFinished: {
+                                var r = netDlg.resultOf(text);
+                                netDlg.busy = false;
+                                setProc.stdinEnabled = true;
+                                if (r.ok) {
+                                    if (wifiPane.bar) { wifiPane.bar.scanWifi(false); wifiPane.bar.refreshWifi(); }
+                                    netDlg.close();
+                                } else netDlg.err = r.error || I18n.tr("Could not apply the settings.");
+                            }
+                        }
+                    }
+                    Process {
+                        id: renewProc
+                        stdout: StdioCollector {
+                            onStreamFinished: {
+                                var r = netDlg.resultOf(text);
+                                netDlg.busy = false;
+                                if (!r.ok) netDlg.err = r.error || I18n.tr("Could not renew the DHCP lease.");
+                                else netDlg.load();
+                            }
+                        }
+                    }
+
+                    Keys.onEscapePressed: { if (choiceItems.length) choiceItems = []; else close(); }
+                    onVisibleChanged: if (visible) forceActiveFocus()
+
+                    MouseArea { anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.AllButtons }
+                    Rectangle { anchors.fill: parent; radius: frame.cornerRadius; color: Qt.rgba(0, 0, 0, pal.dark ? 0.45 : 0.25) }
+
+                    Rectangle {
+                        id: dlg
+                        anchors.centerIn: parent
+                        width: Math.min(parent.width - 32, 660)
+                        height: Math.min(parent.height - 48, 500)
+                        radius: 16
+                        clip: true
+                        color: pal.contentSolid
+                        border.width: 1; border.color: pal.cardBorder
+
+                        // sidebar
+                        Rectangle {
+                            id: dlgSide
+                            width: 176; height: parent.height
+                            radius: 16
+                            color: pal.sidebar
+                            Rectangle { anchors.right: parent.right; width: 16; height: parent.height; color: pal.sidebar }
+                            Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: pal.sep }
+                            Column {
+                                x: 10; y: 14
+                                width: parent.width - 20
+                                spacing: 2
+                                Rectangle {     // the network: Auto-Join, private address, link figures
+                                    width: parent.width; height: 52; radius: 8
+                                    color: netDlg.tab === "network" ? pal.accent : "transparent"
+                                    Rectangle {
+                                        x: 6; anchors.verticalCenter: parent.verticalCenter
+                                        width: 34; height: 34; radius: 9
+                                        color: netDlg.tab === "network" ? Qt.rgba(1, 1, 1, 0.22) : "#0A84FF"
+                                        WGlyph { anchors.centerIn: parent; width: 20; height: 20; kind: "wifi"; color: "white" }
+                                    }
+                                    Column {
+                                        x: 48; anchors.verticalCenter: parent.verticalCenter
+                                        width: parent.width - 54
+                                        Text {
+                                            width: parent.width; elide: Text.ElideRight
+                                            text: netDlg.n ? netDlg.n.ssid : ""
+                                            color: netDlg.tab === "network" ? "white" : pal.text
+                                            font.family: root.fontForWeight(Font.DemiBold, pal.fam); font.pixelSize: 13; font.weight: Font.DemiBold
+                                        }
+                                        Row {
+                                            spacing: 5
+                                            Rectangle { width: 7; height: 7; radius: 3.5; anchors.verticalCenter: parent.verticalCenter; color: netDlg.n && netDlg.n.inUse ? "#30D158" : pal.text3 }
+                                            Text {
+                                                text: netDlg.n && netDlg.n.inUse ? I18n.tr("Connected") : I18n.tr("Not Connected")
+                                                color: netDlg.tab === "network" ? Qt.rgba(1, 1, 1, 0.85) : pal.text2
+                                                font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 11
+                                            }
+                                        }
+                                    }
+                                    MouseArea { anchors.fill: parent; onClicked: netDlg.tab = "network" }
+                                }
+                                Repeater {
+                                    model: [ { id: "tcpip", label: "TCP/IP" }, { id: "dns", label: "DNS" },
+                                             { id: "proxy", label: I18n.tr("Proxies") }, { id: "hardware", label: I18n.tr("Hardware") } ]
+                                    delegate: Rectangle {
+                                        required property var modelData
+                                        width: parent.width; height: 30; radius: 7
+                                        color: netDlg.tab === modelData.id ? pal.accent : (tabMa.containsMouse ? pal.hover : "transparent")
+                                        Text {
+                                            x: 10; anchors.verticalCenter: parent.verticalCenter
+                                            text: modelData.label
+                                            color: netDlg.tab === modelData.id ? "white" : pal.text
+                                            font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                                        }
+                                        MouseArea { id: tabMa; anchors.fill: parent; hoverEnabled: true; onClicked: netDlg.tab = modelData.id }
+                                    }
+                                }
+                            }
+                        }
+
+                        // content
+                        Flickable {
+                            id: dlgFlick
+                            x: dlgSide.width; y: 0
+                            width: parent.width - x
+                            height: parent.height - dlgBar.height
+                            contentWidth: width
+                            contentHeight: dlgCol.height + 40
+                            clip: true
+                            boundsBehavior: Flickable.StopAtBounds
+                            Column {
+                                id: dlgCol
+                                x: 20; y: 20
+                                width: dlgFlick.width - 40
+                                spacing: 14
+
+                                Text {
+                                    visible: netDlg.conf === null
+                                    text: netDlg.err !== "" ? netDlg.err : I18n.tr("Loading…")
+                                    color: netDlg.err !== "" ? pal.danger : pal.text2
+                                    font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                                }
+
+                                // ── the network ──
+                                SCard {
+                                    t: pal
+                                    visible: netDlg.conf !== null && netDlg.tab === "network"
+                                    SRow {
+                                        t: pal; title: I18n.tr("Auto-Join")
+                                        subtitle: I18n.tr("Join this network automatically when it is in range.")
+                                        SSwitch { t: pal; checked: netDlg.autoJoin; onToggled: v => netDlg.autoJoin = v }
+                                    }
+                                    SRow {
+                                        t: pal; title: I18n.tr("Private Wi-Fi Address")
+                                        subtitle: I18n.tr("Use a different hardware address on this network to reduce tracking.")
+                                        SChoice {
+                                            id: privChoice
+                                            t: pal
+                                            readonly property var opts: [ { v: "", l: I18n.tr("System Default") }, { v: "permanent", l: I18n.tr("Off") },
+                                                                          { v: "stable", l: I18n.tr("Fixed") }, { v: "random", l: I18n.tr("Rotating") } ]
+                                            label: { for (var i = 0; i < opts.length; i++) if (opts[i].v === netDlg.privMac) return opts[i].l; return netDlg.privMac; }
+                                            onClicked: netDlg.choose(privChoice, opts, function (v) { netDlg.privMac = v; })
+                                        }
+                                    }
+                                }
+                                SCard {
+                                    t: pal
+                                    visible: netDlg.conf !== null && netDlg.tab === "network" && netDlg.n !== null && netDlg.n.inUse
+                                    Repeater {
+                                        model: netDlg.open && wifiPane.wf ? wifiPane.infoRows(wifiPane.wf.info) : []
+                                        delegate: SRow {
+                                            required property var modelData
+                                            t: pal; title: modelData.k
+                                            Text { text: modelData.v; color: pal.text2; font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13 }
+                                        }
+                                    }
+                                }
+
+                                // ── TCP/IP ──
+                                SCard {
+                                    t: pal
+                                    visible: netDlg.conf !== null && netDlg.tab === "tcpip"
+                                    SRow {
+                                        t: pal; title: I18n.tr("Configure IPv4")
+                                        SChoice {
+                                            id: v4Choice
+                                            t: pal
+                                            readonly property var opts: [ { v: "auto", l: I18n.tr("Using DHCP") }, { v: "manual", l: I18n.tr("Manually") }, { v: "disabled", l: I18n.tr("Off") } ]
+                                            label: { for (var i = 0; i < opts.length; i++) if (opts[i].v === netDlg.v4method) return opts[i].l; return netDlg.v4method; }
+                                            onClicked: netDlg.choose(v4Choice, opts, function (v) { netDlg.v4method = v; })
+                                        }
+                                    }
+                                    SRow {
+                                        t: pal; title: I18n.tr("IP Address"); visible: netDlg.v4method !== "disabled"
+                                        SField { t: pal; editable: netDlg.v4method === "manual"; text: netDlg.v4addr; placeholder: "192.168.1.10"; onEdited: netDlg.v4addr = text }
+                                    }
+                                    SRow {
+                                        t: pal; title: I18n.tr("Subnet Mask"); visible: netDlg.v4method !== "disabled"
+                                        SField { t: pal; editable: netDlg.v4method === "manual"; text: netDlg.v4mask; placeholder: "255.255.255.0"; onEdited: netDlg.v4mask = text }
+                                    }
+                                    SRow {
+                                        t: pal; title: I18n.tr("Router"); visible: netDlg.v4method !== "disabled"
+                                        SField { t: pal; editable: netDlg.v4method === "manual"; text: netDlg.v4gw; placeholder: "192.168.1.1"; onEdited: netDlg.v4gw = text }
+                                    }
+                                }
+                                SCard {
+                                    t: pal
+                                    visible: netDlg.conf !== null && netDlg.tab === "tcpip" && netDlg.v4method === "auto"
+                                    SRow {
+                                        t: pal; title: I18n.tr("DHCP Lease")
+                                        subtitle: netDlg.leaseText()
+                                        SButton { t: pal; text: I18n.tr("Renew DHCP Lease"); onClicked: netDlg.renew() }
+                                    }
+                                    SRow {
+                                        t: pal; title: I18n.tr("DHCP Client ID (if required)")
+                                        SField { t: pal; text: netDlg.v4client; placeholder: I18n.tr("DHCP Client ID"); onEdited: netDlg.v4client = text }
+                                    }
+                                }
+                                SCard {
+                                    t: pal
+                                    visible: netDlg.conf !== null && netDlg.tab === "tcpip"
+                                    SRow {
+                                        t: pal; title: I18n.tr("Configure IPv6")
+                                        SChoice {
+                                            id: v6Choice
+                                            t: pal
+                                            readonly property var opts: [ { v: "auto", l: I18n.tr("Automatically") }, { v: "link-local", l: I18n.tr("Link-Local Only") }, { v: "disabled", l: I18n.tr("Off") } ]
+                                            label: { for (var i = 0; i < opts.length; i++) if (opts[i].v === netDlg.v6method) return opts[i].l; return netDlg.v6method; }
+                                            onClicked: netDlg.choose(v6Choice, opts, function (v) { netDlg.v6method = v; })
+                                        }
+                                    }
+                                    Repeater {
+                                        model: netDlg.conf && netDlg.conf.live && netDlg.v6method !== "disabled" ? (netDlg.conf.live.ip6 || []) : []
+                                        delegate: SRow {
+                                            required property string modelData
+                                            t: pal; title: I18n.tr("IPv6 Address")
+                                            Text { text: modelData; color: pal.text2; font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13 }
+                                        }
+                                    }
+                                    SRow {
+                                        t: pal; title: I18n.tr("Router"); visible: netDlg.v6method !== "disabled"
+                                        Text {
+                                            text: netDlg.conf && netDlg.conf.live && netDlg.conf.live.router6 ? netDlg.conf.live.router6 : "—"
+                                            color: pal.text2; font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                                        }
+                                    }
+                                }
+
+                                // ── DNS: manual servers replace the ones from DHCP (shown grey) ──
+                                Repeater {
+                                    model: netDlg.conf !== null && netDlg.tab === "dns" ? [
+                                        { key: "servers", title: I18n.tr("DNS Servers"), hint: "1.1.1.1" },
+                                        { key: "search", title: I18n.tr("Search Domains"), hint: "example.com" } ] : []
+                                    delegate: Column {
+                                        id: dnsSec
+                                        required property var modelData
+                                        width: dlgCol.width
+                                        spacing: 6
+                                        readonly property var manual: modelData.key === "servers" ? netDlg.dnsServers : netDlg.dnsSearch
+                                        readonly property var auto: modelData.key === "servers" && netDlg.conf && netDlg.conf.live ? (netDlg.conf.live.dns || []) : []
+                                        function setList(l) { if (modelData.key === "servers") netDlg.dnsServers = l; else netDlg.dnsSearch = l; }
+                                        SLabel { t: pal; header: true; text: dnsSec.modelData.title }
+                                        SCard {
+                                            t: pal
+                                            Repeater {
+                                                model: dnsSec.manual.length > 0 ? dnsSec.manual : dnsSec.auto
+                                                delegate: SRow {
+                                                    required property string modelData
+                                                    required property int index
+                                                    t: pal; title: modelData
+                                                    SButton {
+                                                        t: pal; visible: dnsSec.manual.length > 0; text: "−"
+                                                        onClicked: { var l = dnsSec.manual.slice(); l.splice(index, 1); dnsSec.setList(l); }
+                                                    }
+                                                    Text {
+                                                        visible: dnsSec.manual.length === 0
+                                                        text: I18n.tr("From DHCP"); color: pal.text3
+                                                        font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 12
+                                                    }
+                                                }
+                                            }
+                                            SRow {
+                                                t: pal
+                                                title: dnsSec.manual.length === 0 && dnsSec.auto.length === 0 ? I18n.tr("None") : ""
+                                                Row {
+                                                    spacing: 8
+                                                    SField { id: dnsAdd; t: pal; alignRight: false; width: 200; placeholder: dnsSec.modelData.hint; onAccepted: addBtn.clicked() }
+                                                    SButton {
+                                                        id: addBtn
+                                                        t: pal; text: "+"
+                                                        onClicked: {
+                                                            var v = dnsAdd.text.trim();
+                                                            if (v === "") return;
+                                                            dnsSec.setList(dnsSec.manual.concat([v]));
+                                                            dnsAdd.text = "";
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                SLabel {
+                                    t: pal
+                                    visible: netDlg.conf !== null && netDlg.tab === "dns"
+                                    text: I18n.tr("Servers you add replace the ones from DHCP. Remove them all to use DHCP again.")
+                                }
+
+                                // ── Proxies (desktop wide: org.gnome.system.proxy) ──
+                                SCard {
+                                    t: pal
+                                    visible: netDlg.conf !== null && netDlg.tab === "proxy" && netDlg.conf.proxy !== null
+                                    Item {
+                                        width: parent.width; height: pacRow.height + 20
+                                        Row {
+                                            id: pacRow
+                                            x: 14; y: 10
+                                            spacing: 10
+                                            SCheck { t: pal; anchors.verticalCenter: parent.verticalCenter; checked: netDlg.pacOn; onToggled: v => netDlg.pacOn = v }
+                                            Text {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                width: 150
+                                                text: I18n.tr("Automatic Proxy Configuration")
+                                                wrapMode: Text.WordWrap
+                                                color: pal.text; font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                                            }
+                                            SField { t: pal; alignRight: false; width: Math.max(120, dlgCol.width - 230); editable: netDlg.pacOn; text: netDlg.pacUrl; placeholder: "http://…/proxy.pac"; onEdited: netDlg.pacUrl = text }
+                                        }
+                                    }
+                                    Repeater {
+                                        model: [ { k: "http", l: I18n.tr("Web Proxy (HTTP)") }, { k: "https", l: I18n.tr("Secure Web Proxy (HTTPS)") }, { k: "socks", l: I18n.tr("SOCKS Proxy") } ]
+                                        delegate: Item {
+                                            required property var modelData
+                                            readonly property var e: netDlg.px[modelData.k]
+                                            width: dlgCol.width; height: 46
+                                            Rectangle { x: 14; width: parent.width - 14; height: 1; color: pal.sep }
+                                            Row {
+                                                x: 14; anchors.verticalCenter: parent.verticalCenter
+                                                spacing: 10
+                                                SCheck {
+                                                    t: pal; anchors.verticalCenter: parent.verticalCenter
+                                                    checked: parent.parent.e.on
+                                                    onToggled: v => netDlg.setPx(parent.parent.modelData.k, "on", v)
+                                                }
+                                                Text {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    width: 150; wrapMode: Text.WordWrap
+                                                    text: parent.parent.modelData.l
+                                                    color: pal.text; font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                                                }
+                                                SField {
+                                                    t: pal; alignRight: false
+                                                    width: Math.max(90, dlgCol.width - 304)
+                                                    editable: parent.parent.e.on
+                                                    text: parent.parent.e.host; placeholder: "127.0.0.1"
+                                                    onEdited: netDlg.setPx(parent.parent.modelData.k, "host", text)
+                                                }
+                                                SField {
+                                                    t: pal; alignRight: false; width: 64
+                                                    editable: parent.parent.e.on
+                                                    text: parent.parent.e.port; placeholder: "8080"
+                                                    onEdited: netDlg.setPx(parent.parent.modelData.k, "port", text)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                SLabel {
+                                    t: pal; header: true
+                                    visible: netDlg.conf !== null && netDlg.tab === "proxy" && netDlg.conf.proxy !== null
+                                    text: I18n.tr("Bypass proxy settings for these hosts & domains:")
+                                }
+                                Rectangle {
+                                    visible: netDlg.conf !== null && netDlg.tab === "proxy" && netDlg.conf.proxy !== null
+                                    width: dlgCol.width; height: 64; radius: 8
+                                    color: pal.field
+                                    border.width: 1; border.color: ignIn.activeFocus ? pal.accent : pal.cardBorder
+                                    TextEdit {
+                                        id: ignIn
+                                        anchors.fill: parent; anchors.margins: 8
+                                        wrapMode: TextEdit.Wrap; selectByMouse: true
+                                        text: netDlg.ignoreHosts
+                                        onTextChanged: if (activeFocus) netDlg.ignoreHosts = text
+                                        color: pal.text; selectionColor: pal.accent
+                                        font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 12
+                                    }
+                                }
+                                SLabel {
+                                    t: pal
+                                    visible: netDlg.conf !== null && netDlg.tab === "proxy"
+                                    text: netDlg.conf && netDlg.conf.proxy === null ? I18n.tr("Proxy settings need gsettings (glib2).")
+                                        : I18n.tr("Proxies apply to the whole computer, not only this network. Browsers and GTK apps use them; a proxy app may change them again.")
+                                }
+
+                                // ── Hardware ──
+                                SCard {
+                                    t: pal
+                                    visible: netDlg.conf !== null && netDlg.tab === "hardware"
+                                    SRow {
+                                        t: pal; title: I18n.tr("MAC Address")
+                                        Text {
+                                            text: netDlg.conf && netDlg.conf.live && netDlg.conf.live.mac ? netDlg.conf.live.mac : "—"
+                                            color: pal.text2; font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                                        }
+                                    }
+                                    SRow {
+                                        t: pal; title: I18n.tr("Hardware Address")
+                                        Text {
+                                            text: wifiPane.wf && wifiPane.wf.info.hwaddr ? wifiPane.wf.info.hwaddr : "—"
+                                            color: pal.text2; font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                                        }
+                                    }
+                                    SRow {
+                                        t: pal; title: "MTU"
+                                        Row {
+                                            spacing: 10
+                                            SChoice {
+                                                id: mtuChoice
+                                                t: pal
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                readonly property var opts: [ { v: "auto", l: I18n.tr("Standard (1500)") }, { v: "custom", l: I18n.tr("Custom") } ]
+                                                label: netDlg.mtuMode === "custom" ? I18n.tr("Custom") : I18n.tr("Standard (1500)")
+                                                onClicked: netDlg.choose(mtuChoice, opts, function (v) { netDlg.mtuMode = v; if (v === "custom" && netDlg.mtu === "") netDlg.mtu = "1500"; })
+                                            }
+                                            SField {
+                                                t: pal; visible: netDlg.mtuMode === "custom"; width: 70
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                text: netDlg.mtu; placeholder: "1500"; onEdited: netDlg.mtu = text
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // bottom bar
+                        Item {
+                            id: dlgBar
+                            x: dlgSide.width
+                            y: parent.height - height
+                            width: parent.width - x; height: 62
+                            Rectangle { width: parent.width; height: 1; color: pal.sep }
+                            SButton {
+                                t: pal
+                                visible: netDlg.n !== null && netDlg.n.saved
+                                destructive: true
+                                x: 20; anchors.verticalCenter: parent.verticalCenter
+                                text: I18n.tr("Forget This Network…")
+                                onClicked: { netDlg.choiceItems = []; wifiPane.sheet = "forget"; }
+                            }
+                            Text {
+                                visible: netDlg.busy || (netDlg.err !== "" && netDlg.conf !== null)
+                                anchors.right: dlgBtns.left; anchors.rightMargin: 12
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: Math.max(0, dlgBtns.x - 200)
+                                horizontalAlignment: Text.AlignRight
+                                elide: Text.ElideRight
+                                text: netDlg.busy ? I18n.tr("Applying…") : netDlg.err
+                                color: netDlg.busy ? pal.text2 : pal.danger
+                                font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 12
+                            }
+                            Row {
+                                id: dlgBtns
+                                anchors.right: parent.right; anchors.rightMargin: 20
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 8
+                                SButton { t: pal; text: I18n.tr("Cancel"); onClicked: netDlg.close() }
+                                Rectangle {
+                                    width: Math.max(64, okDlgLbl.implicitWidth + 26); height: 24; radius: 10
+                                    opacity: netDlg.busy || netDlg.conf === null ? 0.5 : 1
+                                    color: okDlgMa.pressed ? Qt.darker(pal.accent, 1.15) : pal.accent
+                                    Text {
+                                        id: okDlgLbl
+                                        anchors.centerIn: parent
+                                        text: I18n.tr("OK")
+                                        color: "white"
+                                        font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                                    }
+                                    MouseArea { id: okDlgMa; anchors.fill: parent; onClicked: netDlg.apply() }
+                                }
+                            }
+                        }
+                    }
+
+                    // choice pop-up (over the window)
+                    Item {
+                        anchors.fill: parent
+                        visible: netDlg.choiceItems.length > 0
+                        MouseArea { anchors.fill: parent; onPressed: netDlg.choiceItems = [] }
+                        Rectangle {
+                            x: Math.min(netDlg.choiceX - width, parent.width - width - 10)
+                            y: Math.min(netDlg.choiceY, parent.height - height - 10)
+                            width: 190
+                            height: chCol.height + 10
+                            radius: 10
+                            color: pal.card
+                            border.width: 1; border.color: pal.cardBorder
+                            Column {
+                                id: chCol
+                                x: 5; y: 5
+                                width: parent.width - 10
+                                Repeater {
+                                    model: netDlg.choiceItems
+                                    delegate: Rectangle {
+                                        required property var modelData
+                                        width: chCol.width; height: 26; radius: 6
+                                        color: chMa.containsMouse ? pal.accent : "transparent"
+                                        Text {
+                                            x: 12; anchors.verticalCenter: parent.verticalCenter
+                                            text: modelData.l
+                                            color: chMa.containsMouse ? "white" : pal.text
+                                            font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                                        }
+                                        MouseArea {
+                                            id: chMa
+                                            anchors.fill: parent; hoverEnabled: true
+                                            onClicked: { var f = netDlg.choicePick; netDlg.choiceItems = []; if (f) f(modelData.v); }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+

@@ -72,7 +72,8 @@ python3 scripts/install-login-transition.py  # Optional: MacShell login wallpape
 ./scripts/install-obsidian-theme.sh
 ./scripts/install-desktop-priority.sh   # needs sudo
 ./scripts/install-occlusion-plugin.sh   # completely covered windows stop redrawing (Hyprland plugin)
-./scripts/install-sleep-usb-wakeup.sh   # needs sudo; prevent Qualcomm dwc3-qcom USB wakeups during closed-lid sleep
+./scripts/install-sleep-usb-wakeup.sh   # needs sudo; Qualcomm Snapdragon X closed-lid USB wakeup guard & Wi-Fi 7 resume fix
+./scripts/install-ath12k-wifi-fix.sh    # needs sudo; Qualcomm WCN7850 5 GHz Wi-Fi wedge prevention and auto-recovery
 ```
 
 Every script backs up the files it changes first. After installing or upgrading, run the self-check: it confirms item by item that the menu bar, Dock, plugins, lock screen, voice overlay and so on are in the expected state, and prints the fix for anything that is not:
@@ -133,4 +134,5 @@ docs/             One document per module (English in docs/en/)
 - [14 · Omalogi: G604 buttons, onboard profiles, and system shortcuts](docs/en/14-omalogi.md)
 - [15 · Obsidian: macOS 27 theme, file icons and smooth typing](docs/en/15-obsidian.md)
 - [16 · Desktop priority: Hyprland and MacShell get the CPU / GPU first](docs/en/16-desktop-priority.md)
-- [17 · Prevent USB controller wakeups during closed-lid sleep (Qualcomm `dwc3-qcom`)](docs/en/17-sleep-usb-wakeup.md)
+- [17 · Snapdragon X closed-lid sleep fixes: USB wakeup guard & Wi-Fi 7 resume fix](docs/en/17-sleep-usb-wakeup.md)
+- [18 · Fix 5 GHz Wi-Fi connection stalls and disappearing networks (Qualcomm `ath12k_wifi7`)](docs/en/18-ath12k-5ghz-wifi.md)

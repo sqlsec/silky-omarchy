@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Read NetworkManager's Wi-Fi list with fast cache reads and reliable scan completion."""
 
+import json
 import os
 import subprocess
 import sys
@@ -55,15 +56,42 @@ def request_scan(path):
     raise RuntimeError(err.strip() or "RequestScan failed")
 
 
+def emit_known(uuids):
+    """K: lines, one JSON object per saved Wi-Fi profile: the SSID can differ from the profile name (hidden-2021)."""
+    if not uuids:
+        return
+    out = command(
+        "nmcli", "-t", "-f", "connection.uuid,connection.id,connection.autoconnect,802-11-wireless.ssid",
+        "connection", "show", *uuids, timeout=5,
+    )
+    profile = {}
+    for line in out.splitlines() + [""]:
+        key, _, value = line.partition(":")
+        if key == "connection.uuid":
+            profile = {"uuid": value}
+        elif key == "connection.id":
+            profile["name"] = value
+        elif key == "connection.autoconnect":
+            profile["autoconnect"] = value == "yes"
+        elif key == "802-11-wireless.ssid":
+            profile["ssid"] = value
+            if profile.get("uuid"):
+                print("K:" + json.dumps(profile, ensure_ascii=False))
+
+
 def emit_cached_list():
     networks = command(
         "nmcli", "-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY",
         "device", "wifi", "list", "--rescan", "no", timeout=5,
     )
-    profiles = command("nmcli", "-t", "-f", "NAME,TYPE", "connection", "show", timeout=5)
+    profiles = command("nmcli", "-t", "-f", "NAME,UUID,TYPE", "connection", "show", timeout=5)
+    uuids = []
     for line in profiles.splitlines():
         if line.endswith(":802-11-wireless"):
-            print("S:" + line.removesuffix(":802-11-wireless"))
+            name, _, uuid = line.removesuffix(":802-11-wireless").rpartition(":")
+            print("S:" + name)
+            uuids.append(uuid)
+    emit_known(uuids)
     for line in networks.splitlines():
         print("N:" + line)
 
