@@ -938,6 +938,19 @@ To update these settings on their own, run `python3 scripts/migrate-macshell-fil
 
 With the Folio customization installed, right-click Files in the Dock to open Home, Desktop, Documents, Downloads, or Pictures. The menu uses the system’s user directory settings. If a shortcut resolves to Home, it uses the existing conventional folder when available to avoid a duplicate Home entry. Run the Folio or MacShell optimization installer and reload MacShell to verify the menu. To roll back, restore the installer’s backups of `MacDock.qml` and `lang/zh-CN.js`, then reload MacShell.
 
+#### Long menus are no longer cut off
+
+When Files has several windows open, its context menu lists each window title before the folders and app actions, and can be taller than the 300 px the Dock’s layer surface reserves above the icons. The overflow used to be clipped at the surface edge, hiding the top window titles. The reserved room is now computed once for the tallest menu the Dock can build (8 window titles, the Files folder shortcuts and app actions: 17 rows and 5 separators) and scales with the icon size. With 52 px icons it reserves about 394 px, so the Dock layer grows from 447 to 541 px. The surface keeps that height when a menu opens. Growing the surface only while a menu was open was tried first, but each resize set off the Dock’s position animation and made it jump on every right-click, so the room is now fixed; the script undoes that earlier version. The extra area is transparent and the input region is unchanged, so the desktop does not lose any clicks. The menu stays at least 8 px below the top of the screen.
+
+See [tune-dock-menu-room.py](../../scripts/tune-dock-menu-room.py), called by `scripts/install-macshell-optimizations.sh`. To update only this, back up `~/.config/quickshell/MacShell/MacDock.qml` and run the following from the repository root. The script can be rerun.
+
+```bash
+python3 scripts/tune-dock-menu-room.py ~/.config/quickshell/MacShell/MacDock.qml
+qs ipc -c MacShell call macshell reload
+```
+
+To verify, open seven or more Folio windows and right-click Files in the Dock. The first window title should be fully visible with space above the menu, and the Dock must not move when the menu opens or closes; the `macdock` layer in `hyprctl layers` keeps the same height either way. Verified by a real right-click on MacShell 0.5.2 at 2× scale on eDP-1: with seven Folio windows open the menu shows in full and the Dock stays still. To roll back, restore the backed-up `MacDock.qml` and reload MacShell.
+
 ### Empty Trash with one click
 
 Right-click the Trash in the MacShell Dock and select Empty Trash to run it immediately. The item is disabled when the Trash is empty.

@@ -166,6 +166,7 @@ python3 "$repo_root/scripts/tune-macshell-system-menu.py" "$staged_shell/MacBar.
 python3 "$repo_root/scripts/tune-workspace-indicators.py" "$staged_shell/MacBar.qml"
 python3 "$repo_root/scripts/tune-macshell-bar-contrast.py" "$staged_shell" --stage
 python3 "$repo_root/scripts/tune-dock-trash.py" "$staged_shell/MacDock.qml"
+python3 "$repo_root/scripts/tune-dock-menu-room.py" "$staged_shell/MacDock.qml"
 python3 "$repo_root/scripts/tune-macshell-avatar.py" "$staged_shell/MacDock.qml" "$staging/MacLock/shell.qml"
 
 # Remove legacy minimize entry points, then attach Silky's unified snapshot Genie minimize effect.

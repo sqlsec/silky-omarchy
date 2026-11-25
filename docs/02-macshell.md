@@ -938,6 +938,19 @@ Omarchy 移除 Nautilus 并将目录默认应用切换为 Folio 后，旧的 Doc
 
 启用 Folio 定制后，在 Dock 右键点「文件」，可直接打开主文件夹、桌面、文档、下载或图片。菜单读取系统的用户目录设置。如果某个快捷目录配置成主文件夹，会优先使用现有的同名目录，避免重复指向主文件夹。使用 Folio 安装脚本或 MacShell 优化安装脚本更新菜单以后，重载 MacShell 即可验证。回滚时恢复安装器备份的 `MacDock.qml` 和 `lang/zh-CN.js`，再重载 MacShell。
 
+#### 长菜单不再被截断
+
+「文件」开着多个窗口时，右键菜单会先列出各窗口标题，再列常用目录和应用操作，总高度可能超过 Dock 图层窗口在图标上方预留的 300 px。此前超出的部分在图层边缘被裁掉，最上面几个窗口标题只露出一半或看不到。现在预留高度按 Dock 可能出现的最高菜单（8 个窗口标题、「文件」的常用目录和应用操作，共 17 行、5 条分隔线）一次算好，并随图标大小缩放。图标 52 px 时预留约 394 px，Dock 图层从 447 px 增至 541 px。图层高度在打开菜单时保持不变。曾试过在菜单打开期间临时增高图层，但图层重设尺寸会带动 Dock 的位置动画，导致每次右键时 Dock 上下跳动，所以改为固定预留；脚本会撤掉早期版本的改动。多出的部分是透明区域，输入区域与平时一致，不会多挡桌面点击。菜单顶部至少离屏幕上缘 8 px。
+
+实现见 [tune-dock-menu-room.py](../scripts/tune-dock-menu-room.py)，由 `scripts/install-macshell-optimizations.sh` 调用。单独更新时，先备份 `~/.config/quickshell/MacShell/MacDock.qml`，在仓库根目录运行以下命令。脚本可重复运行。
+
+```bash
+python3 scripts/tune-dock-menu-room.py ~/.config/quickshell/MacShell/MacDock.qml
+qs ipc -c MacShell call macshell reload
+```
+
+验证：打开 7 个以上的 Folio 窗口，在 Dock 右键点「文件」，第一行窗口标题应完整显示，菜单上方有留白；右键和关闭菜单时 Dock 不应移动；`hyprctl layers` 中 `macdock` 图层的高度在开关菜单前后保持一致。已在 MacShell 0.5.2、2× 缩放的 eDP-1 上实机右键验证：开着 7 个 Folio 窗口时菜单完整显示，Dock 不再跳动。回滚时恢复备份的 `MacDock.qml`，再重载 MacShell。
+
 ### 单击清倒废纸篓
 
 右键点击 MacShell Dock 上的废纸篓，选择「清倒废纸篓」即执行。废纸篓为空时，此项置灰。
