@@ -951,6 +951,19 @@ qs ipc -c MacShell call macshell reload
 
 验证：打开 7 个以上的 Folio 窗口，在 Dock 右键点「文件」，第一行窗口标题应完整显示，菜单上方有留白；右键和关闭菜单时 Dock 不应移动；`hyprctl layers` 中 `macdock` 图层的高度在开关菜单前后保持一致。已在 MacShell 0.5.2、2× 缩放的 eDP-1 上实机右键验证：开着 7 个 Folio 窗口时菜单完整显示，Dock 不再跳动。回滚时恢复备份的 `MacDock.qml`，再重载 MacShell。
 
+#### 勾选最前面的窗口
+
+应用开着多个窗口时，Dock 右键菜单顶部的窗口列表会在该应用最前面的窗口前打勾，和 macOS 一致。该应用正在使用时，勾选当前聚焦的窗口；在别的应用里右键时，勾选这个应用最近用过且未最小化的窗口，也就是点 Dock 图标时会回到的那个窗口。勾号用 1.6 pt 圆端笔画的路径画在左侧独立的一列，随浅色、深色和悬停高亮变色。只要菜单列出了窗口，所有行都会让出这一列，所以标签保持左对齐。此前只在窗口处于激活状态时才在标题前加文字「✓」，在别的应用里右键时几乎不出现，还会把那一行标题挤歪。
+
+实现见 [tune-dock-window-check.py](../scripts/tune-dock-window-check.py)，由 `scripts/install-macshell-optimizations.sh` 调用。装有 `tune-dock-window-pick.py` 提供的 `recentWindow` 时用它选窗口，否则按 Hyprland 的 `focusHistoryID` 选最近聚焦的窗口。单独更新时，先备份 `~/.config/quickshell/MacShell/MacDock.qml`，在仓库根目录运行以下命令。脚本可重复运行。
+
+```bash
+python3 scripts/tune-dock-window-check.py ~/.config/quickshell/MacShell/MacDock.qml
+qs ipc -c MacShell call macshell reload
+```
+
+验证：打开两个以上 Folio 窗口，聚焦其中一个，再切到别的应用。在 Dock 右键点「文件」，刚才用过的窗口前应有勾号，各行标签左对齐；悬停该行时勾号变白。最小化当前窗口后再右键，勾号应移到另一个未最小化的窗口。已在 MacShell 0.5.2、2× 缩放的 eDP-1 上实机右键确认勾号位置与对齐。回滚时恢复备份的 `MacDock.qml`，再重载 MacShell。
+
 ### 单击清倒废纸篓
 
 右键点击 MacShell Dock 上的废纸篓，选择「清倒废纸篓」即执行。废纸篓为空时，此项置灰。

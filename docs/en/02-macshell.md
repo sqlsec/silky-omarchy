@@ -951,6 +951,19 @@ qs ipc -c MacShell call macshell reload
 
 To verify, open seven or more Folio windows and right-click Files in the Dock. The first window title should be fully visible with space above the menu, and the Dock must not move when the menu opens or closes; the `macdock` layer in `hyprctl layers` keeps the same height either way. Verified by a real right-click on MacShell 0.5.2 at 2× scale on eDP-1: with seven Folio windows open the menu shows in full and the Dock stays still. To roll back, restore the backed-up `MacDock.qml` and reload MacShell.
 
+#### Checking the front window
+
+When an app has several windows open, the window list at the top of its Dock context menu checks the app’s front window, as on macOS. While the app is in use, the focused window is checked. When you right-click from another app, the check goes to the app’s most recently used window that is not minimized, which is the window a click on its Dock icon brings back. The check is drawn as a path with a 1.6 pt round-capped stroke in its own column on the left and follows light, dark and hover colours. Every row of a menu that lists windows leaves room for that column, so the labels stay aligned. Before, a text “✓” was prefixed only to an activated window, so it hardly ever showed when you right-clicked from another app and it pushed that title out of line.
+
+See [tune-dock-window-check.py](../../scripts/tune-dock-window-check.py), called by `scripts/install-macshell-optimizations.sh`. It uses `recentWindow` from `tune-dock-window-pick.py` when present and otherwise picks the window with the lowest Hyprland `focusHistoryID`. To update only this, back up `~/.config/quickshell/MacShell/MacDock.qml` and run the following from the repository root. The script can be rerun.
+
+```bash
+python3 scripts/tune-dock-window-check.py ~/.config/quickshell/MacShell/MacDock.qml
+qs ipc -c MacShell call macshell reload
+```
+
+To verify, open two or more Folio windows, focus one, then switch to another app. Right-click Files in the Dock: the window you just used should be checked and all labels should line up; hovering that row turns the check white. Minimize that window and right-click again: the check should move to another window that is not minimized. Confirmed by a real right-click on MacShell 0.5.2 at 2× scale on eDP-1. To roll back, restore the backed-up `MacDock.qml` and reload MacShell.
+
 ### Empty Trash with one click
 
 Right-click the Trash in the MacShell Dock and select Empty Trash to run it immediately. The item is disabled when the Trash is empty.

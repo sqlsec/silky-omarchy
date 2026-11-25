@@ -175,6 +175,7 @@ python3 "$repo_root/scripts/tune-folio-macshell.py" "$staged_shell"
 python3 "$repo_root/scripts/tune-wps-dock.py" "$staged_shell/MacDock.qml"
 python3 "$repo_root/scripts/tune-macshell-settings.py" "$staged_shell/MacDock.qml"
 python3 "$repo_root/scripts/tune-wallpaper-picker.py" "$staged_shell/MacDock.qml"
+python3 "$repo_root/scripts/tune-dock-window-check.py" "$staged_shell/MacDock.qml"
 
 # Also update existing Silky installations: keep application-provided window controls visible.
 sed -i 's/readonly property bool enabled: true/readonly property bool enabled: false/' "$staged_shell/WindowBar.qml"
