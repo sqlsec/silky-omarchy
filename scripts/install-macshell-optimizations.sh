@@ -92,7 +92,7 @@ calendar_paths=()
 for file in "${calendar_files[@]}"; do
   calendar_paths+=("MacShell/$file")
 done
-managed_files=("${calendar_paths[@]}" MacShell/FolioMinimizeFx.qml MacShell/FolioSnapPreview.qml MacShell/FootWindowLayout.qml MacShell/folio-genie.vert.qsb MacShell/DockGlassPanel.qml MacShell/SilkyAccountAvatar.qml MacShell/SilkyBarContrast.qml MacShell/assets/silky-bar-tone.py MacShell/assets/macshell-logo.png "${managed_files[@]}")
+managed_files=("${calendar_paths[@]}" MacShell/FolioMinimizeFx.qml MacShell/FolioSnapPreview.qml MacShell/FootWindowLayout.qml MacShell/folio-genie.vert.qsb MacShell/DockGlassPanel.qml MacShell/SilkyAccountAvatar.qml MacShell/SilkyBarContrast.qml MacShell/assets/silky-bar-tone.py MacShell/assets/silky-network.py MacShell/assets/macshell-logo.png "${managed_files[@]}")
 for display_asset in "$repo_root/config/macshell/displays/"{*.js,*.qml}; do
   managed_files+=("MacShell/${display_asset##*/}")
 done
@@ -165,6 +165,7 @@ if grep -q 'assets/silky-wifi-scan.py' "$staged_shell/MacBar.qml"; then
 else
   printf 'Skipping the Wi-Fi page: run scripts/install-macshell-wifi.sh first.\n' >&2
 fi
+python3 "$repo_root/scripts/tune-network-settings.py" "$staged_shell"
 python3 "$repo_root/scripts/tune-window-tiling.py" "$staged_shell/MacBar.qml"
 # Volume sliders play a tap at the level they set.
 python3 "$repo_root/scripts/tune-volume-feedback.py" "$staged_shell/MacBar.qml"

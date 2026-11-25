@@ -1086,6 +1086,11 @@ MacShell 的进程还在时，Dock 和菜单栏可能同时停止响应，连 `q
 - [`tune-wallpaper-picker.py`](../scripts/tune-wallpaper-picker.py)：设置里的「墙纸」网格按整行停靠（`GridView.SnapToRow`），最下面一行的名称不会被切掉一半；名称去掉下划线和末尾的分辨率（`solid_black_2560x1440` 显示为 `solid black`），过长时在末尾省略，当前墙纸标题同样处理；收藏按钮改成 24 px 浅色圆底、细描边加深色星形（已收藏为金色实心星），在纯黑和纯白缩略图上都清晰。搜索仍按原文件名匹配。验证：`qs -c MacShell ipc call settings pane wallpaper` 打开墙纸页，滚动网格后应停在整行，名称可读。悬停时收藏按钮的观感尚未在实机上用鼠标检查。回滚：恢复备份的 `MacDock.qml` 并重载 MacShell。
 - [`tune-dock-icons.py`](../scripts/tune-dock-icons.py)：Dock 图标的光学缩放以图标中心为基准，悬停放大时不会往一边偏；旋转（抖动）的支点不变。
 - [`tune-settings-scroll.py`](../scripts/tune-settings-scroll.py)：设置窗口左侧导航列表原来滚轮一格只动几像素。现在每格 140 px，多格累加后逐帧平滑过去；触控板的像素级滚动仍交给列表自己处理，保留原生惯性。
+- [`tune-network-settings.py`](../scripts/tune-network-settings.py)：修复「系统设置 → 网络」状态点始终发灰的问题（原 `paneNetwork` 里状态圆点挂在 `SRow` 内部 `slot` 中，`parent.up` 取不到 `SRow` 的 `up` 属性而恒为假），并按 macOS「网络」页重组版式：
+  - 主要网络服务（Wi-Fi、以太网）和 VPN 分组显示，每行左侧配圆角渐变图标，副标题行把 8 px 状态圆点放在状态文字前面（已连接绿 `#30D158`、连接/断开中琥珀黄 `#FF9F0A`、网线未插红 `#FF453A`、关闭或未连接弱灰）。
+  - 点击「Wi-Fi」行直接跳转到左侧「Wi-Fi」板块并保留顶部 `<` 返回栈，右侧显示 `›` 指示箭头。
+  - VPN 分组由 [`silky-network.py`](../config/macshell/network/silky-network.py) 汇总 NetworkManager 托管的 `vpn` / `wireguard` 配置（含未连接项）、Tailscale 与外部守护进程接管的 TUN 设备：NetworkManager VPN / WireGuard 与 Tailscale 在右侧提供实时开关（`nmcli connection up/down uuid ...` / `tailscale up/down`），切换失败时在副标题行报错；外部应用接管的虚拟网卡（如 Clash Verge 的 `Meta`、ZeroTier 的 `zt*`，`nmcli dev` 状态为 `connected (externally)`）标出应用来源并显示「由应用管理」，不放无法生效的假开关。
+  - 安装与验证：随 `./scripts/install-macshell-optimizations.sh` 一并安装，也可备份 `~/.config/quickshell/MacShell/{MacDock.qml,lang/zh-CN.js}` 后单独执行 `python3 scripts/tune-network-settings.py ~/.config/quickshell/MacShell` 并运行 `qs -c MacShell ipc call macshell reload`。运行 `qs -c MacShell ipc call settings pane network` 验证绿点、Wi-Fi 跳转与 VPN 展示（已在本机 MacShell 0.5.3 深色模式实机验证；NM VPN 开关与浅色模式待有配置时实机复查）。回滚：恢复备份的 `MacDock.qml`、`lang/zh-CN.js`，删除 `assets/silky-network.py` 并重载 MacShell。
 
 ### Dock 中文件打不开
 
