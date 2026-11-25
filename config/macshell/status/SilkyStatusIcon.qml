@@ -66,6 +66,32 @@ Canvas {
             line([10, 10, 10.6, 18.0]);
             line([10, 10, 6.3, 17.0]);
             break;
+        case "workbuddy":
+            // WorkBuddy: its rounded tile with the tilted cat face peeking in from the lower right.
+            ctx.roundedRect(2.4, 2.4, 15.2, 15.2, 3.8, 3.8);
+            ctx.stroke();
+            ctx.save();
+            ctx.beginPath();
+            ctx.roundedRect(2.4, 2.4, 15.2, 15.2, 3.8, 3.8);
+            ctx.clip();
+            ctx.beginPath();
+            ctx.translate(10.6, 12.4);
+            ctx.rotate(-0.34);
+            ctx.moveTo(-7.4, -3.2);
+            ctx.lineTo(1.0, -3.2);
+            ctx.lineTo(5.2, -7.4);
+            ctx.lineTo(6.4, -3.0);
+            ctx.quadraticCurveTo(9.0, -2.4, 9.0, 0.6);
+            ctx.lineTo(9.0, 6.0);
+            line([-0.4, 0.4, -0.4, 2.6]);
+            line([3.6, 0.4, 3.6, 2.6]);
+            ctx.moveTo(-7.4, -3.2);
+            ctx.quadraticCurveTo(-9.6, -3.2, -9.6, -1.0);
+            ctx.lineTo(-9.6, 6.0);
+            ctx.stroke();
+            ctx.restore();
+            ctx.beginPath();
+            break;
         case "chatgpt":
             ctx.save();
             ctx.translate(10, 10);
