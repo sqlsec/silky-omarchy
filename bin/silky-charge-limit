@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+# Silky Omarchy: apply, persist, and restore the battery charge limit on
+# Qualcomm PMIC GLINK (qcom-battmgr) laptops such as Lenovo Yoga Slim 7 14Q8X9.
+#
+# Setting an end threshold N (55..100) also sets the start threshold to N - 5
+# (50..95) so the firmware discharges above N, holds on external power around N,
+# and only resumes charging once the battery drops 5% below N.
+set -euo pipefail
+
+BAT_DIR=${SILKY_BAT_DIR:-/sys/class/power_supply/qcom-battmgr-bat}
+END_NODE="$BAT_DIR/charge_control_end_threshold"
+START_NODE="$BAT_DIR/charge_control_start_threshold"
+CONF_FILE=${SILKY_CHARGE_LIMIT_CONF:-/etc/silky/charge-limit.conf}
+LIMIT_MIN=55
+LIMIT_MAX=100
+HYSTERESIS=5
+
+usage() {
+  printf 'Usage: %s {apply <55..100>|restore|status}\n' "$(basename -- "$0")" >&2
+  exit 2
+}
+
+validate_limit() {
+  local val=$1
+  [[ $val =~ ^[0-9]{2,3}$ ]] && (( val >= LIMIT_MIN && val <= LIMIT_MAX ))
+}
+
+read_int() {
+  local path=$1
+  [[ -r $path ]] || return 1
+  local val
+  val=$(<"$path")
+  val=${val//[[:space:]]/}
+  [[ $val =~ ^-?[0-9]+$ ]] || return 1
+  printf '%s\n' "$val"
+}
+
+write_thresholds() {
+  local end=$1
+  local start=$(( end - HYSTERESIS ))
+
+  if [[ ! -w $END_NODE || ! -w $START_NODE ]]; then
+    printf 'Battery threshold sysfs nodes are not writable under %s\n' "$BAT_DIR" >&2
+    return 1
+  fi
+
+  # Write end first, then start, so qcom_battmgr always sends delta_soc = 5
+  # even when raising the limit from a previously lower value.
+  printf '%s\n' "$end" >"$END_NODE"
+  printf '%s\n' "$start" >"$START_NODE"
+
+  local got_end got_start
+  got_end=$(read_int "$END_NODE" || echo "")
+  got_start=$(read_int "$START_NODE" || echo "")
+  if [[ $got_end != "$end" || $got_start != "$start" ]]; then
+    printf 'Firmware read-back mismatch: expected %s-%s%%, got %s-%s%%\n' \
+      "$start" "$end" "${got_start:-?}" "${got_end:-?}" >&2
+    return 1
+  fi
+}
+
+save_config() {
+  local end=$1
+  local dir tmp
+  dir=$(dirname -- "$CONF_FILE")
+  install -d -m 755 -- "$dir"
+  tmp=$(mktemp "$dir/.charge-limit.XXXXXX")
+  cat >"$tmp" <<EOF
+# Silky Omarchy battery charge limit (55-100).
+# Start threshold is always LIMIT - ${HYSTERESIS}.
+LIMIT=${end}
+EOF
+  chmod 644 -- "$tmp"
+  mv -f -- "$tmp" "$CONF_FILE"
+}
+
+load_config_limit() {
+  [[ -r $CONF_FILE ]] || return 1
+  local line val=""
+  while IFS= read -r line; do
+    line=${line%%#*}
+    line=${line//[[:space:]]/}
+    if [[ $line == LIMIT=* ]]; then
+      val=${line#LIMIT=}
+    fi
+  done <"$CONF_FILE"
+  validate_limit "$val" || return 1
+  printf '%s\n' "$val"
+}
+
+cmd_apply() {
+  [[ $# -eq 1 ]] || usage
+  local end=$1
+  if ! validate_limit "$end"; then
+    printf 'Invalid charge limit %q (expected %d..%d)\n' "$end" "$LIMIT_MIN" "$LIMIT_MAX" >&2
+    exit 2
+  fi
+  write_thresholds "$end"
+  save_config "$end"
+}
+
+cmd_restore() {
+  local end
+  if ! end=$(load_config_limit); then
+    exit 0
+  fi
+  # pmic-glink probes asynchronously on boot; wait briefly for sysfs nodes.
+  local waited=0
+  while [[ ! -w $END_NODE || ! -w $START_NODE ]]; do
+    if (( waited >= 30 )); then
+      printf 'Timed out waiting for %s\n' "$END_NODE" >&2
+      exit 1
+    fi
+    sleep 0.5
+    waited=$(( waited + 1 ))
+  done
+  write_thresholds "$end"
+}
+
+cmd_status() {
+  local cfg="unset"
+  if cfg_val=$(load_config_limit 2>/dev/null); then
+    cfg="${cfg_val}%"
+  fi
+  local cur_start cur_end status power_uw energy_now energy_full pct
+  cur_start=$(read_int "$START_NODE" 2>/dev/null || echo "?")
+  cur_end=$(read_int "$END_NODE" 2>/dev/null || echo "?")
+  status=$(cat "$BAT_DIR/status" 2>/dev/null || echo "?")
+  power_uw=$(read_int "$BAT_DIR/power_now" 2>/dev/null || echo "0")
+  energy_now=$(read_int "$BAT_DIR/energy_now" 2>/dev/null || echo "0")
+  energy_full=$(read_int "$BAT_DIR/energy_full" 2>/dev/null || echo "0")
+  if (( energy_full > 0 )); then
+    pct=$(( (energy_now * 100 + energy_full / 2) / energy_full ))
+  else
+    pct="?"
+  fi
+  printf 'config=%s kernel=%s-%s%% battery=%s%% status=%s power_uw=%s\n' \
+    "$cfg" "$cur_start" "$cur_end" "$pct" "$status" "$power_uw"
+}
+
+case "${1:-}" in
+  apply)
+    shift
+    cmd_apply "$@"
+    ;;
+  restore)
+    cmd_restore
+    ;;
+  status)
+    cmd_status
+    ;;
+  *)
+    usage
+    ;;
+esac
