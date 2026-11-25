@@ -1,6 +1,6 @@
-diff --git c/CMakeLists.txt w/CMakeLists.txt
+diff --git i/CMakeLists.txt w/CMakeLists.txt
 index a408ec0..bc856a5 100644
---- c/CMakeLists.txt
+--- i/CMakeLists.txt
 +++ w/CMakeLists.txt
 @@ -12,6 +12,7 @@ endif()
  find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 DBus Concurrent Test)
@@ -19,9 +19,9 @@ index a408ec0..bc856a5 100644
  target_compile_options(folio_core PUBLIC -Wall -Wextra)
  
  add_executable(folio src/main.cpp src/resources.qrc)
-diff --git c/src/Band.qml w/src/Band.qml
+diff --git i/src/Band.qml w/src/Band.qml
 index 7275034..b2059d0 100644
---- c/src/Band.qml
+--- i/src/Band.qml
 +++ w/src/Band.qml
 @@ -14,6 +14,9 @@ MouseArea {
      property point start
@@ -80,9 +80,9 @@ index 7275034..b2059d0 100644
 +        radius: 2
      }
  }
-diff --git c/src/ChooserBar.qml w/src/ChooserBar.qml
+diff --git i/src/ChooserBar.qml w/src/ChooserBar.qml
 index db7a460..a14e1fa 100644
---- c/src/ChooserBar.qml
+--- i/src/ChooserBar.qml
 +++ w/src/ChooserBar.qml
 @@ -28,7 +28,8 @@ Item {
  
@@ -103,9 +103,9 @@ index db7a460..a14e1fa 100644
                  if (!name.includes("/") && !name.startsWith("~")) {
                      if (chooser.folders([here]).length > 0) {
                          backend.navigate(here)
-diff --git c/src/DriveMenu.qml w/src/DriveMenu.qml
+diff --git i/src/DriveMenu.qml w/src/DriveMenu.qml
 index ba24d3e..3eae8e7 100644
---- c/src/DriveMenu.qml
+--- i/src/DriveMenu.qml
 +++ w/src/DriveMenu.qml
 @@ -17,7 +17,7 @@ FolioMenu {
      // Opens at the pointer, or (from the keyboard) beside the row.
@@ -127,9 +127,9 @@ index ba24d3e..3eae8e7 100644
      }
      FolioMenuItem {
          shown: !!menu.drive.release
-diff --git c/src/FileMenu.qml w/src/FileMenu.qml
+diff --git i/src/FileMenu.qml w/src/FileMenu.qml
 index 5e1ecb7..763d732 100644
---- c/src/FileMenu.qml
+--- i/src/FileMenu.qml
 +++ w/src/FileMenu.qml
 @@ -15,6 +15,7 @@ FolioMenu {
      property var target: null
@@ -148,9 +148,9 @@ index 5e1ecb7..763d732 100644
      }
      MenuLine { shown: fileMenu.forFiles }
      // Archives are extracted, not compressed again.
-diff --git c/src/FileRow.qml w/src/FileRow.qml
+diff --git i/src/FileRow.qml w/src/FileRow.qml
 index 1a990b3..74c412a 100644
---- c/src/FileRow.qml
+--- i/src/FileRow.qml
 +++ w/src/FileRow.qml
 @@ -24,10 +24,12 @@ Item {
      required property bool expanded
@@ -318,9 +318,9 @@ index 1a990b3..74c412a 100644
          enabled: row.kind !== "item"
          // Dragging a selected item takes the whole selection along. The list
          // is built as the drag starts, not again on every change of selection.
-diff --git c/src/FileTile.qml w/src/FileTile.qml
+diff --git i/src/FileTile.qml w/src/FileTile.qml
 index cf04304..4c8be79 100644
---- c/src/FileTile.qml
+--- i/src/FileTile.qml
 +++ w/src/FileTile.qml
 @@ -25,9 +25,12 @@ Item {
      required property bool selected
@@ -514,9 +514,9 @@ index cf04304..4c8be79 100644
              }
          }
      }
-diff --git c/src/FolderColumns.qml w/src/FolderColumns.qml
+diff --git i/src/FolderColumns.qml w/src/FolderColumns.qml
 index d469bc4..433cbf1 100644
---- c/src/FolderColumns.qml
+--- i/src/FolderColumns.qml
 +++ w/src/FolderColumns.qml
 @@ -13,9 +13,26 @@ Item {
      readonly property int columnWidth: 260
@@ -855,9 +855,9 @@ index d469bc4..433cbf1 100644
                  }
  
                  Text {
-diff --git c/src/FolderGrid.qml w/src/FolderGrid.qml
+diff --git i/src/FolderGrid.qml w/src/FolderGrid.qml
 index 526d645..f61e744 100644
---- c/src/FolderGrid.qml
+--- i/src/FolderGrid.qml
 +++ w/src/FolderGrid.qml
 @@ -5,7 +5,7 @@ import QtQuick.Controls
  GridView {
@@ -900,9 +900,9 @@ index 526d645..f61e744 100644
              : plugins.views[backend.path] ? plugins.views[backend.path].empty : qsTr("This folder is empty")
          color: theme.secondaryForeground
      }
-diff --git c/src/FolderList.qml w/src/FolderList.qml
+diff --git i/src/FolderList.qml w/src/FolderList.qml
 index ecdcfbd..9063219 100644
---- c/src/FolderList.qml
+--- i/src/FolderList.qml
 +++ w/src/FolderList.qml
 @@ -8,7 +8,11 @@ import QtQuick.Controls
  FileListView {
@@ -938,9 +938,9 @@ index ecdcfbd..9063219 100644
              : plugins.views[backend.path] ? plugins.views[backend.path].empty : qsTr("This folder is empty")
          color: theme.secondaryForeground
      }
-diff --git c/src/FolderPane.qml w/src/FolderPane.qml
-index e23254d..d35add5 100644
---- c/src/FolderPane.qml
+diff --git i/src/FolderPane.qml w/src/FolderPane.qml
+index e23254d..d566ce7 100644
+--- i/src/FolderPane.qml
 +++ w/src/FolderPane.qml
 @@ -15,6 +15,8 @@ FocusScope {
      readonly property bool active: !!host && host.activePane === pane
@@ -1059,7 +1059,22 @@ index e23254d..d35add5 100644
          function onActivateRequested() { if (pane.host) { pane.host.raise(); pane.host.requestActivate() } }
      }
  
-@@ -292,6 +343,22 @@ FocusScope {
+@@ -267,8 +318,12 @@ FocusScope {
+     Connections {
+         target: fileOps
+         // A pinned folder's pin, or a folder hidden from Home, follows it
+-        // through a rename, and through undoing and redoing one.
+-        function onRenamed(from, to) { places.renamed(from, to) }
++        // through a rename, and through undoing and redoing one. Expanded
++        // tree folders in the list view follow it too.
++        function onRenamed(from, to) {
++            places.renamed(from, to)
++            backend.folder.renamed(from, to)
++        }
+         function onDone(folder, name) {
+             // Done inside a folder opened in place (the list's tree): its
+             // item is found by its whole path, now or once the folder's
+@@ -292,6 +347,22 @@ FocusScope {
              else
                  backend.expectSelection(name)
          }
@@ -1082,7 +1097,7 @@ index e23254d..d35add5 100644
          function onFailed(message) { backend.showMessage(message) }
          function onNotice(notice) { backend.showNotice(notice) }
          // Work done (a folder of home's trashed, say) shows in the sidebar
-@@ -339,7 +406,7 @@ FocusScope {
+@@ -339,7 +410,7 @@ FocusScope {
                  backend.folder.selectOnly(-1)
                  view.item.letGo()
              } else if (pending)
@@ -1091,7 +1106,7 @@ index e23254d..d35add5 100644
              else if (!same || newSearch)
                  view.item.select(-1, false)
              else if (!pane.cursorLetGo)
-@@ -348,12 +415,22 @@ FocusScope {
+@@ -348,12 +419,22 @@ FocusScope {
              // cursor doesn't signal a move, and an item from the folder
              // before would stay remembered.
              pane.lastPath = backend.folder.get(view.item.currentIndex).path || ""
@@ -1115,7 +1130,7 @@ index e23254d..d35add5 100644
          onDeleteRequested: (paths) => pane.confirmDelete(paths)
          onEmptyTrashRequested: pane.emptyTrash()
          onPinRequested: (path) => pane.togglePin(path)
-@@ -361,6 +438,15 @@ FocusScope {
+@@ -361,6 +442,15 @@ FocusScope {
      }
  
      ColumnLayout {
@@ -1131,7 +1146,7 @@ index e23254d..d35add5 100644
          anchors.fill: parent
          spacing: 0
  
-@@ -422,19 +508,6 @@ FocusScope {
+@@ -422,19 +512,6 @@ FocusScope {
              }
          }
  
@@ -1151,7 +1166,7 @@ index e23254d..d35add5 100644
          Item { implicitHeight: 16 }
  
          // Columns, list or grid: each takes the folder's model and keeps the
-@@ -467,9 +540,35 @@ FocusScope {
+@@ -467,9 +544,35 @@ FocusScope {
                  items: view.item
              }
          }
@@ -1190,7 +1205,7 @@ index e23254d..d35add5 100644
      }
  
      // Drawn over the window's top bar. It reaches back over the sidebar for
-@@ -479,8 +578,11 @@ FocusScope {
+@@ -479,8 +582,11 @@ FocusScope {
          id: pathBar
          x: LayoutMirroring.enabled ? 0 : -pane.barLeft
          width: pane.barLeft + pane.width
@@ -1202,9 +1217,9 @@ index e23254d..d35add5 100644
          closable: pane.closable
          onCycleView: pane.cycleView()
          onCloseRequested: pane.closeRequested()
-diff --git c/src/FolioMenuItem.qml w/src/FolioMenuItem.qml
+diff --git i/src/FolioMenuItem.qml w/src/FolioMenuItem.qml
 index ad3824a..81eeba9 100644
---- c/src/FolioMenuItem.qml
+--- i/src/FolioMenuItem.qml
 +++ w/src/FolioMenuItem.qml
 @@ -9,6 +9,7 @@ MenuItem {
      id: entry
@@ -1224,9 +1239,9 @@ index ad3824a..81eeba9 100644
              anchors.verticalCenter: parent.verticalCenter
              text: entry.text
              color: !entry.enabled ? theme.secondaryForeground : entry.highlighted ? theme.brightForeground : theme.foreground
-diff --git c/src/Glyph.qml w/src/Glyph.qml
+diff --git i/src/Glyph.qml w/src/Glyph.qml
 index 1b6bf00..f88fec3 100644
---- c/src/Glyph.qml
+--- i/src/Glyph.qml
 +++ w/src/Glyph.qml
 @@ -84,6 +84,7 @@ Item {
          case "pause": return "M8 5v14M16 5v14"
@@ -1236,9 +1251,9 @@ index 1b6bf00..f88fec3 100644
          case "check": return "M5 12l5 5 9-10"
          case "close": return "M6 6l12 12M18 6L6 18"
          default: return page()
-diff --git c/src/Main.qml w/src/Main.qml
+diff --git i/src/Main.qml w/src/Main.qml
 index 9be2f93..ab59ac8 100644
---- c/src/Main.qml
+--- i/src/Main.qml
 +++ w/src/Main.qml
 @@ -2,6 +2,7 @@ import QtQuick
  import QtQuick.Controls
@@ -1474,9 +1489,9 @@ index 9be2f93..ab59ac8 100644
                  Layout.fillWidth: true
                  Layout.fillHeight: true
                  focus: true
-diff --git c/src/MountPrompt.qml w/src/MountPrompt.qml
+diff --git i/src/MountPrompt.qml w/src/MountPrompt.qml
 index ec0a180..332cda2 100644
---- c/src/MountPrompt.qml
+--- i/src/MountPrompt.qml
 +++ w/src/MountPrompt.qml
 @@ -1,4 +1,5 @@
  import QtQuick
@@ -1546,7 +1561,7 @@ index ec0a180..332cda2 100644
          // A question's own answers, none of them the default: going ahead
          // with a server that couldn't be checked takes a deliberate click.
          Repeater {
-diff --git c/src/OfficeDocPreview.qml w/src/OfficeDocPreview.qml
+diff --git i/src/OfficeDocPreview.qml w/src/OfficeDocPreview.qml
 new file mode 100644
 index 0000000..9e69f47
 --- /dev/null
@@ -1661,9 +1676,9 @@ index 0000000..9e69f47
 +
 +    ScrollBar.vertical: FolioScrollBar { }
 +}
-diff --git c/src/PathBar.qml w/src/PathBar.qml
+diff --git i/src/PathBar.qml w/src/PathBar.qml
 index bb5f379..792db8d 100644
---- c/src/PathBar.qml
+--- i/src/PathBar.qml
 +++ w/src/PathBar.qml
 @@ -8,9 +8,37 @@ Rectangle {
      id: bar
@@ -1934,9 +1949,9 @@ index bb5f379..792db8d 100644
          AbstractButton {
              id: help
              visible: bar.showsHelp
-diff --git c/src/PdfPreview.qml w/src/PdfPreview.qml
+diff --git i/src/PdfPreview.qml w/src/PdfPreview.qml
 index 4470194..76d2f9a 100644
---- c/src/PdfPreview.qml
+--- i/src/PdfPreview.qml
 +++ w/src/PdfPreview.qml
 @@ -15,7 +15,7 @@ Item {
  
@@ -1947,9 +1962,9 @@ index 4470194..76d2f9a 100644
          onStatusChanged: if (doc.status === PdfDocument.Ready) Qt.callLater(pdf.fit)
      }
  
-diff --git c/src/PreviewPane.qml w/src/PreviewPane.qml
+diff --git i/src/PreviewPane.qml w/src/PreviewPane.qml
 index 4129c8f..43863be 100644
---- c/src/PreviewPane.qml
+--- i/src/PreviewPane.qml
 +++ w/src/PreviewPane.qml
 @@ -168,12 +168,37 @@ Rectangle {
                  }
@@ -1990,9 +2005,9 @@ index 4129c8f..43863be 100644
                           && (!big.shown || (big.failed && quick.status !== Image.Ready))
                  name: pane.pluginItem ? pane.item.icon : pane.hasItem && pane.item.isDir ? "folder" : "file"
                  size: 72
-diff --git c/src/PreviewWindow.qml w/src/PreviewWindow.qml
+diff --git i/src/PreviewWindow.qml w/src/PreviewWindow.qml
 index 71ed54e..6021188 100644
---- c/src/PreviewWindow.qml
+--- i/src/PreviewWindow.qml
 +++ w/src/PreviewWindow.qml
 @@ -38,6 +38,7 @@ ApplicationWindow {
      readonly property var item: previewer.item
@@ -2087,9 +2102,9 @@ index 71ed54e..6021188 100644
      // Anything without a viewer of its own: the largest thumbnail the
      // installed thumbnailers can make (HEIC, office files, fonts…), or the
      // file's type and a pointer to its app.
-diff --git c/src/Selecting.qml w/src/Selecting.qml
-index d6453cf..17f572f 100644
---- c/src/Selecting.qml
+diff --git i/src/Selecting.qml w/src/Selecting.qml
+index d6453cf..bea1042 100644
+--- i/src/Selecting.qml
 +++ w/src/Selecting.qml
 @@ -58,9 +58,10 @@ QtObject {
      function click(index, modifiers) {
@@ -2113,7 +2128,7 @@ index d6453cf..17f572f 100644
          const index = row >= 0 ? row : (view.count > 0 ? 0 : -1)
          moveTo(index)
          if (!(keep && backend.folder.selectedCount > 0)) {
-@@ -132,6 +133,19 @@ QtObject {
+@@ -132,13 +133,32 @@ QtObject {
          }
          if (index >= 0)
              view.positionViewAtIndex(index, ListView.Contain)
@@ -2133,9 +2148,23 @@ index d6453cf..17f572f 100644
      }
  
      // Right-click on an item outside the selection selects just it, so
-diff --git c/src/Sidebar.qml w/src/Sidebar.qml
+     // the menu acts on what was clicked. Returns the item, or null for
+     // empty space.
+     function menuAt(point) {
+-        const index = view.indexAt(point.position.x + view.contentX, point.position.y + view.contentY)
++        // TapHandler inside a Flickable (ListView/GridView) is parented to
++        // contentItem, so map scenePosition directly into contentItem space
++        // instead of adding contentX/contentY twice.
++        const p = point.scenePosition !== undefined
++            ? view.contentItem.mapFromItem(null, point.scenePosition)
++            : Qt.point(point.position.x + view.contentX, point.position.y + view.contentY)
++        const index = view.indexAt(p.x, p.y)
+         if (index >= 0 && !backend.folder.isSelected(index))
+             click(index, 0)
+         return index >= 0 ? backend.folder.get(index) : null
+diff --git i/src/Sidebar.qml w/src/Sidebar.qml
 index 64dfa2c..7798651 100644
---- c/src/Sidebar.qml
+--- i/src/Sidebar.qml
 +++ w/src/Sidebar.qml
 @@ -24,6 +24,7 @@ Rectangle {
      signal deleteRequested(string path)
@@ -2362,7 +2391,7 @@ index 64dfa2c..7798651 100644
  
              // Plugins' sections: their items, or the ones opened lately,
              // then the row for the view of them all.
-diff --git c/src/SpreadsheetPreview.qml w/src/SpreadsheetPreview.qml
+diff --git i/src/SpreadsheetPreview.qml w/src/SpreadsheetPreview.qml
 new file mode 100644
 index 0000000..cf7816d
 --- /dev/null
@@ -2838,7 +2867,7 @@ index 0000000..cf7816d
 +        }
 +    }
 +}
-diff --git c/src/WindowLayoutMenu.qml w/src/WindowLayoutMenu.qml
+diff --git i/src/WindowLayoutMenu.qml w/src/WindowLayoutMenu.qml
 new file mode 100644
 index 0000000..55421c8
 --- /dev/null
@@ -2960,9 +2989,9 @@ index 0000000..55421c8
 +        }
 +    }
 +}
-diff --git c/src/backend.cpp w/src/backend.cpp
+diff --git i/src/backend.cpp w/src/backend.cpp
 index 8ae4fc6..97fea5d 100644
---- c/src/backend.cpp
+--- i/src/backend.cpp
 +++ w/src/backend.cpp
 @@ -1,5 +1,6 @@
  #include "backend.h"
@@ -3070,9 +3099,9 @@ index 8ae4fc6..97fea5d 100644
  void Backend::showItem(const QString &path) {
      const QFileInfo info(path);
      m_pendingSelection = info.fileName();
-diff --git c/src/backend.h w/src/backend.h
+diff --git i/src/backend.h w/src/backend.h
 index 4e5ea95..2117611 100644
---- c/src/backend.h
+--- i/src/backend.h
 +++ w/src/backend.h
 @@ -23,6 +23,7 @@ class Backend : public QObject {
      // labels (a poll, a language switch) while its view is shown.
@@ -3110,9 +3139,9 @@ index 4e5ea95..2117611 100644
      // The plugin actions running, each with its busy text, oldest first.
      QList<std::pair<int, QString>> m_runs;
      int m_lastRun = 0;
-diff --git c/src/filemanager1.cpp w/src/filemanager1.cpp
+diff --git i/src/filemanager1.cpp w/src/filemanager1.cpp
 index 238fe86..51885ed 100644
---- c/src/filemanager1.cpp
+--- i/src/filemanager1.cpp
 +++ w/src/filemanager1.cpp
 @@ -1,50 +1,65 @@
  #include "filemanager1.h"
@@ -3198,9 +3227,9 @@ index 238fe86..51885ed 100644
  }
  
  // There is no properties dialog; the preview pane shows the same details.
-diff --git c/src/filemanager1.h w/src/filemanager1.h
+diff --git i/src/filemanager1.h w/src/filemanager1.h
 index c9344f1..523e1d3 100644
---- c/src/filemanager1.h
+--- i/src/filemanager1.h
 +++ w/src/filemanager1.h
 @@ -16,7 +16,7 @@ public:
  
@@ -3211,9 +3240,9 @@ index c9344f1..523e1d3 100644
  
  public slots:
      void ShowFolders(const QStringList &uris, const QString &startupId);
-diff --git c/src/fileops.cpp w/src/fileops.cpp
+diff --git i/src/fileops.cpp w/src/fileops.cpp
 index 6bdd7b5..298155b 100644
---- c/src/fileops.cpp
+--- i/src/fileops.cpp
 +++ w/src/fileops.cpp
 @@ -19,10 +19,12 @@
  #include <QUrl>
@@ -3470,9 +3499,9 @@ index 6bdd7b5..298155b 100644
  }
  
  // Undo and redo.
-diff --git c/src/fileops.h w/src/fileops.h
+diff --git i/src/fileops.h w/src/fileops.h
 index 6071343..bf4a292 100644
---- c/src/fileops.h
+--- i/src/fileops.h
 +++ w/src/fileops.h
 @@ -135,13 +135,13 @@ public:
      Q_INVOKABLE void emptyTrash();
@@ -3500,9 +3529,9 @@ index 6071343..bf4a292 100644
      // An item renamed from `from` to `to`, by Rename or by undoing or
      // redoing one, for the sidebar's pins and hidden folders to follow.
      void renamed(const QString &from, const QString &to);
-diff --git c/src/foldermodel.cpp w/src/foldermodel.cpp
-index b4de493..2f46a7d 100644
---- c/src/foldermodel.cpp
+diff --git i/src/foldermodel.cpp w/src/foldermodel.cpp
+index b4de493..c043717 100644
+--- i/src/foldermodel.cpp
 +++ w/src/foldermodel.cpp
 @@ -201,7 +201,7 @@ void FolderModel::setItems(const QVariantList &items) {
      m_items = items;
@@ -3522,7 +3551,34 @@ index b4de493..2f46a7d 100644
          m_watcher.addPath(m_path == recentPath() ? recentFile() : m_path);
      reload();
  }
-@@ -609,11 +609,11 @@ void FolderModel::reload() {
+@@ -561,18 +561,22 @@ void FolderModel::reload() {
+     const QStringList expanded = expandable() ? QStringList(m_expanded.begin(), m_expanded.end()) : QStringList();
+     *m_latest = generation;
+     const auto latest = m_latest;
+-    auto *watcher = new QFutureWatcher<std::tuple<QVector<Entry>, QString, QStringList, QHash<QString, QVector<Entry>>, QHash<QString, QString>>>(this);
++    auto *watcher = new QFutureWatcher<std::tuple<QVector<Entry>, QString, QStringList, QHash<QString, QVector<Entry>>, QHash<QString, QString>, QStringList>>(this);
+     connect(watcher, &QFutureWatcherBase::finished, this, [this, watcher, generation] {
+         watcher->deleteLater();
+         if (generation != m_generation)
+             return; // A newer listing replaced this one while it ran.
+         m_staleClear.stop();
+-        const auto [listed, error, trashDirs, open, unread] = watcher->result();
+-        // The folders opened in place, each with its items under it, and
+-        // those that can no longer be read closed.
++        const auto [listed, error, trashDirs, open, unread, vanished] = watcher->result();
++        // The folders opened in place, each with its items under it; ones that
++        // vanished on disk (renamed, moved or deleted) close quietly, while
++        // ones still present but unreadable say why.
+         for (auto it = open.begin(); it != open.end(); ++it)
+             if (m_expanded.contains(it.key()))
+                 m_open.insert(it.key(), it.value());
++        for (const QString &folder : vanished)
++            if (m_expanded.contains(folder))
++                dropExpanded(folder);
+         for (auto it = unread.begin(); it != unread.end(); ++it)
+             if (m_expanded.contains(it.key()))
+                 failExpanded(it.key(), it.value());
+@@ -609,19 +613,24 @@ void FolderModel::reload() {
          // Finding the drives' trash looks over every mount, so it's done here,
          // off the window's thread.
          const QStringList trashDirs = isTrash(path) ? FileOps::trashDirs() : QStringList();
@@ -3534,13 +3590,125 @@ index b4de493..2f46a7d 100644
 -        if (!isPluginView(path))
 +        if (!isItemView(path))
              entries.removeIf([&](const Entry &entry) { return !fits(filter, entry); });
-         // Every folder opened in place, read again with it; one that can't
-         // be is told by its error.
-diff --git c/src/foldermodel.h w/src/foldermodel.h
-index 80cf9ae..cfda583 100644
---- c/src/foldermodel.h
+-        // Every folder opened in place, read again with it; one that can't
+-        // be is told by its error.
++        // Every folder opened in place, read again with it; one that vanished
++        // closes quietly, while one that exists but can't be read reports why.
+         QHash<QString, QVector<Entry>> open;
+         QHash<QString, QString> unread;
++        QStringList vanished;
+         for (const QString &folder : expanded) {
+             if (overtaken())
+                 break;
++            if (!QDir(folder).exists()) {
++                vanished.push_back(folder);
++                continue;
++            }
+             QString why;
+             auto items = list(folder, showHidden, sort, &why, overtaken, locale);
+             if (!why.isEmpty()) {
+@@ -631,7 +640,7 @@ void FolderModel::reload() {
+             items.removeIf([&](const Entry &entry) { return !fits(filter, entry); });
+             open.insert(folder, items);
+         }
+-        return std::make_tuple(entries, error, trashDirs, open, unread);
++        return std::make_tuple(entries, error, trashDirs, open, unread, vanished);
+     }));
+ }
+ 
+@@ -896,7 +905,7 @@ void FolderModel::setExpanded(int row, bool expanded) {
+     }));
+ }
+ 
+-void FolderModel::failExpanded(const QString &folder, const QString &error) {
++void FolderModel::dropExpanded(const QString &folder) {
+     // Closed as a click on its arrow would, its items (if any were shown)
+     // going with it.
+     if (const int row = indexOfPath(folder); row >= 0 && m_expanded.contains(folder)) {
+@@ -907,10 +916,70 @@ void FolderModel::failExpanded(const QString &folder, const QString &error) {
+         m_opening.remove(folder);
+         m_watcher.removePath(folder);
+     }
++}
++
++void FolderModel::failExpanded(const QString &folder, const QString &error) {
++    dropExpanded(folder);
+     //: %1 is a folder's name, %2 why it couldn't be opened.
+     emit expandFailed(tr("%1: %2").arg(QFileInfo(folder).fileName(), error));
+ }
+ 
++void FolderModel::renamed(const QString &from, const QString &to) {
++    if (from.isEmpty() || to.isEmpty() || from == to || m_expanded.isEmpty())
++        return;
++    const QString prefix = from + '/';
++    auto remap = [&](const QString &path) -> QString {
++        if (path == from)
++            return to;
++        if (path.startsWith(prefix))
++            return to + path.mid(from.size());
++        return {};
++    };
++
++    bool changed = false;
++    QSet<QString> nextExpanded;
++    nextExpanded.reserve(m_expanded.size());
++    for (const QString &folder : std::as_const(m_expanded)) {
++        const QString moved = remap(folder);
++        if (!moved.isEmpty()) {
++            changed = true;
++            if (folder != m_path)
++                m_watcher.removePath(folder);
++            if (QDir(moved).exists())
++                m_watcher.addPath(moved);
++            nextExpanded.insert(moved);
++        } else {
++            nextExpanded.insert(folder);
++        }
++    }
++    if (!changed)
++        return;
++    m_expanded = std::move(nextExpanded);
++
++    QHash<QString, QVector<Entry>> nextOpen;
++    nextOpen.reserve(m_open.size());
++    for (auto it = m_open.cbegin(); it != m_open.cend(); ++it) {
++        const QString movedKey = remap(it.key());
++        const QString key = movedKey.isEmpty() ? it.key() : movedKey;
++        QVector<Entry> items = it.value();
++        if (!movedKey.isEmpty()) {
++            for (Entry &e : items)
++                if (const QString movedEntry = remap(e.path); !movedEntry.isEmpty())
++                    e.path = movedEntry;
++        }
++        nextOpen.insert(key, std::move(items));
++    }
++    m_open = std::move(nextOpen);
++
++    QHash<QString, quint64> nextOpening;
++    nextOpening.reserve(m_opening.size());
++    for (auto it = m_opening.cbegin(); it != m_opening.cend(); ++it) {
++        const QString movedKey = remap(it.key());
++        nextOpening.insert(movedKey.isEmpty() ? it.key() : movedKey, it.value());
++    }
++    m_opening = std::move(nextOpening);
++}
++
+ void FolderModel::forgetExpanded() {
+     for (const QString &folder : std::as_const(m_expanded))
+         if (folder != m_path)
+diff --git i/src/foldermodel.h w/src/foldermodel.h
+index 80cf9ae..be7ec8c 100644
+--- i/src/foldermodel.h
 +++ w/src/foldermodel.h
-@@ -166,6 +166,8 @@ public:
+@@ -131,6 +131,7 @@ public:
+     Q_INVOKABLE void setExpanded(int row, bool expanded);
+     Q_INVOKABLE bool isExpanded(int row) const;
+     Q_INVOKABLE void collapseAll();
++    Q_INVOKABLE void renamed(const QString &from, const QString &to);
+     // The row of the folder `row` is listed under, or -1 at the top.
+     Q_INVOKABLE int parentRow(int row) const;
+     // A folder's items with the open folders' own under them, `depth` deep.
+@@ -166,6 +167,8 @@ public:
      // each an item of the "item" kind at plugin:<id>/<item id>. The ones
      // whose names contain `query` (ignoring case), or all of them.
      static bool isPluginView(const QString &path) { return path.startsWith("plugin:") && !path.contains('/'); }
@@ -3549,7 +3717,7 @@ index 80cf9ae..cfda583 100644
      static QVector<Entry> listItems(const QVariantList &items, const QString &query = {});
      // The trash is the home trash's files folder, and it lists every trash's:
      // what's deleted on another drive goes to that drive's own.
-@@ -173,8 +175,8 @@ public:
+@@ -173,8 +176,8 @@ public:
      static QVector<Entry> listTrash(const QStringList &trashDirs, const QString &query, bool showHidden,
                                      const QString &sort, const std::function<bool()> &stop = {}, int limit = 1000,
                                      const QLocale &locale = QLocale(), const QStringList &filter = {});
@@ -3560,9 +3728,21 @@ index 80cf9ae..cfda583 100644
      static QString kindForMime(const QString &mime);
      // Whether an entry fits a filter: folders always do, and a file when any
      // pattern matches, a MIME type ("image/png", "image/*", or a type it
-diff --git c/src/i18n/en.json w/src/i18n/en.json
+@@ -226,8 +229,10 @@ private:
+     // the folder was closed and opened again is dropped.
+     QHash<QString, quint64> m_opening;
+     quint64 m_openings = 0;
+-    // Closes a folder that couldn't be read, saying why.
++    // Closes a folder that couldn't be read, saying why; dropExpanded closes
++    // one silently when it disappeared on disk.
+     void failExpanded(const QString &folder, const QString &error);
++    void dropExpanded(const QString &folder);
+     void forgetExpanded();
+     void setSelected(const QSet<QString> &paths);
+     bool m_loading = false;
+diff --git i/src/i18n/en.json w/src/i18n/en.json
 index b742a47..dbe5dd2 100644
---- c/src/i18n/en.json
+--- i/src/i18n/en.json
 +++ w/src/i18n/en.json
 @@ -27,6 +27,7 @@
    "%1 keeps at most %2 characters of a drive's name.": "%1 keeps at most %2 characters of a drive's name.",
@@ -3751,9 +3931,9 @@ index b742a47..dbe5dd2 100644
    "Trash": "Trash",
    "Try again once the work under way is done.": "Try again once the work under way is done.",
    "Type a path or a server's address": "Type a path or a server's address",
-diff --git c/src/i18n/zh-CN.json w/src/i18n/zh-CN.json
+diff --git i/src/i18n/zh-CN.json w/src/i18n/zh-CN.json
 index ffd2a86..2c06ec8 100644
---- c/src/i18n/zh-CN.json
+--- i/src/i18n/zh-CN.json
 +++ w/src/i18n/zh-CN.json
 @@ -27,6 +27,7 @@
    "%1 keeps at most %2 characters of a drive's name.": "%1 最多保留驱动器名称的 %2 个字符。",
@@ -3942,9 +4122,9 @@ index ffd2a86..2c06ec8 100644
    "Trash": "回收站",
    "Try again once the work under way is done.": "请等当前操作完成后再试。",
    "Type a path or a server's address": "输入路径或服务器地址",
-diff --git c/src/i18n/zh-TW.json w/src/i18n/zh-TW.json
+diff --git i/src/i18n/zh-TW.json w/src/i18n/zh-TW.json
 index d4a2c55..c66b34c 100644
---- c/src/i18n/zh-TW.json
+--- i/src/i18n/zh-TW.json
 +++ w/src/i18n/zh-TW.json
 @@ -27,6 +27,7 @@
    "%1 keeps at most %2 characters of a drive's name.": "%1 的磁碟機名稱上限為 %2 個字元。",
@@ -4133,9 +4313,9 @@ index d4a2c55..c66b34c 100644
    "Trash": "垃圾桶",
    "Try again once the work under way is done.": "請等目前的作業完成後再試一次。",
    "Type a path or a server's address": "輸入路徑或伺服器地址",
-diff --git c/src/main.cpp w/src/main.cpp
+diff --git i/src/main.cpp w/src/main.cpp
 index 48852d8..7c22d7f 100644
---- c/src/main.cpp
+--- i/src/main.cpp
 +++ w/src/main.cpp
 @@ -18,6 +18,7 @@
  #include "places.h"
@@ -4198,9 +4378,9 @@ index 48852d8..7c22d7f 100644
      } else {
          QString select;
          const QString start = startPath(app.arguments(), &select);
-diff --git c/src/mounter.cpp w/src/mounter.cpp
+diff --git i/src/mounter.cpp w/src/mounter.cpp
 index 5a520ff..e6ad7c8 100644
---- c/src/mounter.cpp
+--- i/src/mounter.cpp
 +++ w/src/mounter.cpp
 @@ -1,8 +1,12 @@
  #include "mounter.h"
@@ -4373,9 +4553,9 @@ index 5a520ff..e6ad7c8 100644
          m_prompt.clear();
          m_choices.clear();
      }
-diff --git c/src/mounter.h w/src/mounter.h
+diff --git i/src/mounter.h w/src/mounter.h
 index 5bc22a5..3ff9138 100644
---- c/src/mounter.h
+--- i/src/mounter.h
 +++ w/src/mounter.h
 @@ -3,6 +3,7 @@
  #include <QHash>
@@ -4430,7 +4610,7 @@ index 5bc22a5..3ff9138 100644
      QString m_prompt;
      QString m_user;
      QStringList m_choices;
-diff --git c/src/officepreview.cpp w/src/officepreview.cpp
+diff --git i/src/officepreview.cpp w/src/officepreview.cpp
 new file mode 100644
 index 0000000..86ecaff
 --- /dev/null
@@ -5756,7 +5936,7 @@ index 0000000..86ecaff
 +}
 +
 +} // namespace OfficePreview
-diff --git c/src/officepreview.h w/src/officepreview.h
+diff --git i/src/officepreview.h w/src/officepreview.h
 new file mode 100644
 index 0000000..eadbd52
 --- /dev/null
@@ -5817,9 +5997,9 @@ index 0000000..eadbd52
 +QString findSoffice();
 +
 +} // namespace OfficePreview
-diff --git c/src/places.cpp w/src/places.cpp
+diff --git i/src/places.cpp w/src/places.cpp
 index 272de4c..5bbff39 100644
---- c/src/places.cpp
+--- i/src/places.cpp
 +++ w/src/places.cpp
 @@ -9,6 +9,7 @@
  #include <QJsonArray>
@@ -5978,9 +6158,9 @@ index 272de4c..5bbff39 100644
 +    g_object_unref(op);
 +    g_object_unref(found);
 +}
-diff --git c/src/places.h w/src/places.h
+diff --git i/src/places.h w/src/places.h
 index 9026fab..ee6cc77 100644
---- c/src/places.h
+--- i/src/places.h
 +++ w/src/places.h
 @@ -50,6 +50,10 @@ public:
      // or card is safe to pull out), otherwise unmounts it. Off the UI
@@ -6001,9 +6181,9 @@ index 9026fab..ee6cc77 100644
      void failed(const QString &message);
  
  private:
-diff --git c/src/plugins.cpp w/src/plugins.cpp
+diff --git i/src/plugins.cpp w/src/plugins.cpp
 index c97b376..377470e 100644
---- c/src/plugins.cpp
+--- i/src/plugins.cpp
 +++ w/src/plugins.cpp
 @@ -209,6 +209,7 @@ std::optional<Plugins::Manifest> Plugins::parseManifest(const QByteArray &json,
          m.poll = *command;
@@ -6073,9 +6253,9 @@ index c97b376..377470e 100644
                                                         {"items", items}});
  
          if (m.section && !items.isEmpty()) {
-diff --git c/src/plugins.h w/src/plugins.h
+diff --git i/src/plugins.h w/src/plugins.h
 index 700c95f..71322d0 100644
---- c/src/plugins.h
+--- i/src/plugins.h
 +++ w/src/plugins.h
 @@ -55,6 +55,7 @@ public:
          QString id, dir;
@@ -6094,9 +6274,9 @@ index 700c95f..71322d0 100644
      // Folio's language changed: the plugins' text follows, without polling.
      void setLanguage(const QString &language);
  
-diff --git c/src/previewer.cpp w/src/previewer.cpp
+diff --git i/src/previewer.cpp w/src/previewer.cpp
 index 7ac8bf0..bac2488 100644
---- c/src/previewer.cpp
+--- i/src/previewer.cpp
 +++ w/src/previewer.cpp
 @@ -1,23 +1,59 @@
  #include "previewer.h"
@@ -6585,9 +6765,9 @@ index 7ac8bf0..bac2488 100644
      emit changed();
      emit listed();
  
-diff --git c/src/previewer.h w/src/previewer.h
+diff --git i/src/previewer.h w/src/previewer.h
 index 9aee60e..77a9748 100644
---- c/src/previewer.h
+--- i/src/previewer.h
 +++ w/src/previewer.h
 @@ -1,7 +1,10 @@
  #pragma once
@@ -6698,9 +6878,9 @@ index 9aee60e..77a9748 100644
 +    QProcess *m_prefetchProc = nullptr;
 +    QString m_prefetchTempDir;
  };
-diff --git c/src/resources.qrc w/src/resources.qrc
+diff --git i/src/resources.qrc w/src/resources.qrc
 index 8ecd457..df1d1ee 100644
---- c/src/resources.qrc
+--- i/src/resources.qrc
 +++ w/src/resources.qrc
 @@ -18,6 +18,7 @@
          <file>Band.qml</file>
@@ -6719,7 +6899,7 @@ index 8ecd457..df1d1ee 100644
          <file>Format.js</file>
          <file>i18n/en.json</file>
          <file>i18n/ar.json</file>
-diff --git c/src/smoothwheel.h w/src/smoothwheel.h
+diff --git i/src/smoothwheel.h w/src/smoothwheel.h
 new file mode 100644
 index 0000000..c5dd4a4
 --- /dev/null
@@ -6896,9 +7076,9 @@ index 0000000..c5dd4a4
 +    qreal m_targetPos = 0;
 +    qreal m_pixelsPerNotch = 240.0;
 +};
-diff --git c/src/theme.cpp w/src/theme.cpp
+diff --git i/src/theme.cpp w/src/theme.cpp
 index c3f4401..d7ee789 100644
---- c/src/theme.cpp
+--- i/src/theme.cpp
 +++ w/src/theme.cpp
 @@ -190,3 +190,9 @@ void Theme::reload() {
          emit changed();
@@ -6910,9 +7090,9 @@ index c3f4401..d7ee789 100644
 +        QStandardPaths::GenericDataLocation, QStringLiteral("icons/MacTahoe/places/scalable/folder-blue.svg")));
 +    return icon;
 +}
-diff --git c/src/theme.h w/src/theme.h
+diff --git i/src/theme.h w/src/theme.h
 index 221b9de..adbb4cb 100644
---- c/src/theme.h
+--- i/src/theme.h
 +++ w/src/theme.h
 @@ -5,6 +5,7 @@
  #include <QHash>
@@ -6938,9 +7118,9 @@ index 221b9de..adbb4cb 100644
  
  signals:
      void changed();
-diff --git c/src/windows.cpp w/src/windows.cpp
+diff --git i/src/windows.cpp w/src/windows.cpp
 index ad242d0..883ae21 100644
---- c/src/windows.cpp
+--- i/src/windows.cpp
 +++ w/src/windows.cpp
 @@ -1,8 +1,22 @@
  #include "windows.h"
@@ -7152,9 +7332,9 @@ index ad242d0..883ae21 100644
 +    query->start(hyprctl, {"activewindow", "-j"});
 +    QTimer::singleShot(500, query, [query] { if (query->state() != QProcess::NotRunning) query->kill(); });
 +}
-diff --git c/src/windows.h w/src/windows.h
+diff --git i/src/windows.h w/src/windows.h
 index 122aedd..4820655 100644
---- c/src/windows.h
+--- i/src/windows.h
 +++ w/src/windows.h
 @@ -27,13 +27,15 @@ public:
      Backend *open(const QString &folder, const QString &select = {}, QObject *chooser = nullptr);
@@ -7173,9 +7353,9 @@ index 122aedd..4820655 100644
  
  private:
      struct Pane {
-diff --git c/tests/folio_tests.cpp w/tests/folio_tests.cpp
-index 3f60636..f6d4448 100644
---- c/tests/folio_tests.cpp
+diff --git i/tests/folio_tests.cpp w/tests/folio_tests.cpp
+index 3f60636..1df07b0 100644
+--- i/tests/folio_tests.cpp
 +++ w/tests/folio_tests.cpp
 @@ -43,6 +43,8 @@
  #include <unistd.h>
@@ -7855,7 +8035,7 @@ index 3f60636..f6d4448 100644
          // Saving starts in the name; a name that's taken asks first, and
          // Escape there only stops the asking.
          replies.clear();
-@@ -7779,6 +8413,205 @@ private slots:
+@@ -7779,6 +8413,372 @@ private slots:
          QCOMPARE(QLocale().toString(1.5, 'f', 1), QString("1,5"));
      }
  
@@ -8056,6 +8236,173 @@ index 3f60636..f6d4448 100644
 +        const QString name = created.at(0).at(1).toString();
 +        QVERIFY(!name.isEmpty());
 +        QVERIFY(QFileInfo(QDir(dir.path()).filePath(name)).isDir());
++    }
++
++    void renamingOrRemovingExpandedFolderEmitsNoError()
++    {
++        QTemporaryDir dir;
++        const QString alpha = dir.filePath("alpha");
++        QVERIFY(QDir().mkpath(alpha));
++        write(alpha + "/child.txt", "hello");
++
++        FolderModel model;
++        QSignalSpy loaded(&model, &FolderModel::loaded);
++        QSignalSpy failed(&model, &FolderModel::expandFailed);
++        model.setPath(dir.path());
++        QTRY_VERIFY(loaded.count() >= 1);
++
++        const int alphaRow = model.indexOf("alpha");
++        QVERIFY(alphaRow >= 0);
++        model.setExpanded(alphaRow, true);
++        QTRY_VERIFY(model.indexOfPath(alpha + "/child.txt") >= 0);
++
++        FileOps ops;
++        const QString renamed = dir.filePath("alpha-renamed");
++        QCOMPARE(ops.rename(alpha, "alpha-renamed"), QString());
++        model.renamed(alpha, renamed);
++
++        const int beforeReload = loaded.count();
++        model.reload();
++        QTRY_VERIFY(loaded.count() > beforeReload);
++        QCOMPARE(failed.count(), 0);
++        const int renamedRow = model.indexOf("alpha-renamed");
++        QVERIFY(renamedRow >= 0);
++        QVERIFY(model.isExpanded(renamedRow));
++        QVERIFY(model.indexOfPath(renamed + "/child.txt") >= 0);
++
++        // Removing an expanded folder externally closes it quietly without
++        // surfacing a stale "This folder no longer exists." banner.
++        QVERIFY(QDir(renamed).removeRecursively());
++        const int beforeDeleteReload = loaded.count();
++        model.reload();
++        QTRY_VERIFY(loaded.count() > beforeDeleteReload);
++        QCOMPARE(failed.count(), 0);
++        QCOMPARE(model.indexOfPath(renamed), -1);
++    }
++
++    void listRightClickHitsItemUnderCursorWhenScrolledOrMargined()
++    {
++        QTemporaryDir dir;
++        for (int i = 0; i < 20; ++i)
++            QVERIFY(QDir(dir.path()).mkdir(QString("dir-%1").arg(i, 2, 10, QChar('0'))));
++
++        Backend backend(dir.path());
++        backend.navigate(dir.path());
++        QTRY_COMPARE(backend.folder()->rowCount(), 20);
++        Theme theme(dir.filePath("theme"));
++        FileOps fileOps;
++        Translator translator;
++        Plugins plugins({});
++
++        QQmlEngine engine;
++        engine.rootContext()->setContextProperty("backend", &backend);
++        engine.rootContext()->setContextProperty("theme", &theme);
++        engine.rootContext()->setContextProperty("fileOps", &fileOps);
++        engine.rootContext()->setContextProperty("translator", &translator);
++        engine.rootContext()->setContextProperty("plugins", &plugins);
++        QQmlComponent component(&engine);
++        component.setData(R"(
++            import QtQuick
++            Window {
++                width: 420; height: 240; visible: true
++                property string menuPath: ""
++                property int menuCount: 0
++                property alias list: listView
++                FolderList {
++                    id: listView
++                    anchors.fill: parent
++                    topMargin: 16
++                    onContextMenu: (item, folder, at) => {
++                        menuPath = item ? item.path : ""
++                        menuCount++
++                    }
++                }
++            }
++        )", QUrl::fromLocalFile(sourceFolder() + "/ListRightClickTest.qml"));
++        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
++        std::unique_ptr<QQuickWindow> window(qobject_cast<QQuickWindow *>(component.create()));
++        QVERIFY(window);
++        QVERIFY(QTest::qWaitForWindowExposed(window.get()));
++        auto *list = window->property("list").value<QQuickItem *>();
++        QVERIFY(list);
++
++        // Pre-select row 1, then right-click the upper half of row 2:
++        // with topMargin=16, contentY is -16, so row 2 sits at y=[80, 112).
++        backend.folder()->selectOnly(1);
++        QTest::mouseClick(window.get(), Qt::RightButton, {}, QPoint(120, 84));
++        QTRY_COMPARE(window->property("menuCount").toInt(), 1);
++        QCOMPARE(window->property("menuPath").toString(), dir.filePath("dir-02"));
++        QVERIFY(backend.folder()->isSelected(2));
++
++        // Scroll down and right-click the row visually under y=84:
++        // contentY = 128 puts row 6 (y=192..224 in contentItem) at viewport y=[64, 96).
++        list->setProperty("contentY", 128.0);
++        QTest::mouseClick(window.get(), Qt::RightButton, {}, QPoint(120, 84));
++        QTRY_COMPARE(window->property("menuCount").toInt(), 2);
++        QCOMPARE(window->property("menuPath").toString(), dir.filePath("dir-06"));
++        QVERIFY(backend.folder()->isSelected(6));
++    }
++
++    void gridRightClickHitsItemUnderCursorWhenScrolled()
++    {
++        QTemporaryDir dir;
++        for (int i = 0; i < 30; ++i)
++            write(dir.filePath(QString("file-%1.txt").arg(i, 2, 10, QChar('0'))), "x");
++
++        Backend backend(dir.path());
++        backend.navigate(dir.path());
++        QTRY_COMPARE(backend.folder()->rowCount(), 30);
++        Theme theme(dir.filePath("theme"));
++        FileOps fileOps;
++        Translator translator;
++        Plugins plugins({});
++
++        QQmlEngine engine;
++        engine.rootContext()->setContextProperty("backend", &backend);
++        engine.rootContext()->setContextProperty("theme", &theme);
++        engine.rootContext()->setContextProperty("fileOps", &fileOps);
++        engine.rootContext()->setContextProperty("translator", &translator);
++        engine.rootContext()->setContextProperty("plugins", &plugins);
++        QQmlComponent component(&engine);
++        component.setData(R"(
++            import QtQuick
++            Window {
++                width: 560; height: 260; visible: true
++                property string menuPath: ""
++                property int menuCount: 0
++                property alias grid: gridView
++                FolderGrid {
++                    id: gridView
++                    anchors.fill: parent
++                    onContextMenu: (item, folder, at) => {
++                        menuPath = item ? item.path : ""
++                        menuCount++
++                    }
++                }
++            }
++        )", QUrl::fromLocalFile(sourceFolder() + "/ListRightClickTest.qml"));
++        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
++        std::unique_ptr<QQuickWindow> window(qobject_cast<QQuickWindow *>(component.create()));
++        QVERIFY(window);
++        QVERIFY(QTest::qWaitForWindowExposed(window.get()));
++        auto *grid = window->property("grid").value<QQuickItem *>();
++        QVERIFY(grid);
++
++        const int columns = grid->property("columns").toInt();
++        const int cellWidth = grid->property("cellWidth").toInt();
++        const int cellHeight = grid->property("cellHeight").toInt();
++        QVERIFY(columns >= 2);
++        QVERIFY(cellHeight > 0);
++
++        // Scroll down by two full rows, then right-click column 1 of the top visible row.
++        grid->setProperty("contentY", qreal(cellHeight * 2));
++        const int expectedIndex = columns * 2 + 1;
++        const QPoint clickPos(cellWidth + cellWidth / 2, cellHeight / 2);
++        QTest::mouseClick(window.get(), Qt::RightButton, {}, clickPos);
++        QTRY_COMPARE(window->property("menuCount").toInt(), 1);
++        QCOMPARE(window->property("menuPath").toString(),
++                 dir.filePath(QString("file-%1.txt").arg(expectedIndex, 2, 10, QChar('0'))));
++        QVERIFY(backend.folder()->isSelected(expectedIndex));
 +    }
 +
  private:
