@@ -1,0 +1,12 @@
+[Unit]
+Description=Silky Omarchy battery charge limit persistence
+After=systemd-udev-settle.service
+ConditionPathExists=/etc/silky/charge-limit.conf
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/silky-charge-limit restore
+
+[Install]
+WantedBy=multi-user.target

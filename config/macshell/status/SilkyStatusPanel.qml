@@ -52,9 +52,13 @@ Item {
     readonly property color powerColor: Status.powerColor(batteryCharging, batteryPowered, charge, palette.dark, batteryColor)
     readonly property string powerStateText: powerState === "charging" ? "Charging"
                                              : batteryPowered ? "On battery" : "External power"
-    readonly property string powerBadgeText: !batteryPowered && primaryBattery?.status === "Not charging" && charge >= 50
-                                             ? "Power passthrough"
-                                             : (primaryBattery?.status || "")
+    readonly property bool batteryDischargingToLimit: !batteryPowered && primaryBattery?.status === "Not charging"
+                                                      && !!primaryBattery?.discharging
+    readonly property string powerBadgeText: batteryDischargingToLimit
+                                             ? "Discharging to limit"
+                                             : (!batteryPowered && primaryBattery?.status === "Not charging" && charge >= 50
+                                                ? "Power passthrough"
+                                                : (primaryBattery?.status || ""))
     // the power chart is data, not state: its own hue so it never reads as a warning
     readonly property color powerPlotColor: palette.dark ? "#b9a6ff" : "#5f43b2"
     readonly property color panelTint: palette.dark ? "#14151b" : "#f2f4f9"
@@ -73,7 +77,7 @@ Item {
     function batteryFlow(device) {
         if (device?.status === "Charging")
             return "Charging power";
-        if (device?.status === "Discharging")
+        if (device?.status === "Discharging" || device?.discharging)
             return "Discharging power";
         return "";
     }
@@ -625,8 +629,12 @@ Item {
                         LabelText {
                             Layout.fillWidth: true
                             text: root.chargeLimit?.end != null
-                                ? Status.tr("Current limit %1").replace("%1", root.chargeLimit.end + "%")
-                                : Status.tr("Current limit unavailable")
+                                ? (root.chargeLimit.start != null
+                                    ? Status.tr("Current limit %1 (recharges below %2)")
+                                        .replace("%1", root.chargeLimit.end + "%")
+                                        .replace("%2", root.chargeLimit.start + "%")
+                                    : Status.tr("Current limit %1").replace("%1", root.chargeLimit.end + "%"))
+                                : Status.tr("Limit not active · Click Apply")
                             color: root.muted
                             font.pixelSize: 11
                             elide: Text.ElideRight

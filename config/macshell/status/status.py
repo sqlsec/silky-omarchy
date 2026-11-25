@@ -15,7 +15,9 @@ PROC = Path("/proc")
 CLOCK_TICKS = os.sysconf("SC_CLK_TCK")
 QCOM_BATTERY = SYS / "power_supply/qcom-battmgr-bat"
 QCOM_LIMIT = QCOM_BATTERY / "charge_control_end_threshold"
-LIMIT_MIN, LIMIT_MAX = 55, 100
+QCOM_START = QCOM_BATTERY / "charge_control_start_threshold"
+CHARGE_LIMIT_HELPER = Path("/usr/local/bin/silky-charge-limit")
+LIMIT_MIN, LIMIT_MAX, LIMIT_DELTA = 55, 100, 5
 WALLPAPER = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "omarchy/current/background"
 
 
@@ -353,7 +355,7 @@ def battery_power_sample():
             return ("Idle", 0, on_battery)
     return None
 
-def charge_threshold(device, end):
+def charge_threshold(device, start, end):
     if device != QCOM_BATTERY or end is None:
         return None
     try:
@@ -361,8 +363,21 @@ def charge_threshold(device, end):
             return None
     except OSError:
         return None
-    return {"minimum": LIMIT_MIN, "maximum": LIMIT_MAX,
-            "end": end if LIMIT_MIN <= end <= LIMIT_MAX else None}
+    valid_end = end if LIMIT_MIN <= end <= LIMIT_MAX else None
+    valid_start = (start if start is not None
+                   and (LIMIT_MIN - LIMIT_DELTA) <= start <= (LIMIT_MAX - LIMIT_DELTA)
+                   else None)
+    return {"minimum": LIMIT_MIN, "maximum": LIMIT_MAX, "delta": LIMIT_DELTA,
+            "end": valid_end, "start": valid_start if valid_end is not None else None}
+
+
+def _write_sysfs_int(path, value):
+    command_line = ["/usr/bin/tee", "--", str(path)]
+    if not os.access(path, os.W_OK):
+        command_line = ["/usr/bin/pkexec", "--disable-internal-agent"] + command_line
+    result = subprocess.run(command_line, input=f"{value}\n", text=True,
+                            stdout=subprocess.DEVNULL, timeout=60)
+    return result.returncode == 0
 
 
 def set_charge_limit(argument):
@@ -371,19 +386,35 @@ def set_charge_limit(argument):
     value = int(argument)
     if not LIMIT_MIN <= value <= LIMIT_MAX:
         return 2
-    if not internal_battery(QCOM_BATTERY) or charge_threshold(QCOM_BATTERY, number(QCOM_LIMIT)) is None:
+    if not internal_battery(QCOM_BATTERY) or charge_threshold(
+            QCOM_BATTERY, number(QCOM_START), number(QCOM_LIMIT)) is None:
         return 1
+    start = value - LIMIT_DELTA
     try:
-        # Elevate a system executable with a fixed sysfs destination, never this user-owned script.
-        command_line = ["/usr/bin/tee", "--", str(QCOM_LIMIT)]
-        if not os.access(QCOM_LIMIT, os.W_OK):
-            command_line = ["/usr/bin/pkexec", "--disable-internal-agent"] + command_line
-        result = subprocess.run(command_line, input=f"{value}\n", text=True,
-                                stdout=subprocess.DEVNULL, timeout=60)
+        if CHARGE_LIMIT_HELPER.is_file() and os.access(CHARGE_LIMIT_HELPER, os.X_OK):
+            cmd = [str(CHARGE_LIMIT_HELPER), "apply", str(value)]
+            if os.geteuid() != 0:
+                cmd = ["/usr/bin/pkexec", "--disable-internal-agent"] + cmd
+            result = subprocess.run(cmd, stdout=subprocess.DEVNULL, timeout=60)
+            ok = result.returncode == 0
+        else:
+            ok = False
+            if value == 80:
+                up = subprocess.run(
+                    ["/usr/bin/busctl", "--system", "call", "org.freedesktop.UPower",
+                     "/org/freedesktop/UPower/devices/battery_qcom_battmgr_bat",
+                     "org.freedesktop.UPower.Device", "EnableChargeThreshold", "b", "true"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+                ok = up.returncode == 0 and number(QCOM_LIMIT) == value and number(QCOM_START) == start
+            if not ok:
+                # Elevate a system executable with fixed sysfs destinations, never this user-owned script.
+                ok = _write_sysfs_int(QCOM_LIMIT, value)
+                if ok and number(QCOM_START) != start:
+                    ok = _write_sysfs_int(QCOM_START, start)
     except (OSError, subprocess.SubprocessError):
         return 1
     # The driver can return success to the write even when the firmware did not accept it.
-    return 0 if result.returncode == 0 and number(QCOM_LIMIT) == value else 1
+    return 0 if ok and number(QCOM_LIMIT) == value and number(QCOM_START) == start else 1
 
 
 def power_profiles():
@@ -416,11 +447,17 @@ def power():
                             for key in ("status", "manufacturer", "model_name", "technology")})
             battery["name"] = device.name
             voltage, current = battery["voltage_now"], battery["current_now"]
+            raw_watts = number(device / "power_now", 1e6)
             watts = battery_watts(device, voltage, current)
             if current is None and voltage and watts is not None:
                 current = watts / voltage
             battery["power_now"] = watts
-            battery["limit"] = charge_threshold(device, battery["charge_control_end_threshold"])
+            battery["discharging"] = (
+                battery["status"] == "Discharging"
+                or (battery["status"] == "Not charging" and raw_watts is not None and raw_watts < -0.5)
+            )
+            battery["limit"] = charge_threshold(
+                device, battery["charge_control_start_threshold"], battery["charge_control_end_threshold"])
             battery["current_now"] = abs(current) if current is not None else None
             full = battery["energy_full"] or battery["charge_full"]
             design = battery["energy_full_design"] if battery["energy_full"] else battery["charge_full_design"]
