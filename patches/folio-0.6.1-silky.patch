@@ -2748,7 +2748,7 @@ index ecdcfbd..b76ad4b 100644
          color: theme.secondaryForeground
      }
 diff --git i/src/FolderPane.qml w/src/FolderPane.qml
-index e23254d..e2aecda 100644
+index e23254d..fe75217 100644
 --- i/src/FolderPane.qml
 +++ w/src/FolderPane.qml
 @@ -15,6 +15,8 @@ FocusScope {
@@ -2899,7 +2899,22 @@ index e23254d..e2aecda 100644
          function onActivateRequested() { if (pane.host) { pane.host.raise(); pane.host.requestActivate() } }
      }
  
-@@ -292,6 +355,22 @@ FocusScope {
+@@ -267,8 +330,12 @@ FocusScope {
+     Connections {
+         target: fileOps
+         // A pinned folder's pin, or a folder hidden from Home, follows it
+-        // through a rename, and through undoing and redoing one.
+-        function onRenamed(from, to) { places.renamed(from, to) }
++        // through a rename, and through undoing and redoing one. Expanded
++        // tree folders in the list view follow it too.
++        function onRenamed(from, to) {
++            places.renamed(from, to)
++            backend.folder.renamed(from, to)
++        }
+         function onDone(folder, name) {
+             // Done inside a folder opened in place (the list's tree): its
+             // item is found by its whole path, now or once the folder's
+@@ -292,6 +359,22 @@ FocusScope {
              else
                  backend.expectSelection(name)
          }
@@ -2922,7 +2937,7 @@ index e23254d..e2aecda 100644
          function onFailed(message) { backend.showMessage(message) }
          function onNotice(notice) { backend.showNotice(notice) }
          // Work done (a folder of home's trashed, say) shows in the sidebar
-@@ -316,6 +395,7 @@ FocusScope {
+@@ -316,6 +399,7 @@ FocusScope {
                  return
              const leftBehind = backend.leftBehind()
              const pending = backend.takeSelection()
@@ -2930,7 +2945,7 @@ index e23254d..e2aecda 100644
              const same = backend.folder.path === pane.loadedPath
              // A new search starts on its first result; ending one keeps the
              // cursor on what it found.
-@@ -335,11 +415,14 @@ FocusScope {
+@@ -335,11 +419,14 @@ FocusScope {
              const arrived = pending ? leftBehind : !same
              if (pending || !same)
                  pane.cursorLetGo = false
@@ -2947,7 +2962,7 @@ index e23254d..e2aecda 100644
              else if (!same || newSearch)
                  view.item.select(-1, false)
              else if (!pane.cursorLetGo)
-@@ -348,19 +431,41 @@ FocusScope {
+@@ -348,19 +435,41 @@ FocusScope {
              // cursor doesn't signal a move, and an item from the folder
              // before would stay remembered.
              pane.lastPath = backend.folder.get(view.item.currentIndex).path || ""
@@ -2990,7 +3005,7 @@ index e23254d..e2aecda 100644
          anchors.fill: parent
          spacing: 0
  
-@@ -422,20 +527,9 @@ FocusScope {
+@@ -422,20 +531,9 @@ FocusScope {
              }
          }
  
@@ -3014,7 +3029,7 @@ index e23254d..e2aecda 100644
  
          // Columns, list or grid: each takes the folder's model and keeps the
          // pane's one selection.
-@@ -443,8 +537,10 @@ FocusScope {
+@@ -443,8 +541,10 @@ FocusScope {
              id: view
              Layout.fillWidth: true
              Layout.fillHeight: true
@@ -3027,7 +3042,7 @@ index e23254d..e2aecda 100644
              sourceComponent: pane.viewMode === "list" ? listView
                             : pane.viewMode === "columns" ? columnsView
                             : gridView
-@@ -467,9 +563,37 @@ FocusScope {
+@@ -467,9 +567,37 @@ FocusScope {
                  items: view.item
              }
          }
@@ -3068,7 +3083,7 @@ index e23254d..e2aecda 100644
      }
  
      // Drawn over the window's top bar. It reaches back over the sidebar for
-@@ -479,10 +603,14 @@ FocusScope {
+@@ -479,10 +607,14 @@ FocusScope {
          id: pathBar
          x: LayoutMirroring.enabled ? 0 : -pane.barLeft
          width: pane.barLeft + pane.width
@@ -3083,7 +3098,7 @@ index e23254d..e2aecda 100644
          onCloseRequested: pane.closeRequested()
          // On the rightmost pane's bar. A file chooser is a dialog, not the
          // place to learn Files' keys.
-@@ -515,6 +643,18 @@ FocusScope {
+@@ -515,6 +647,18 @@ FocusScope {
          onVisibleChanged: if (!visible) pane.focusView()
      }
  
@@ -4880,7 +4895,7 @@ index 71ed54e..dcccf94 100644
                  Text {
                      Layout.alignment: Qt.AlignHCenter
 diff --git i/src/Selecting.qml w/src/Selecting.qml
-index d6453cf..e3c7448 100644
+index d6453cf..e32de47 100644
 --- i/src/Selecting.qml
 +++ w/src/Selecting.qml
 @@ -58,9 +58,10 @@ QtObject {
@@ -4905,7 +4920,7 @@ index d6453cf..e3c7448 100644
          const index = row >= 0 ? row : (view.count > 0 ? 0 : -1)
          moveTo(index)
          if (!(keep && backend.folder.selectedCount > 0)) {
-@@ -132,6 +133,21 @@ QtObject {
+@@ -132,13 +133,34 @@ QtObject {
          }
          if (index >= 0)
              view.positionViewAtIndex(index, ListView.Contain)
@@ -4927,6 +4942,20 @@ index d6453cf..e3c7448 100644
      }
  
      // Right-click on an item outside the selection selects just it, so
+     // the menu acts on what was clicked. Returns the item, or null for
+     // empty space.
+     function menuAt(point) {
+-        const index = view.indexAt(point.position.x + view.contentX, point.position.y + view.contentY)
++        // TapHandler inside a Flickable (ListView/GridView) is parented to
++        // contentItem, so map scenePosition directly into contentItem space
++        // instead of adding contentX/contentY twice.
++        const p = point.scenePosition !== undefined
++            ? view.contentItem.mapFromItem(null, point.scenePosition)
++            : Qt.point(point.position.x + view.contentX, point.position.y + view.contentY)
++        const index = view.indexAt(p.x, p.y)
+         if (index >= 0 && !backend.folder.isSelected(index))
+             click(index, 0)
+         return index >= 0 ? backend.folder.get(index) : null
 diff --git i/src/Sidebar.qml w/src/Sidebar.qml
 index 64dfa2c..7798651 100644
 --- i/src/Sidebar.qml
@@ -6733,7 +6762,7 @@ index 6071343..8ee716b 100644
 +    QPixmap requestPixmap(const QString &id, QSize *size, const QSize &requestedSize) override;
  };
 diff --git i/src/foldermodel.cpp w/src/foldermodel.cpp
-index b4de493..2f46a7d 100644
+index b4de493..c043717 100644
 --- i/src/foldermodel.cpp
 +++ w/src/foldermodel.cpp
 @@ -201,7 +201,7 @@ void FolderModel::setItems(const QVariantList &items) {
@@ -6754,7 +6783,34 @@ index b4de493..2f46a7d 100644
          m_watcher.addPath(m_path == recentPath() ? recentFile() : m_path);
      reload();
  }
-@@ -609,11 +609,11 @@ void FolderModel::reload() {
+@@ -561,18 +561,22 @@ void FolderModel::reload() {
+     const QStringList expanded = expandable() ? QStringList(m_expanded.begin(), m_expanded.end()) : QStringList();
+     *m_latest = generation;
+     const auto latest = m_latest;
+-    auto *watcher = new QFutureWatcher<std::tuple<QVector<Entry>, QString, QStringList, QHash<QString, QVector<Entry>>, QHash<QString, QString>>>(this);
++    auto *watcher = new QFutureWatcher<std::tuple<QVector<Entry>, QString, QStringList, QHash<QString, QVector<Entry>>, QHash<QString, QString>, QStringList>>(this);
+     connect(watcher, &QFutureWatcherBase::finished, this, [this, watcher, generation] {
+         watcher->deleteLater();
+         if (generation != m_generation)
+             return; // A newer listing replaced this one while it ran.
+         m_staleClear.stop();
+-        const auto [listed, error, trashDirs, open, unread] = watcher->result();
+-        // The folders opened in place, each with its items under it, and
+-        // those that can no longer be read closed.
++        const auto [listed, error, trashDirs, open, unread, vanished] = watcher->result();
++        // The folders opened in place, each with its items under it; ones that
++        // vanished on disk (renamed, moved or deleted) close quietly, while
++        // ones still present but unreadable say why.
+         for (auto it = open.begin(); it != open.end(); ++it)
+             if (m_expanded.contains(it.key()))
+                 m_open.insert(it.key(), it.value());
++        for (const QString &folder : vanished)
++            if (m_expanded.contains(folder))
++                dropExpanded(folder);
+         for (auto it = unread.begin(); it != unread.end(); ++it)
+             if (m_expanded.contains(it.key()))
+                 failExpanded(it.key(), it.value());
+@@ -609,19 +613,24 @@ void FolderModel::reload() {
          // Finding the drives' trash looks over every mount, so it's done here,
          // off the window's thread.
          const QStringList trashDirs = isTrash(path) ? FileOps::trashDirs() : QStringList();
@@ -6766,13 +6822,125 @@ index b4de493..2f46a7d 100644
 -        if (!isPluginView(path))
 +        if (!isItemView(path))
              entries.removeIf([&](const Entry &entry) { return !fits(filter, entry); });
-         // Every folder opened in place, read again with it; one that can't
-         // be is told by its error.
+-        // Every folder opened in place, read again with it; one that can't
+-        // be is told by its error.
++        // Every folder opened in place, read again with it; one that vanished
++        // closes quietly, while one that exists but can't be read reports why.
+         QHash<QString, QVector<Entry>> open;
+         QHash<QString, QString> unread;
++        QStringList vanished;
+         for (const QString &folder : expanded) {
+             if (overtaken())
+                 break;
++            if (!QDir(folder).exists()) {
++                vanished.push_back(folder);
++                continue;
++            }
+             QString why;
+             auto items = list(folder, showHidden, sort, &why, overtaken, locale);
+             if (!why.isEmpty()) {
+@@ -631,7 +640,7 @@ void FolderModel::reload() {
+             items.removeIf([&](const Entry &entry) { return !fits(filter, entry); });
+             open.insert(folder, items);
+         }
+-        return std::make_tuple(entries, error, trashDirs, open, unread);
++        return std::make_tuple(entries, error, trashDirs, open, unread, vanished);
+     }));
+ }
+ 
+@@ -896,7 +905,7 @@ void FolderModel::setExpanded(int row, bool expanded) {
+     }));
+ }
+ 
+-void FolderModel::failExpanded(const QString &folder, const QString &error) {
++void FolderModel::dropExpanded(const QString &folder) {
+     // Closed as a click on its arrow would, its items (if any were shown)
+     // going with it.
+     if (const int row = indexOfPath(folder); row >= 0 && m_expanded.contains(folder)) {
+@@ -907,10 +916,70 @@ void FolderModel::failExpanded(const QString &folder, const QString &error) {
+         m_opening.remove(folder);
+         m_watcher.removePath(folder);
+     }
++}
++
++void FolderModel::failExpanded(const QString &folder, const QString &error) {
++    dropExpanded(folder);
+     //: %1 is a folder's name, %2 why it couldn't be opened.
+     emit expandFailed(tr("%1: %2").arg(QFileInfo(folder).fileName(), error));
+ }
+ 
++void FolderModel::renamed(const QString &from, const QString &to) {
++    if (from.isEmpty() || to.isEmpty() || from == to || m_expanded.isEmpty())
++        return;
++    const QString prefix = from + '/';
++    auto remap = [&](const QString &path) -> QString {
++        if (path == from)
++            return to;
++        if (path.startsWith(prefix))
++            return to + path.mid(from.size());
++        return {};
++    };
++
++    bool changed = false;
++    QSet<QString> nextExpanded;
++    nextExpanded.reserve(m_expanded.size());
++    for (const QString &folder : std::as_const(m_expanded)) {
++        const QString moved = remap(folder);
++        if (!moved.isEmpty()) {
++            changed = true;
++            if (folder != m_path)
++                m_watcher.removePath(folder);
++            if (QDir(moved).exists())
++                m_watcher.addPath(moved);
++            nextExpanded.insert(moved);
++        } else {
++            nextExpanded.insert(folder);
++        }
++    }
++    if (!changed)
++        return;
++    m_expanded = std::move(nextExpanded);
++
++    QHash<QString, QVector<Entry>> nextOpen;
++    nextOpen.reserve(m_open.size());
++    for (auto it = m_open.cbegin(); it != m_open.cend(); ++it) {
++        const QString movedKey = remap(it.key());
++        const QString key = movedKey.isEmpty() ? it.key() : movedKey;
++        QVector<Entry> items = it.value();
++        if (!movedKey.isEmpty()) {
++            for (Entry &e : items)
++                if (const QString movedEntry = remap(e.path); !movedEntry.isEmpty())
++                    e.path = movedEntry;
++        }
++        nextOpen.insert(key, std::move(items));
++    }
++    m_open = std::move(nextOpen);
++
++    QHash<QString, quint64> nextOpening;
++    nextOpening.reserve(m_opening.size());
++    for (auto it = m_opening.cbegin(); it != m_opening.cend(); ++it) {
++        const QString movedKey = remap(it.key());
++        nextOpening.insert(movedKey.isEmpty() ? it.key() : movedKey, it.value());
++    }
++    m_opening = std::move(nextOpening);
++}
++
+ void FolderModel::forgetExpanded() {
+     for (const QString &folder : std::as_const(m_expanded))
+         if (folder != m_path)
 diff --git i/src/foldermodel.h w/src/foldermodel.h
-index 80cf9ae..cfda583 100644
+index 80cf9ae..be7ec8c 100644
 --- i/src/foldermodel.h
 +++ w/src/foldermodel.h
-@@ -166,6 +166,8 @@ public:
+@@ -131,6 +131,7 @@ public:
+     Q_INVOKABLE void setExpanded(int row, bool expanded);
+     Q_INVOKABLE bool isExpanded(int row) const;
+     Q_INVOKABLE void collapseAll();
++    Q_INVOKABLE void renamed(const QString &from, const QString &to);
+     // The row of the folder `row` is listed under, or -1 at the top.
+     Q_INVOKABLE int parentRow(int row) const;
+     // A folder's items with the open folders' own under them, `depth` deep.
+@@ -166,6 +167,8 @@ public:
      // each an item of the "item" kind at plugin:<id>/<item id>. The ones
      // whose names contain `query` (ignoring case), or all of them.
      static bool isPluginView(const QString &path) { return path.startsWith("plugin:") && !path.contains('/'); }
@@ -6781,7 +6949,7 @@ index 80cf9ae..cfda583 100644
      static QVector<Entry> listItems(const QVariantList &items, const QString &query = {});
      // The trash is the home trash's files folder, and it lists every trash's:
      // what's deleted on another drive goes to that drive's own.
-@@ -173,8 +175,8 @@ public:
+@@ -173,8 +176,8 @@ public:
      static QVector<Entry> listTrash(const QStringList &trashDirs, const QString &query, bool showHidden,
                                      const QString &sort, const std::function<bool()> &stop = {}, int limit = 1000,
                                      const QLocale &locale = QLocale(), const QStringList &filter = {});
@@ -6792,6 +6960,18 @@ index 80cf9ae..cfda583 100644
      static QString kindForMime(const QString &mime);
      // Whether an entry fits a filter: folders always do, and a file when any
      // pattern matches, a MIME type ("image/png", "image/*", or a type it
+@@ -226,8 +229,10 @@ private:
+     // the folder was closed and opened again is dropped.
+     QHash<QString, quint64> m_opening;
+     quint64 m_openings = 0;
+-    // Closes a folder that couldn't be read, saying why.
++    // Closes a folder that couldn't be read, saying why; dropExpanded closes
++    // one silently when it disappeared on disk.
+     void failExpanded(const QString &folder, const QString &error);
++    void dropExpanded(const QString &folder);
+     void forgetExpanded();
+     void setSelected(const QSet<QString> &paths);
+     bool m_loading = false;
 diff --git i/src/i18n/en.json w/src/i18n/en.json
 index b742a47..10f3023 100644
 --- i/src/i18n/en.json

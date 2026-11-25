@@ -120,6 +120,10 @@ Qt 6.12 的 Folio 曾在渲染线程处理异步截图结果时崩溃。文件�
 
 新建文件夹（右键「新建文件夹」或 `Ctrl+Shift+N`）与重命名（`F2` 或右键「重命名」）改为 **macOS Finder 风格的行内原地编辑**，不再弹出模态弹窗：创建「未命名文件夹」后在列表、分栏和图标视图中自动进入行内输入框并全选名称，直接打字即可覆盖，按回车或点击空白处提交，按 `Esc` 取消；对文件重命名时自动只选中扩展名前的主干名称。侧边栏文件夹右键重命名仍保留原有弹窗。已通过 `folio_tests` 的 `newFolderEmitsFolderCreatedForInlineRename` 与主窗口离屏加载验证。
 
+修复列表/图标视图的两项右键与重命名问题：
+- **展开目录重命名不再误报不存在**：此前在列表视图中展开文件夹后对其重命名（或删除、移走），`FolderModel` 仍按旧路径重新枚举 `m_expanded`，导致顶部红条误报「`<旧名称>`：此文件夹已不存在。」。补丁在 `FolderModel::renamed()` 中随 `fileOps.onRenamed` 同步迁移已展开目录（及其子目录）的路径与监听，并在 `reload()` 时对磁盘上已消失的展开目录静默收起而不弹出错误横幅（主动点击展开失败或权限不足仍正常提示）。
+- **列表与图标视图右键精准命中指针所在项**：此前 `FolderList` 与 `FolderGrid` 的右键 `TapHandler` 挂在 `Flickable` 内会被 Qt Quick 重设父项到 `contentItem`，`Selecting.menuAt()` 再叠加一次 `contentX`/`contentY` 会造成坐标双倍偏移（存在 `topMargin` 时未滚动即偏到上一行，滚动后偏移更明显），进而导致右键菜单的重命名、剪切、复制、删除等操作落到错位条目上。现改为通过 `view.contentItem.mapFromItem(null, point.scenePosition)` 直接换算到 `contentItem` 坐标系，确保右键菜单与所有菜单动作严格作用于指针正下方的条目。已通过 `folio_tests` 的 `renamingOrRemovingExpandedFolderEmitsNoError`、`listRightClickHitsItemUnderCursorWhenScrolledOrMargined` 与 `gridRightClickHitsItemUnderCursorWhenScrolled` 离屏回归测试（实机安装验证需运行 `./scripts/install-folio-macos.sh` 并重开 Folio）。
+
 分栏视图在当前列或已展开的子目录列中就地命名新文件夹。创建和保存时保留原来的面包屑、列位置和选中项。此前自动选中新文件夹会展开一列，点击空白清除选中后又会收起，导致整排横移。用 `Ctrl+Shift+N` 或右键「新建文件夹」，输入名称后点击空白或按回车，确认文件夹出现在原列。主动点击新文件夹即可展开下一列。
 
 文件区右键普通文件或文件夹时，菜单采用与左侧侧栏视觉统一的纯净高斯磨砂玻璃（无折射扭曲与外圈黑框，实时采样菜单下方背景并搭配 1 px 极细边框、同心 14 px / 8 px 圆角与内缩细分割线）。菜单顶部直接显示精致线条风格的「剪切」「复制」「重命名」「删除」（空白处右键顶部对应显示「粘贴」快捷按钮，剪贴板为空时自动置灰）。剪切、复制和删除可作用于选中的多个项目，重命名进入当前项的行内编辑。「删除」默认移到回收站，按住 `Shift` 时仍先弹出永久删除确认。用方向键可在菜单中聚焦这一排，再按左右键选择操作。右键菜单移除「固定」并改为「属性」（`Ctrl+I`），可查看类型、位置、大小（文件夹在后台异步递归统计总大小与子项数）、修改与创建时间、权限、所有者及链接目标并一键复制路径。菜单弹出期间锁定背景列表的滚轮与触控板滚动，关闭菜单后恢复。
