@@ -113,6 +113,50 @@ nmcli -f IN-USE,SIGNAL,FREQ device wifi list --rescan yes
 
 To roll back, remove `~/.config/omarchy/hooks/post-update.d/silky-macshell-wifi.hook`. Restore `MacBar.qml`, `MacDock.qml`, and `lang/zh-CN.js` from the printed `~/.local/state/macshell/silky-backup-wifi.*` directory, remove `assets/silky-wifi-scan.py` if it was added in the first installation, and run `qs -c MacShell ipc call macshell reload`. After an update, use the backup that matches the installed version.
 
+## Control Center
+
+### Bluetooth panel and Settings page
+
+**Effect**: the Control Center Bluetooth list and Settings → Bluetooth now split the work the way macOS does.
+
+- The Control Center and menu-bar Bluetooth lists show paired devices only and no longer scan when opened. Each device has a round type badge (headphones, gamepad, keyboard, mouse, trackpad, speaker, phone, computer). A connected device's badge uses the accent color, and the battery percentage appears on the right when the device reports it.
+- The Settings page opens with a card that has a blue icon, a description and the switch. The small text below it shows the real visibility state. While the page is open, the computer is discoverable and searches for nearby devices. Closing the page restores the previous state.
+- Each row in "My Devices" shows the type badge, the name, and either "Connected · battery" or "Not Connected". A Connect or Disconnect button appears on hover, and tapping a row on a touch screen shows it too. The ⓘ on the right opens a device sheet where you can rename the device (Return saves, `Esc` cancels), see its address, connect or disconnect, and "Forget This Device…" (click again to confirm).
+- "Nearby Devices" lists only devices that broadcast a name. A spinner next to the heading shows that a search is running. The hundreds of MAC-address rows that used to appear were all unnamed devices and are now hidden.
+- When an action fails, the reason appears in red under that device's row, with the specific cause BlueZ reported, such as rejected pairing, no response, or no usable profile. The single English line at the bottom of the page is gone.
+- Devices that need a code (keyboards, some headphones) bring up a pairing request in one of three forms: confirm a code, enter a PIN or passkey, or type a code on the device.
+
+This change fixes several problems. The color escape `ESC[0m` from `bluetoothctl devices` leaked into device names and showed up as `[0m` on the Settings page. Unnamed devices flooded the list as addresses. The page said the computer was discoverable while `Discoverable: no`. "Connected" and "Not Connected" were not translated. The old backend also ran `bluetoothctl info` once for every cached device every 6 s, and every 2.5 s while scanning. This machine caches about 110 devices, so each round started more than a hundred processes. The backend is now event driven and no longer polls.
+
+**Install**: [`scripts/tune-bluetooth.py`](../../scripts/tune-bluetooth.py) runs from `install-macshell-optimizations.sh`. It copies `SilkyBluetooth.qml` and `SilkyBtIcon.qml` from [`config/macshell/bluetooth/`](../../config/macshell/bluetooth/) into `~/.config/quickshell/MacShell/`, and `silky-bt-helper.py` into that directory's `assets/`. It then replaces the Bluetooth backend and list rows in `MacBar.qml`, inserts the `settings-components.qml.in` and `settings-pane.qml.in` blocks into `MacDock.qml`, and adds the Chinese strings to `lang/zh-CN.js`. The inserted blocks carry `Silky Bluetooth … begin/end` markers, so re-running the script updates them to the repository version. To update an installed MacShell only:
+
+```bash
+python3 scripts/tune-bluetooth.py --check
+python3 scripts/tune-bluetooth.py --install
+```
+
+`--install` first backs up the files it changes to `~/.local/state/silky-omarchy/bluetooth-backup-*`, then runs `macshell reload`. If the log reports `SBtRow is not a type` after the first install, the running instance did not pick up the newly added inline components on reload. Restart MacShell once, either by logging in again or by running `qs kill -c MacShell` followed by `macshell-start`. The change needs `/usr/bin/python3` with PyGObject (`python-gobject`) and Quickshell's built-in `Quickshell.Bluetooth` module.
+
+**Implementation and compatibility**:
+
+- Reading state: `SilkyBluetooth.qml` reads adapter and device state through `Quickshell.Bluetooth` (BlueZ over D-Bus) and batches refreshes when device properties change. `MacBar.qml` keeps its old interface (`btOn`, `btDevices`, `connectBt`, `toggleBt` and so on) as aliases and wrappers, so the rest of the menu-bar code is unchanged. The device type comes from BlueZ's `Icon` property, for example `audio-headset`, `input-gaming` or `input-tablet`, and falls back to the device name when that property is missing.
+- Device actions: `silky-bt-helper.py` runs pair, connect, disconnect and forget over D-Bus, so it can report error names such as `AuthenticationFailed` and `ConnectionAttemptFailed`. The helper registers an `org.bluez.Agent1` with the `KeyboardDisplay` capability but does not ask to be the default agent. BlueZ sends pairing requests to the client that called `Pair`, so the helper handles pairings started from Settings, and Omarchy's `bt-agent.service` (`NoInputNoOutput`) still handles all other requests. The helper starts on demand and exits after 120 s of idle time.
+- Visibility and search: the Settings page undoes only the states it turned on itself. A computer that was already discoverable before the page opened stays discoverable, and a search started by another client is not stopped. Another client on this machine keeps searching (it did before this change too), so `Discovering` can stay `yes` after Settings closes.
+- Known limitations: pairings that the device starts are still auto-accepted by `bt-agent`, without a prompt. During a search, nearby devices are sorted by name, not by signal strength.
+
+**Verification**: tested on this machine on 2026-11-24 with Hyprland 0.57, MacShell 0.5.3, BlueZ 5.88 and Quickshell 0.3.2:
+
+- After restarting MacShell, the log showed no QML errors.
+- An isolated test read 110 cached devices: 1 in "My Devices" and 7 named nearby devices, where the old page showed more than 100 MAC-address rows.
+- Opening the Settings page made `bluetoothctl show` report `Discoverable: yes`, and closing it restored `no`.
+- Screenshots confirmed the Settings card, badges, spinner, the hover Connect button, the ⓘ device sheet, and both the confirm-code and enter-code request sheets.
+- The Control Center Bluetooth page showed only the badge row for the paired trackpad.
+- The helper returned `DoesNotExist` for a device that does not exist.
+
+Pairing, connecting, disconnecting, forgetting and renaming a real device, and the battery display, still need manual checks. Open Settings → Bluetooth, put a device in pairing mode and click Connect. The row should show "Pairing…" and then "Connecting…", and the device should move to "My Devices" when it succeeds. Pairing a keyboard should bring up the enter-code or type-code sheet.
+
+**Roll back**: restore `MacBar.qml`, `MacDock.qml` and `lang/zh-CN.js` from `~/.local/state/silky-omarchy/bluetooth-backup-*` (or the installer's `silky-backup-*`). Delete `SilkyBluetooth.qml`, `SilkyBtIcon.qml` and `assets/silky-bt-helper.py` from `~/.config/quickshell/MacShell/`. Remove the `tune-bluetooth.py` line and the added `managed_files` entry from `install-macshell-optimizations.sh`, then run `qs -c MacShell ipc call macshell reload`.
+
 ## Rapidly toggling the system menu
 
 Repeated clicks on the top-left icon reverse the menu's animation from its current position, with text, glass, and scale moving together. Opening the menu previously queried the foreground window and rebuilt its fixed menu items, and fading out discarded the glass component. Frame-by-frame capture showed that the text could appear a frame before the compositor glass. The system menu now reuses its items, and menu bar dropdowns use a single animation with glass markers refreshed as opacity changes. With Reduce Motion enabled, the menu opens and closes immediately.

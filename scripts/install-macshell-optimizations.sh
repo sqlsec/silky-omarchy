@@ -96,6 +96,8 @@ managed_files=("${calendar_paths[@]}" MacShell/FolioMinimizeFx.qml MacShell/Foli
 for display_asset in "$repo_root/config/macshell/displays/"{*.js,*.qml}; do
   managed_files+=("MacShell/${display_asset##*/}")
 done
+# Bluetooth backend, device icon and pairing helper (scripts/tune-bluetooth.py installs them).
+managed_files+=(MacShell/SilkyBluetooth.qml MacShell/SilkyBtIcon.qml MacShell/assets/silky-bt-helper.py)
 for relative_path in "${managed_files[@]}"; do
   case "$relative_path" in
     MacShell/*) source_path="$shell_dir/${relative_path#MacShell/}" ;;
@@ -147,6 +149,8 @@ done
 python3 "$repo_root/scripts/tune-calendar.py" "$staged_shell/MacBar.qml"
 python3 "$repo_root/scripts/tune-display-controls.py" "$staged_shell/MacBar.qml"
 python3 "$repo_root/scripts/tune-display-settings.py" "$staged_shell"
+# Bluetooth: D-Bus backend, paired-only Control Center list, macOS-style Settings page with pairing requests.
+python3 "$repo_root/scripts/tune-bluetooth.py" "$staged_shell"
 python3 "$repo_root/scripts/tune-window-tiling.py" "$staged_shell/MacBar.qml"
 # Volume sliders play a tap at the level they set.
 python3 "$repo_root/scripts/tune-volume-feedback.py" "$staged_shell/MacBar.qml"

@@ -1,0 +1,123 @@
+    // Silky Bluetooth components begin
+    // Bluetooth device row (Settings → Bluetooth): type badge, name, state or error, Connect / Disconnect on hover (a tap
+    // shows it on touch screens), ⓘ for the device sheet. See docs/02-macshell.md#蓝牙面板与设置页.
+    component SBtRow: Item {
+        id: br
+        required property var t
+        required property var dev
+        property var bt: null
+        property bool nearby: false
+        property bool revealed: false
+        signal info()
+        readonly property bool mine: bt !== null && bt.busy === dev.mac
+        readonly property bool busy: mine || dev.busy
+        readonly property string err: bt !== null && bt.errors[dev.mac] ? bt.errors[dev.mac] : ""
+        readonly property string status: busy
+            ? (mine ? (bt.busyOp === "disconnect" ? I18n.tr("Disconnecting…")
+                     : bt.busyOp === "forget" ? I18n.tr("Removing…")
+                     : (dev.paired ? I18n.tr("Connecting…") : I18n.tr("Pairing…")))
+                    : (dev.connected ? I18n.tr("Disconnecting…") : I18n.tr("Connecting…")))
+            : err !== "" ? err
+            : nearby ? ""
+            : (dev.connected ? I18n.tr("Connected") : I18n.tr("Not Connected")) + (dev.bat !== "" ? " · " + dev.bat + "%" : "")
+        width: parent ? parent.width : 0
+        height: 52
+        onBusyChanged: if (busy) revealed = false
+
+        HoverHandler { id: brHover }
+        MouseArea { anchors.fill: parent; onClicked: br.revealed = !br.revealed }
+        Rectangle { visible: br.y > 0.5; x: 54; width: parent.width - 54; height: 1; color: br.t.sep }
+        SilkyBtIcon {
+            x: 14; anchors.verticalCenter: parent.verticalCenter
+            width: 28; height: 28
+            kind: br.dev.icon; active: br.dev.connected
+            dark: br.t.dark; accent: br.t.accent; fg: br.t.text
+        }
+        Column {
+            x: 54; anchors.verticalCenter: parent.verticalCenter
+            width: Math.max(0, brActions.x - x - 10)
+            spacing: 2
+            Text {
+                width: parent.width
+                text: br.dev.name
+                elide: Text.ElideRight
+                color: br.t.text
+                font.family: root.fontForWeight(Font.Normal, br.t.fam); font.pixelSize: 13
+            }
+            Text {
+                visible: br.status !== ""
+                width: parent.width
+                text: br.status
+                wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight
+                color: br.err !== "" && !br.busy ? br.t.danger : br.t.text2
+                font.family: root.fontForWeight(Font.Normal, br.t.fam); font.pixelSize: 12
+            }
+        }
+        Row {
+            id: brActions
+            anchors.right: parent.right; anchors.rightMargin: 14
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 10
+            SButton {
+                t: br.t
+                anchors.verticalCenter: parent.verticalCenter
+                visible: !br.busy && (brHover.hovered || br.revealed)
+                text: br.dev.connected ? I18n.tr("Disconnect") : I18n.tr("Connect")
+                onClicked: { br.revealed = false; if (br.bt) br.bt.connectDevice(br.dev.mac, br.dev.connected); }
+            }
+            SButton {
+                t: br.t
+                anchors.verticalCenter: parent.verticalCenter
+                visible: br.mine && br.bt.busyOp === "connect" && !br.dev.paired
+                text: I18n.tr("Cancel")
+                onClicked: br.bt.cancelPairing()
+            }
+            Item {      // ⓘ
+                visible: !br.nearby
+                anchors.verticalCenter: parent.verticalCenter
+                width: 20; height: 20
+                Rectangle {
+                    anchors.fill: parent; radius: width / 2
+                    color: infoMa.pressed ? br.t.hover : "transparent"
+                    border.width: 1.2; border.color: infoMa.containsMouse ? br.t.text : br.t.text2
+                }
+                Text {
+                    anchors.centerIn: parent
+                    text: "i"
+                    color: infoMa.containsMouse ? br.t.text : br.t.text2
+                    font.family: root.fontForWeight(Font.DemiBold, br.t.fam); font.pixelSize: 12; font.weight: Font.DemiBold
+                }
+                MouseArea {
+                    id: infoMa
+                    anchors.fill: parent; anchors.margins: -6
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: br.info()
+                }
+            }
+        }
+    }
+
+    // Activity indicator like the one macOS shows next to "Nearby Devices" while it searches.
+    component SBtSpinner: Item {
+        id: sp
+        required property var t
+        width: 14; height: 14
+        Repeater {
+            model: 8
+            Rectangle {
+                required property int index
+                x: 6.2; y: 0
+                width: 1.6; height: 4.2; radius: 0.8
+                color: sp.t.text2
+                opacity: 0.25 + 0.75 * index / 7
+                transform: Rotation { origin.x: 0.8; origin.y: 7; angle: index * 45 }
+            }
+        }
+        RotationAnimator on rotation {
+            from: 0; to: 360; duration: 900
+            loops: Animation.Infinite
+            running: sp.visible
+        }
+    }
+    // Silky Bluetooth components end

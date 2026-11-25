@@ -1,0 +1,333 @@
+        // Silky Bluetooth pane begin
+        // ── Bluetooth ── (state from SilkyBluetooth.qml through the Menu Bar; see docs/02-macshell.md#蓝牙面板与设置页)
+        // While this page is open the computer is discoverable and searches for nearby devices, like macOS.
+        Component {
+            id: paneBt
+            Column {
+                id: btPane
+                spacing: 10
+                readonly property var bt: root.bar ? root.bar.btBackend : null
+                readonly property bool on: bt !== null && bt.on
+                readonly property var myDevs: bt ? bt.myDevices : []
+                readonly property var nearby: bt ? bt.nearby : []
+                property string infoMac: ""
+                readonly property var infoDev: {
+                    var list = bt ? bt.devices : [];
+                    for (var i = 0; i < list.length; i++) if (list[i].mac === infoMac) return list[i];
+                    return null;
+                }
+                Component.onCompleted: if (bt) { bt.clearErrors(); bt.enterSettings(); }
+                Component.onDestruction: if (bt) bt.leaveSettings()
+
+                SCard {
+                    t: pal
+                    Item {
+                        width: parent.width
+                        height: Math.max(68, btHead.height + 28)
+                        Rectangle {
+                            x: 14; y: 14
+                            width: 34; height: 34; radius: 9
+                            gradient: Gradient {
+                                GradientStop { position: 0.0; color: "#3D9BFF" }
+                                GradientStop { position: 1.0; color: "#0A6CFF" }
+                            }
+                            WGlyph { anchors.centerIn: parent; width: 20; height: 20; kind: "bluetooth"; color: "white" }
+                        }
+                        Column {
+                            id: btHead
+                            x: 60; y: 14
+                            width: parent.width - x - 80
+                            spacing: 3
+                            Text {
+                                text: I18n.tr("Bluetooth")
+                                color: pal.text
+                                font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                            }
+                            Text {
+                                width: parent.width
+                                wrapMode: Text.WordWrap
+                                text: I18n.tr("Connect accessories you can use for activities such as streaming music, typing, and gaming.")
+                                color: pal.text2
+                                font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 12
+                            }
+                        }
+                        SSwitch {
+                            t: pal
+                            anchors.right: parent.right; anchors.rightMargin: 14
+                            y: 18
+                            checked: btPane.on
+                            onToggled: v => { if (btPane.bt && btPane.bt.on !== v) btPane.bt.setPower(v); }
+                        }
+                    }
+                    Rectangle { visible: btFoot.visible; x: 14; width: parent.width - 28; height: 1; color: pal.sep }
+                    Text {
+                        id: btFoot
+                        visible: btPane.bt !== null && (btPane.on || btPane.bt.blocked)
+                        width: parent.width
+                        leftPadding: 14; rightPadding: 14; topPadding: 12; bottomPadding: 12
+                        wrapMode: Text.WordWrap
+                        text: !btPane.bt ? ""
+                            : btPane.bt.blocked && !btPane.on ? I18n.tr("Bluetooth is blocked. Turn off Airplane Mode to use it.")
+                            : btPane.bt.discoverable ? I18n.tr("When Bluetooth Settings is open, this computer is discoverable as “%1”.").arg(btPane.bt.adapterName)
+                            : I18n.tr("This computer is not discoverable right now.")
+                        color: pal.text2
+                        font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 12
+                    }
+                }
+
+                SLabel { t: pal; header: true; text: I18n.tr("My Devices"); visible: btPane.on && btPane.myDevs.length > 0 }
+                SCard {
+                    t: pal
+                    visible: btPane.on && btPane.myDevs.length > 0
+                    Repeater {
+                        model: btPane.myDevs
+                        delegate: SBtRow {
+                            required property var modelData
+                            t: pal; dev: modelData; bt: btPane.bt
+                            onInfo: btPane.infoMac = modelData.mac
+                        }
+                    }
+                }
+
+                Item {
+                    visible: btPane.on
+                    width: parent.width; height: 26
+                    SLabel {
+                        t: pal; header: true
+                        width: implicitWidth
+                        anchors.bottom: parent.bottom
+                        text: I18n.tr("Nearby Devices")
+                    }
+                    SBtSpinner {
+                        t: pal
+                        visible: btPane.bt !== null && btPane.bt.scanning
+                        anchors.right: parent.right; anchors.rightMargin: 16
+                        anchors.bottom: parent.bottom; anchors.bottomMargin: 1
+                    }
+                }
+                SCard {
+                    t: pal
+                    visible: btPane.on
+                    Repeater {
+                        model: btPane.nearby
+                        delegate: SBtRow {
+                            required property var modelData
+                            t: pal; dev: modelData; bt: btPane.bt; nearby: true
+                        }
+                    }
+                    SRow {
+                        t: pal
+                        visible: btPane.nearby.length === 0
+                        title: btPane.bt && btPane.bt.scanning ? I18n.tr("Searching for devices…") : I18n.tr("No new devices found")
+                        subtitle: I18n.tr("Put the device in pairing mode to see it here.")
+                    }
+                }
+
+                // ── device sheet (ⓘ) and pairing requests: modal over the whole Settings window ──
+                Item {
+                    id: btSheet
+                    parent: frame
+                    anchors.fill: parent
+                    z: 900
+                    readonly property var req: btPane.bt ? btPane.bt.prompt : null
+                    readonly property bool showReq: req !== null
+                    readonly property bool showInfo: !showReq && btPane.infoDev !== null
+                    property bool confirmForget: false
+                    visible: showReq || showInfo
+                    onVisibleChanged: if (visible) { confirmForget = false; forceActiveFocus(); }
+                    onShowReqChanged: if (showReq) { codeIn.text = ""; if (req.kind === "pin" || req.kind === "passkey") codeIn.forceActiveFocus(); }
+                    function close() {
+                        if (showReq) btPane.bt.answer(false, "");
+                        else btPane.infoMac = "";
+                    }
+                    function accept() {
+                        if (showReq) {
+                            if ((req.kind === "pin" || req.kind === "passkey") && codeIn.text.trim() === "") return;
+                            btPane.bt.answer(true, codeIn.text.trim());
+                        } else {
+                            if (nameIn.text.trim() !== "" && nameIn.text !== btPane.infoDev.name) btPane.bt.rename(btPane.infoDev.mac, nameIn.text);
+                            btPane.infoMac = "";
+                        }
+                    }
+                    Keys.onEscapePressed: close()
+                    Keys.onReturnPressed: accept()
+                    Keys.onEnterPressed: accept()
+
+                    MouseArea { anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.AllButtons }
+                    Rectangle { anchors.fill: parent; radius: frame.cornerRadius; color: Qt.rgba(0, 0, 0, pal.dark ? 0.45 : 0.25) }
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: 340
+                        height: sheetCol.height + 40
+                        radius: 16
+                        color: pal.card
+                        border.width: 1; border.color: pal.cardBorder
+                        Column {
+                            id: sheetCol
+                            x: 20; y: 20
+                            width: parent.width - 40
+                            spacing: 14
+
+                            // header: device badge + name
+                            Row {
+                                spacing: 12
+                                SilkyBtIcon {
+                                    width: 44; height: 44
+                                    kind: btSheet.showReq ? "bluetooth" : (btPane.infoDev ? btPane.infoDev.icon : "bluetooth")
+                                    active: btSheet.showReq || (btPane.infoDev !== null && btPane.infoDev.connected)
+                                    dark: pal.dark; accent: pal.accent; fg: pal.text
+                                }
+                                Column {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: sheetCol.width - 56
+                                    spacing: 2
+                                    Text {
+                                        width: parent.width; elide: Text.ElideRight
+                                        text: btSheet.showReq ? I18n.tr("Bluetooth Pairing Request")
+                                            : (btPane.infoDev ? btPane.infoDev.name : "")
+                                        color: pal.text
+                                        font.family: root.fontForWeight(Font.DemiBold, pal.fam); font.pixelSize: 14; font.weight: Font.DemiBold
+                                    }
+                                    Text {
+                                        width: parent.width; elide: Text.ElideRight
+                                        text: btSheet.showReq ? btSheet.req.name
+                                            : !btPane.infoDev ? ""
+                                            : (btPane.infoDev.connected ? I18n.tr("Connected") : I18n.tr("Not Connected"))
+                                              + (btPane.infoDev.bat !== "" ? " · " + I18n.tr("Battery %1%").arg(btPane.infoDev.bat) : "")
+                                        color: pal.text2
+                                        font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 12
+                                    }
+                                }
+                            }
+
+                            // pairing request
+                            Text {
+                                visible: btSheet.showReq
+                                width: parent.width
+                                wrapMode: Text.WordWrap
+                                text: !btSheet.req ? ""
+                                    : btSheet.req.kind === "confirm" ? I18n.tr("Confirm that “%1” shows this code:").arg(btSheet.req.name)
+                                    : btSheet.req.kind === "pin" || btSheet.req.kind === "passkey" ? I18n.tr("Enter the code for “%1”. Try 0000 or 1234 if the device has no screen.").arg(btSheet.req.name)
+                                    : I18n.tr("Type this code on “%1”, then press Return:").arg(btSheet.req.name)
+                                color: pal.text
+                                font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                            }
+                            Text {
+                                visible: btSheet.showReq && btSheet.req.kind !== "pin" && btSheet.req.kind !== "passkey"
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: btSheet.req ? btSheet.req.passkey.split("").join(" ") : ""
+                                color: pal.text
+                                font.family: root.fontForWeight(Font.DemiBold, pal.fam); font.pixelSize: 28; font.weight: Font.DemiBold
+                            }
+                            Rectangle {
+                                visible: btSheet.showReq && (btSheet.req.kind === "pin" || btSheet.req.kind === "passkey")
+                                width: parent.width; height: 30; radius: 7
+                                color: pal.field
+                                border.width: 1; border.color: codeIn.activeFocus ? pal.accent : pal.cardBorder
+                                TextInput {
+                                    id: codeIn
+                                    anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10
+                                    verticalAlignment: TextInput.AlignVCenter
+                                    clip: true; selectByMouse: true
+                                    maximumLength: btSheet.req && btSheet.req.kind === "passkey" ? 6 : 16
+                                    inputMethodHints: btSheet.req && btSheet.req.kind === "passkey" ? Qt.ImhDigitsOnly : Qt.ImhNone
+                                    validator: RegularExpressionValidator { regularExpression: btSheet.req && btSheet.req.kind === "passkey" ? /[0-9]*/ : /.*/ }
+                                    color: pal.text; selectionColor: pal.accent
+                                    font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 14
+                                    Keys.onEscapePressed: btSheet.close()
+                                    onAccepted: btSheet.accept()
+                                }
+                            }
+
+                            // device sheet: name (editable), address
+                            Column {
+                                visible: btSheet.showInfo
+                                width: parent.width
+                                spacing: 6
+                                Text {
+                                    text: I18n.tr("Name")
+                                    color: pal.text2
+                                    font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 12
+                                }
+                                Rectangle {
+                                    width: parent.width; height: 30; radius: 7
+                                    color: pal.field
+                                    border.width: 1; border.color: nameIn.activeFocus ? pal.accent : pal.cardBorder
+                                    TextInput {
+                                        id: nameIn
+                                        anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10
+                                        verticalAlignment: TextInput.AlignVCenter
+                                        clip: true; selectByMouse: true
+                                        maximumLength: 64
+                                        text: btPane.infoDev ? btPane.infoDev.name : ""
+                                        color: pal.text; selectionColor: pal.accent
+                                        font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                                        Keys.onEscapePressed: { text = btPane.infoDev ? btPane.infoDev.name : ""; btSheet.forceActiveFocus(); }
+                                        onAccepted: btSheet.accept()
+                                    }
+                                }
+                                Text {
+                                    text: I18n.tr("Address") + "  " + (btPane.infoDev ? btPane.infoDev.mac : "")
+                                    color: pal.text2
+                                    font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 12
+                                }
+                                Text {
+                                    visible: btSheet.confirmForget
+                                    width: parent.width; wrapMode: Text.WordWrap
+                                    text: I18n.tr("This device will be removed from your devices. You will need to pair it again to use it.")
+                                    color: pal.danger
+                                    font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 12
+                                }
+                            }
+
+                            // buttons
+                            Item {
+                                width: parent.width; height: 26
+                                SButton {
+                                    t: pal
+                                    visible: btSheet.showInfo
+                                    destructive: true
+                                    anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                                    text: btSheet.confirmForget ? I18n.tr("Forget Device") : I18n.tr("Forget This Device…")
+                                    onClicked: {
+                                        if (!btSheet.confirmForget) { btSheet.confirmForget = true; return; }
+                                        btPane.bt.forget(btPane.infoDev.mac);
+                                        btPane.infoMac = "";
+                                    }
+                                }
+                                Row {
+                                    anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 8
+                                    SButton {
+                                        t: pal
+                                        visible: btSheet.showReq || btSheet.confirmForget
+                                        text: I18n.tr("Cancel")
+                                        onClicked: { if (btSheet.confirmForget) btSheet.confirmForget = false; else btSheet.close(); }
+                                    }
+                                    SButton {
+                                        t: pal
+                                        visible: btSheet.showInfo && !btSheet.confirmForget && btPane.infoDev !== null
+                                        text: btPane.infoDev && btPane.infoDev.connected ? I18n.tr("Disconnect") : I18n.tr("Connect")
+                                        onClicked: btPane.bt.connectDevice(btPane.infoDev.mac, btPane.infoDev.connected)
+                                    }
+                                    Rectangle {     // default button (accent)
+                                        visible: !btSheet.confirmForget && !(btSheet.showReq && btSheet.req.kind.indexOf("display") === 0)
+                                        width: okLbl.implicitWidth + 26; height: 24; radius: 10
+                                        color: okMa.pressed ? Qt.darker(pal.accent, 1.15) : pal.accent
+                                        Text {
+                                            id: okLbl
+                                            anchors.centerIn: parent
+                                            text: btSheet.showReq ? I18n.tr("Pair") : I18n.tr("Done")
+                                            color: "white"
+                                            font.family: root.fontForWeight(Font.Normal, pal.fam); font.pixelSize: 13
+                                        }
+                                        MouseArea { id: okMa; anchors.fill: parent; onClicked: btSheet.accept() }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Silky Bluetooth pane end

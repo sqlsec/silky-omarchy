@@ -113,6 +113,50 @@ nmcli -f IN-USE,SIGNAL,FREQ device wifi list --rescan yes
 
 回滚时先移除 `~/.config/omarchy/hooks/post-update.d/silky-macshell-wifi.hook`，将安装时输出的 `~/.local/state/macshell/silky-backup-wifi.*` 中的 `MacBar.qml`、`MacDock.qml` 和 `lang/zh-CN.js` 恢复到对应位置，再移除首次安装新增的 `assets/silky-wifi-scan.py`，并执行 `qs -c MacShell ipc call macshell reload`。更新后使用匹配当时版本的备份。
 
+## 控制中心
+
+### 蓝牙面板与设置页
+
+**效果**：控制中心的蓝牙列表和「设置 → 蓝牙」按 macOS 的分工重做。
+
+- 控制中心和菜单栏的蓝牙列表只列已配对设备，打开时也不再扫描。每台设备前有圆形类型徽标（耳机、手柄、键盘、鼠标、触控板、音箱、手机、电脑），已连接的徽标用强调色，有电量时在右侧显示百分比。
+- 设置页顶部是带蓝色图标、说明文字和开关的卡片，下方小字如实显示可见状态。页面开着时电脑可被发现，并搜索附近设备，关闭页面后恢复原状态。
+- 「我的设备」每行显示类型徽标、名称和「已连接 · 电量」或「未连接」。悬停时出现「连接」或「断开连接」按钮，触屏轻点一行也能显示。点右侧 ⓘ 打开设备面板，可以改名（回车提交、`Esc` 取消），查看地址，连接或断开，以及「忽略此设备…」（需要再点一次确认）。
+- 「附近设备」只列出广播了名称的设备，标题右侧的转圈表示正在搜索。原来列表里上百条 MAC 地址都是没有名称的设备，现在不再显示。
+- 失败原因显示在对应设备行下，用红字写出 BlueZ 返回的具体原因，例如配对被拒、设备无响应或没有可用服务，不再在页底显示一行英文。
+- 需要输入或核对配对码的设备（键盘、部分耳机）会弹出配对请求，分为核对配对码、输入 PIN / 配对码、在设备上键入配对码三种。
+
+这次修掉了几个问题：`bluetoothctl devices` 输出的颜色控制符 `ESC[0m` 混进设备名，在设置页显示成 `[0m`；没有名称的设备按地址刷屏；设置页说「可被发现」，实际 `Discoverable: no`；「已连接 / 未连接」没有翻译。原后端每 6 秒、扫描时每 2.5 秒对每台缓存设备各跑一次 `bluetoothctl info`。本机缓存约 110 台设备，每轮就要启动上百个进程，现在改为事件驱动，不再轮询。
+
+**安装**：[`scripts/tune-bluetooth.py`](../scripts/tune-bluetooth.py) 由 `install-macshell-optimizations.sh` 自动调用。它把 [`config/macshell/bluetooth/`](../config/macshell/bluetooth/) 里的 `SilkyBluetooth.qml`、`SilkyBtIcon.qml` 复制到 `~/.config/quickshell/MacShell/`，把 `silky-bt-helper.py` 复制到同一目录的 `assets/`。随后替换 `MacBar.qml` 的蓝牙后端和列表行，在 `MacDock.qml` 中插入 `settings-components.qml.in`、`settings-pane.qml.in` 两段，并补充 `lang/zh-CN.js` 的中文词条。插入的段落带 `Silky Bluetooth … begin/end` 标记，重复执行会更新成仓库版本。只更新已安装的 MacShell 时：
+
+```bash
+python3 scripts/tune-bluetooth.py --check
+python3 scripts/tune-bluetooth.py --install
+```
+
+`--install` 先把要改的文件备份到 `~/.local/state/silky-omarchy/bluetooth-backup-*`，再执行 `macshell reload`。首次安装后如果日志报 `SBtRow is not a type`，原因是正在运行的实例在重载时没有识别新加入的内联组件，需要重启一次 MacShell，可以重新登录，或运行 `qs kill -c MacShell` 后再运行 `macshell-start`。依赖 `/usr/bin/python3` 和 PyGObject（`python-gobject`），以及 Quickshell 自带的 `Quickshell.Bluetooth` 模块。
+
+**实现与兼容性**：
+
+- 状态读取：`SilkyBluetooth.qml` 通过 `Quickshell.Bluetooth`（BlueZ D-Bus）读取适配器和设备状态，按设备属性变化合并刷新。`MacBar.qml` 保留原接口 `btOn`、`btDevices`、`connectBt`、`toggleBt` 等，作为别名和包装，其余菜单栏代码不用改。设备类型取自 BlueZ 的 `Icon` 属性，例如 `audio-headset`、`input-gaming`、`input-tablet`，取不到时再按名称判断。
+- 设备操作：配对、连接、断开和忽略由 `silky-bt-helper.py` 调用 D-Bus 执行，以便拿到 `AuthenticationFailed`、`ConnectionAttemptFailed` 等错误名。帮助进程注册 `KeyboardDisplay` 能力的 `org.bluez.Agent1`，但不申请成为默认代理。BlueZ 会把配对请求交给发起 `Pair` 的客户端，所以从设置页发起的配对请求由它处理，Omarchy 自带的 `bt-agent.service`（`NoInputNoOutput`）照旧处理其他请求。帮助进程按需启动，空闲 120 秒后退出。
+- 可见性与搜索：设置页只撤销自己打开的状态。打开前已经可被发现的电脑仍保持可被发现，其他客户端开启的搜索不会被停止。本机还有别的客户端在持续搜索（改动前就是这样），因此关闭设置页后 `Discovering` 仍可能为 `yes`。
+- 已知限制：设备主动发起的配对仍由 `bt-agent` 自动接受，不弹窗。搜索期间附近设备按名称排序，不按信号强弱排序。
+
+**验证**：2026-11-24 在 Hyprland 0.57、MacShell 0.5.3、BlueZ 5.88、Quickshell 0.3.2 上实机验证：
+
+- 重启 MacShell 后日志没有 QML 报错。
+- 隔离测试读到 110 台缓存设备，其中「我的设备」1 台、有名称的附近设备 7 台，原先显示的是 100 多条 MAC 地址。
+- 打开设置页后 `bluetoothctl show` 显示 `Discoverable: yes`，关闭后恢复为 `no`。
+- 截图确认设置页卡片、徽标、转圈、悬停「连接」按钮，ⓘ 设备面板，以及核对配对码和输入配对码两种请求面板。
+- 控制中心蓝牙页只显示已配对的触控板徽标行。
+- 帮助进程对不存在的设备返回 `DoesNotExist`。
+
+真实设备的配对、连接、断开、忽略和改名，以及电量显示，需要手动验证。打开「设置 → 蓝牙」，让设备进入配对模式后点「连接」，对应行依次显示「正在配对…」和「正在连接…」，成功后移到「我的设备」。键盘配对应弹出输入或键入配对码的面板。
+
+**回滚**：从 `~/.local/state/silky-omarchy/bluetooth-backup-*`（或安装脚本的 `silky-backup-*`）恢复 `MacBar.qml`、`MacDock.qml`、`lang/zh-CN.js`，删掉 `~/.config/quickshell/MacShell/SilkyBluetooth.qml`、`SilkyBtIcon.qml` 和 `assets/silky-bt-helper.py`，从 `install-macshell-optimizations.sh` 删掉 `tune-bluetooth.py` 一行和新增的 `managed_files` 条目，再执行 `qs -c MacShell ipc call macshell reload`。
+
 ## 快速连点系统菜单
 
 左上角图标快速连点时，菜单会从当前动画进度反向，文字、玻璃和缩放同步变化。此前每次打开都会查询前台窗口并重建固定菜单项，淡出后还会销毁玻璃组件。逐帧录制捕捉到文字已经出现、合成器玻璃晚一帧跟上的情况。现在系统菜单复用菜单项，顶栏下拉菜单共用一个动画进度，玻璃标记随透明度更新。「减少动态效果」开启时，菜单立即开合。

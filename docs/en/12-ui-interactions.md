@@ -51,6 +51,7 @@ Dock app context menus share the Dock’s Liquid Glass, including its refraction
 - A new "Display" page: brightness slider, Night Shift switch and light/dark Appearance switch, working like the "Sound" page ([02 · Control Center](02-macshell.md#control-center))
 - Dragging a volume slider (Control Center, the menu-bar volume popover, scrolling on the menu bar) plays a tap at the level being set, and one more where you let go. Turning off UI sounds silences it
 - The Sound page shows a live microphone level under the input slider: a few segments in a quiet room, jumping when you speak, red when close to clipping. It listens only while that page is open and the mic is not muted
+- The Bluetooth list shows paired devices only, each with a type badge that turns the accent color when connected. Settings → Bluetooth now follows macOS: the computer is discoverable while the page is open, nearby devices are listed only when they have a name, and failures appear under the device's row. The ⓘ sheet renames, connects and forgets a device, and devices that need a code bring up a pairing request ([02 · Bluetooth panel and Settings page](02-macshell.md#bluetooth-panel-and-settings-page))
 
 ## Dock and Applications panel
 
